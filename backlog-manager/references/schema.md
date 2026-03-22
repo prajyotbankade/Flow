@@ -17,7 +17,7 @@
 - `version`: Auto-incrementing integer. The server bumps this on every write. Clients must send the current version with updates — if it's behind, the write is rejected (HTTP 409) and the client must re-read.
 - `scope`: `"project"` stores backlog.json in the project root. `"global"` stores it at `~/.claude/backlog.json`.
 - `project_name`: Human-readable project name, displayed in the board header.
-- `statuses`: Ordered array of workflow stages. Defines the columns on the board. First status must always be `"backlog"`. Last status is the terminal/done state. If omitted, defaults to: `backlog → refined → ready → in-progress → done`.
+- `statuses`: Ordered array of workflow stages. Defines the columns on the board. First status must always be `"backlog"`. If omitted, defaults to: `backlog → refined → ready → in-progress → done → discarded`.
 - `items`: Ordered array — index 0 is highest priority.
 
 ## Status
@@ -92,10 +92,10 @@ A record of an item moving through a lane. Appended to `lane_history` every time
 - Item order in `items` array = priority (index 0 is highest)
 - New items append to the end
 - Status flow follows the order defined in `config.statuses` (left to right on the board)
-- Default flow: `backlog` → `refined` → `ready` → `in-progress` → `done`
+- Default flow: `backlog` → `refined` → `ready` → `in-progress` → `code-review` → `done` → `discarded`
 - Items can move backward (e.g., back to an earlier status if new threads are opened)
 - First status is always `backlog` — the entry point for new items
-- Last status is the terminal state (completed work)
+- `discarded` is a special terminal lane: items can be moved there from **any** lane, bypassing all gate rules. Discarded items can always be restored to any other lane (treated as a backward move — resets `gate_from`).
 - An item with unresolved threads (resolved is false) should not be marked `ready`
 - Threads with `waiting_on: "agent"` indicate the user has explicitly tagged the agent for a response
 - After responding to a tagged thread, set `waiting_on` to `"user"` or `null`

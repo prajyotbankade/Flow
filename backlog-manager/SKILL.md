@@ -12,14 +12,18 @@ You are managing a project backlog — a prioritized list of work items that flo
 The backlog lives in `backlog.json` at the project root. Items are stored in an ordered array — **position in the array is the priority** (first item = highest priority). Each item moves through these statuses:
 
 ```
-backlog → refined → ready → in-progress → done
+backlog → refined → ready → in-progress → code-review → done
+                                                          ↓
+                                                      discarded (from any lane)
 ```
 
 - **backlog**: Just added, might be vague or missing details
 - **refined**: Discussed with the user, questions answered, enough detail to act on
 - **ready**: User has confirmed it's good to pick up
 - **in-progress**: Currently being worked on
-- **done**: Completed
+- **code-review**: Work is complete and awaiting review
+- **done**: Reviewed and completed
+- **discarded**: Removed from active work — can always be restored back to any lane
 
 ## Setup
 
@@ -45,10 +49,10 @@ The `scope` field supports two modes:
 Every team works differently. The board's columns (lanes) are fully configurable via `config.statuses`. If omitted, the default flow is used:
 
 ```
-backlog → refined → ready → in-progress → done
+backlog → refined → ready → in-progress → code-review → done → discarded
 ```
 
-To customize, add a `statuses` array to the config. Each entry has an `id` (used in item data), a `label` (displayed on the board), and an optional `color` (hex). Example with a code review step:
+To customize, add a `statuses` array to the config. Each entry has an `id` (used in item data), a `label` (displayed on the board), and an optional `color` (hex). Example (the default):
 
 ```json
 "config": {
@@ -59,7 +63,8 @@ To customize, add a `statuses` array to the config. Each entry has an `id` (used
     { "id": "ready",       "label": "Ready" },
     { "id": "in-progress", "label": "In Progress" },
     { "id": "code-review", "label": "Code Review", "color": "#ec4899" },
-    { "id": "done",        "label": "Done" }
+    { "id": "done",        "label": "Done" },
+    { "id": "discarded",   "label": "Discarded",   "color": "#cbd5e1" }
   ]
 }
 ```
@@ -84,8 +89,9 @@ Example config with gate rules:
   { "id": "refined",     "label": "Refined" },
   { "id": "ready",       "label": "Ready" },
   { "id": "in-progress", "label": "In Progress" },
-  { "id": "code-review", "label": "Code Review", "requires": ["in-progress"] },
-  { "id": "done",        "label": "Done", "requires": ["code-review"] }
+  { "id": "code-review", "label": "Code Review", "color": "#ec4899", "requires": ["in-progress"] },
+  { "id": "done",        "label": "Done",        "requires": ["code-review"] },
+  { "id": "discarded",   "label": "Discarded",   "color": "#cbd5e1" }
 ]
 ```
 
@@ -93,6 +99,7 @@ In this setup:
 - Moving to "Code Review" requires the item has been through "In Progress"
 - Moving to "Done" requires the item has been through "Code Review"
 - An agent cannot skip Code Review and move straight to Done
+- An item can be moved to "Discarded" from any lane — no gate rules apply
 
 **How it works:**
 - Every item has a `lane_history` array — a full audit trail of every lane it has visited. This is always appended, never deleted.
@@ -210,6 +217,19 @@ When a task is done:
 2. Add a brief completion note if useful (what was done, any caveats)
 3. Update `updated_at`
 4. Mention remaining ready items if any
+
+### Discarding Items
+
+When the user wants to remove an item without deleting it (e.g., "discard #3", "drop this idea", "we're not doing this"):
+
+1. Set status to `discarded`
+2. **No gate rules apply** — an item can be discarded from any lane at any time
+3. Discarded items remain in `backlog.json` for the audit trail but are hidden on the board by default
+
+To restore a discarded item:
+1. Move it back to `backlog` (or any other lane) — this is always allowed
+2. The `gate_from` watermark resets, so the item must re-earn any gates on its new journey
+3. Tell the user: "#N has been restored to backlog."
 
 ## Visual Board
 

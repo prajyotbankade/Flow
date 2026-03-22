@@ -28,6 +28,49 @@
     .header h1 { font-size: 18px; font-weight: 600; }
     .header-actions { display: flex; gap: 8px; align-items: center; }
     .sync-indicator { font-size: 11px; color: #9ca3af; }
+    .user-indicator {
+      font-size: 11px; color: #6b7280;
+      background: #f3f4f6; border-radius: 6px;
+      padding: 3px 8px; display: flex; align-items: center; gap: 4px;
+    }
+    .user-indicator::before { content: '●'; color: #10b981; font-size: 8px; }
+    .search-input {
+      padding: 5px 10px 5px 28px; border: 1px solid #e5e7eb; border-radius: 8px;
+      font-size: 13px; font-family: inherit; background: #f9fafb; width: 200px;
+      transition: all 0.15s; color: #374151;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: 8px center;
+    }
+    .search-input:focus { outline: none; border-color: #3b82f6; background-color: #fff; box-shadow: 0 0 0 3px rgba(59,130,246,0.08); width: 240px; }
+    .search-input.has-value { background-color: #fff; border-color: #93c5fd; }
+    .card.search-hidden { display: none; }
+    .assignee-dd { position: relative; }
+    .assignee-dd-trigger {
+      padding: 5px 24px 5px 10px; border: 1px solid #e5e7eb; border-radius: 8px;
+      font-size: 13px; font-family: inherit; background: #f9fafb; color: #374151;
+      cursor: pointer; white-space: nowrap; user-select: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%239ca3af' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 8px center;
+      transition: all 0.15s;
+    }
+    .assignee-dd-trigger:hover { background-color: #f3f4f6; border-color: #d1d5db; }
+    .assignee-dd-trigger.has-value { background-color: #fff; border-color: #93c5fd; color: #1d4ed8; }
+    .assignee-dd-menu {
+      display: none; position: absolute; top: calc(100% + 4px); right: 0;
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 10px;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.1); z-index: 50;
+      min-width: 180px; max-height: 260px; overflow-y: auto; padding: 6px;
+    }
+    .assignee-dd-menu.open { display: block; }
+    .assignee-dd-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 8px; border-radius: 6px; cursor: pointer;
+      font-size: 13px; color: #374151; user-select: none;
+    }
+    .assignee-dd-item:hover { background: #f3f4f6; }
+    .assignee-dd-item input[type="checkbox"] { accent-color: #3b82f6; width: 14px; height: 14px; cursor: pointer; flex-shrink: 0; }
+    .assignee-dd-item.is-all { border-bottom: 1px solid #f0f0f0; margin-bottom: 4px; padding-bottom: 8px; font-weight: 500; }
+    .assignee-dd-divider { border: none; border-top: 1px solid #f0f0f0; margin: 4px 0; }
 
     /* Board */
     .board {
@@ -565,12 +608,37 @@
       margin-top: 6px;
     }
     .history-current .history-label { color: #1d4ed8; }
+
+    /* ── Discarded column ── */
+    .column.discarded-col { opacity: 0.7; }
+    .column.discarded-col .column-header { cursor: pointer; user-select: none; }
+    .column.discarded-col .column-header:hover { opacity: 0.85; }
+    .column.discarded-col.collapsed .column-body { display: none; }
+    .column.discarded-col .card { opacity: 0.75; }
+    .column.discarded-col .card-title { text-decoration: line-through; color: #9ca3af; }
+    .discard-toggle { font-size: 11px; color: #9ca3af; margin-left: 4px; }
+    .restore-btn {
+      display: none;
+      font-size: 10px; padding: 2px 8px; border-radius: 4px;
+      border: 1px solid #d1d5db; background: #fff; cursor: pointer;
+      color: #374151; margin-top: 4px;
+    }
+    .column.discarded-col .card:hover .restore-btn { display: inline-block; }
   </style>
 </head>
 <body>
   <div class="header">
     <h1 id="project-title">Backlog Board</h1>
     <div class="header-actions">
+      <input type="text" class="search-input" id="search-input"
+             placeholder="Search by # or title…"
+             oninput="onSearch(this.value)"
+             title="Search by position (#3) or title. Press / to focus.">
+      <div class="assignee-dd" id="assignee-dd">
+        <div class="assignee-dd-trigger" id="assignee-dd-trigger" onclick="toggleAssigneeDd()" title="Filter by assignee">Assignee</div>
+        <div class="assignee-dd-menu" id="assignee-dd-menu"></div>
+      </div>
+      <span class="user-indicator" id="user-display" title="Git user identity"></span>
       <span class="sync-indicator" id="sync-status">Synced</span>
       <button class="gear-btn" onclick="openSettings()" title="Board Settings">&#9881;</button>
       <button class="btn btn-ghost btn-sm" onclick="refreshBoard()" title="Refresh">&#x21bb;</button>
@@ -680,11 +748,13 @@
   <script>
     // ── Defaults ──
     const DEFAULT_STATUSES = [
-      { id: 'backlog',     label: 'Backlog',     color: '#94a3b8' },
-      { id: 'refined',     label: 'Refined',     color: '#f59e0b' },
-      { id: 'ready',       label: 'Ready',       color: '#10b981' },
-      { id: 'in-progress', label: 'In Progress', color: '#3b82f6' },
-      { id: 'done',        label: 'Done',        color: '#8b5cf6' }
+      { id: 'backlog',     label: 'Backlog',      color: '#94a3b8' },
+      { id: 'refined',     label: 'Refined',      color: '#f59e0b' },
+      { id: 'ready',       label: 'Ready',        color: '#10b981' },
+      { id: 'in-progress', label: 'In Progress',  color: '#3b82f6' },
+      { id: 'code-review', label: 'Code Review',  color: '#ec4899' },
+      { id: 'done',        label: 'Done',         color: '#8b5cf6' },
+      { id: 'discarded',   label: 'Discarded',    color: '#cbd5e1' }
     ];
 
     const COLOR_PALETTE = [
@@ -699,6 +769,10 @@
     let editingItemId = null;
     let draggedCard = null;
     let draggedItemId = null;
+    let currentUser = { name: 'board', email: '' };
+    let searchQuery = '';
+    let selectedAssignees = new Set(); // empty = All
+    let assigneeDdOpen = false;
 
     // Settings working copy
     let settingsLanes = [];
@@ -752,6 +826,10 @@
     // ── Gate Rule Engine ──
     function checkGate(item, targetStatusId) {
       // Returns { allowed: bool, missing: string[] (labels of missing lanes) }
+
+      // Discarding is always allowed from any lane — bypass gate rules
+      if (targetStatusId === 'discarded') return { allowed: true, missing: [] };
+
       const currentIdx = getStatusIndex(item.status || 'backlog');
       const targetIdx = getStatusIndex(targetStatusId);
 
@@ -808,7 +886,9 @@
         document.getElementById('project-title').textContent =
           name ? `${name} — Backlog` : 'Backlog Board';
         renderBoard();
+        populateAssigneeDropdown();
         setSyncStatus('Synced');
+        applyFilters();
       } catch (e) {
         console.error('Load failed:', e);
         setSyncStatus('Offline');
@@ -848,6 +928,9 @@
     }
 
     // ── Board Rendering ──
+    // Track collapsed state for discarded column across re-renders
+    let discardedCollapsed = true;
+
     function renderBoard() {
       const board = document.getElementById('board');
       board.innerHTML = '';
@@ -855,8 +938,10 @@
       statuses.forEach(statusDef => {
         const statusId = statusDef.id;
         const items = backlog.items.filter(i => i.status === statusId);
+        const isDiscarded = statusId === 'discarded';
+        const isCollapsed = isDiscarded && discardedCollapsed;
         const col = document.createElement('div');
-        col.className = 'column';
+        col.className = 'column' + (isDiscarded ? ' discarded-col' : '') + (isCollapsed ? ' collapsed' : '');
         col.dataset.status = statusId;
 
         const color = statusDef.color;
@@ -865,10 +950,15 @@
         const hasGates = statusDef.requires && statusDef.requires.length > 0;
         const gateHint = hasGates ? statusDef.requires.map(r => getStatusLabel(r)).join(', ') : '';
 
+        const toggleHint = isDiscarded
+          ? `<span class="discard-toggle">${isCollapsed ? '▶' : '▼'}</span>`
+          : '';
+
         col.innerHTML = `
-          <div class="column-header" style="border-color: ${color}; color: ${textColor};">
+          <div class="column-header" style="border-color: ${color}; color: ${textColor};"
+               ${isDiscarded ? 'onclick="toggleDiscardedColumn()"' : ''}>
             <span>
-              ${esc(statusDef.label)}
+              ${esc(statusDef.label)} ${toggleHint}
               ${hasGates ? `<span class="gate-badge" title="Requires: ${esc(gateHint)}"></span>` : ''}
             </span>
             <span class="count">${items.length}</span>
@@ -925,6 +1015,7 @@
       card.dataset.id = item.id;
       card.draggable = true;
 
+      const isDiscarded = item.status === 'discarded';
       const openQ = (item.threads || []).filter(t => !t.resolved).length;
       const taggedAgent = (item.threads || []).filter(t => t.waiting_on === 'agent').length;
       const globalIdx = backlog.items.indexOf(item);
@@ -958,6 +1049,7 @@
           <span>Created ${created}</span>
           ${updated ? `<span>Updated ${updated}</span>` : ''}
         </div>
+        ${isDiscarded ? `<button class="restore-btn" data-id="${item.id}">↩ Restore to backlog</button>` : ''}
       `;
 
       // Reorder button clicks
@@ -968,6 +1060,15 @@
           reorderItem(item.id, dir);
         });
       });
+
+      // Restore button (discarded items only)
+      const restoreBtn = card.querySelector('.restore-btn');
+      if (restoreBtn) {
+        restoreBtn.addEventListener('click', e => {
+          e.stopPropagation();
+          restoreItem(item.id);
+        });
+      }
 
       card.addEventListener('click', e => {
         if (!card.classList.contains('dragging') && !e.target.closest('.reorder-btn')) {
@@ -1078,6 +1179,7 @@
 
       saveBacklog();
       renderBoard();
+      applyFilters();
     }
 
     // ── Gate visual indicators during drag ──
@@ -1129,7 +1231,7 @@
 
       // Mark who moved it — server handles lane_history authoritatively
       if (item.status && item.status !== targetStatus) {
-        item._moved_by = 'board';
+        item._moved_by = currentUser.name;
       }
 
       // Remove from current position
@@ -1328,7 +1430,7 @@
               return;
             }
             // Mark who moved it — server handles lane_history authoritatively
-            item._moved_by = 'board';
+            item._moved_by = currentUser.name;
           }
           item.title = title;
           item.description = desc;
@@ -1356,6 +1458,8 @@
       saveBacklog();
       closeModal();
       renderBoard();
+      populateAssigneeDropdown();
+      applyFilters();
     }
 
     function deleteItem() {
@@ -1696,6 +1800,149 @@
       closeSettings();
     }
 
+    // ── Search & Filters ──
+    function onSearch(value) {
+      searchQuery = value.trim();
+      const input = document.getElementById('search-input');
+      input.classList.toggle('has-value', searchQuery.length > 0);
+      applyFilters();
+    }
+
+    function toggleAssigneeDd() {
+      assigneeDdOpen = !assigneeDdOpen;
+      document.getElementById('assignee-dd-menu').classList.toggle('open', assigneeDdOpen);
+    }
+
+    function toggleAssignee(name, isAll) {
+      if (isAll) {
+        selectedAssignees.clear();
+      } else {
+        if (selectedAssignees.has(name)) selectedAssignees.delete(name);
+        else selectedAssignees.add(name);
+      }
+      updateAssigneeTrigger();
+      renderAssigneeMenu();
+      applyFilters();
+    }
+
+    function updateAssigneeTrigger() {
+      const trigger = document.getElementById('assignee-dd-trigger');
+      const count = selectedAssignees.size;
+      if (count === 0) {
+        trigger.textContent = 'Assignee';
+        trigger.classList.remove('has-value');
+      } else if (count === 1) {
+        trigger.textContent = [...selectedAssignees][0];
+        trigger.classList.add('has-value');
+      } else {
+        trigger.textContent = `${count} assignees`;
+        trigger.classList.add('has-value');
+      }
+    }
+
+    function populateAssigneeDropdown() {
+      const assignees = [...new Set(
+        backlog.items.map(i => i.assigned_to).filter(a => a && a.trim())
+      )].sort();
+
+      // Remove any selected assignees that no longer exist
+      for (const a of [...selectedAssignees]) {
+        if (!assignees.includes(a)) selectedAssignees.delete(a);
+      }
+
+      renderAssigneeMenu();
+      updateAssigneeTrigger();
+    }
+
+    function renderAssigneeMenu() {
+      const assignees = [...new Set(
+        backlog.items.map(i => i.assigned_to).filter(a => a && a.trim())
+      )].sort();
+
+      const menu = document.getElementById('assignee-dd-menu');
+      if (assignees.length === 0) {
+        menu.innerHTML = '<div style="padding:8px 10px;font-size:12px;color:#9ca3af;">No assignments yet</div>';
+        return;
+      }
+
+      const allChecked = selectedAssignees.size === 0;
+      menu.innerHTML = `
+        <div class="assignee-dd-item is-all" onclick="toggleAssignee(null, true)">
+          <input type="checkbox" ${allChecked ? 'checked' : ''} onclick="event.stopPropagation();toggleAssignee(null,true)"> All
+        </div>
+        ${assignees.map(a => {
+          const checked = selectedAssignees.has(a);
+          return `<div class="assignee-dd-item" onclick="toggleAssignee('${esc(a)}', false)">
+            <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation();toggleAssignee('${esc(a)}',false)">
+            ${esc(a)}
+          </div>`;
+        }).join('')}
+      `;
+    }
+
+    function matchesFilters(item) {
+      if (selectedAssignees.size > 0 && !selectedAssignees.has(item.assigned_to)) return false;
+      if (!searchQuery) return true;
+      if (searchQuery.startsWith('#')) {
+        const num = parseInt(searchQuery.slice(1), 10);
+        if (!isNaN(num)) return backlog.items.indexOf(item) + 1 === num;
+      }
+      return item.title.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+
+    function applyFilters() {
+      const isFiltering = searchQuery || selectedAssignees.size > 0;
+      document.querySelectorAll('.card[data-id]').forEach(card => {
+        const item = backlog.items.find(i => i.id === card.dataset.id);
+        card.classList.toggle('search-hidden', item ? !matchesFilters(item) : false);
+      });
+      // Update column counts to reflect visible items
+      document.querySelectorAll('.column').forEach(col => {
+        const statusId = col.dataset.status;
+        const total = backlog.items.filter(i => i.status === statusId).length;
+        const visible = isFiltering
+          ? backlog.items.filter(i => i.status === statusId && matchesFilters(i)).length
+          : total;
+        const countEl = col.querySelector('.count');
+        if (countEl) countEl.textContent = isFiltering ? `${visible}/${total}` : total;
+      });
+    }
+
+    // ── Discard helpers ──
+    function toggleDiscardedColumn() {
+      discardedCollapsed = !discardedCollapsed;
+      renderBoard();
+    }
+
+    function restoreItem(itemId) {
+      const item = backlog.items.find(i => i.id === itemId);
+      if (!item) return;
+      item._moved_by = currentUser.name;
+      item.status = 'backlog';
+      item.updated_at = new Date().toISOString();
+      saveBacklog();
+      renderBoard();
+    }
+
+    // ── User identity ──
+    async function loadUser() {
+      try {
+        const res = await fetch('/api/user');
+        currentUser = await res.json();
+        const display = document.getElementById('user-display');
+        if (currentUser.name && currentUser.name !== 'unknown') {
+          display.textContent = currentUser.name;
+          display.title = currentUser.email
+            ? `Git user: ${currentUser.name} <${currentUser.email}>`
+            : `Git user: ${currentUser.name}`;
+        } else {
+          display.style.display = 'none';
+        }
+      } catch (e) {
+        document.getElementById('user-display').style.display = 'none';
+      }
+    }
+
     // ── Utils ──
     function genId() { return Math.random().toString(36).substring(2, 10); }
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
@@ -1711,13 +1958,22 @@
       const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
       const anyModalOpen = document.querySelector('.modal-overlay.active');
       if (e.key === 'n' && !isTyping && !anyModalOpen) { e.preventDefault(); openAddModal(); }
+      if (e.key === '/' && !isTyping && !anyModalOpen) { e.preventDefault(); document.getElementById('search-input').focus(); }
+      if (e.key === 'Escape' && document.activeElement === document.getElementById('search-input')) {
+        const input = document.getElementById('search-input');
+        input.value = ''; onSearch(''); input.blur();
+      }
     });
 
-    // Close requires dropdown on outside click
+    // Close dropdowns on outside click
     document.addEventListener('click', e => {
       if (openRequiresDropdown !== null && !e.target.closest('.requires-dropdown')) {
         openRequiresDropdown = null;
         renderSettingsLanes();
+      }
+      if (assigneeDdOpen && !e.target.closest('.assignee-dd')) {
+        assigneeDdOpen = false;
+        document.getElementById('assignee-dd-menu').classList.remove('open');
       }
     });
 
@@ -1725,6 +1981,7 @@
     setInterval(() => { if (!document.querySelector('.modal-overlay.active')) loadBacklog(); }, 5000);
 
     // ── Init ──
+    loadUser();
     loadBacklog();
   </script>
 </body>

@@ -21,6 +21,7 @@ API:
 import argparse
 import json
 import os
+import subprocess
 import tempfile
 import threading
 import webbrowser
@@ -34,6 +35,23 @@ ASSETS_DIR = SCRIPT_DIR.parent / "assets"
 
 # Lock to serialize writes — prevents race conditions between concurrent requests
 write_lock = threading.Lock()
+
+
+def get_git_user():
+    """Read the local git user identity. Falls back gracefully if git is unavailable."""
+    try:
+        name = subprocess.check_output(
+            ["git", "config", "user.name"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+        email = subprocess.check_output(
+            ["git", "config", "user.email"], stderr=subprocess.DEVNULL
+        ).decode().strip()
+        return {"name": name or "unknown", "email": email or ""}
+    except Exception:
+        return {"name": "unknown", "email": ""}
+
+
+GIT_USER = get_git_user()
 
 
 def read_backlog(filepath):
@@ -52,7 +70,9 @@ DEFAULT_STATUSES = [
     {"id": "refined", "label": "Refined", "color": "#f59e0b"},
     {"id": "ready", "label": "Ready", "color": "#10b981"},
     {"id": "in-progress", "label": "In Progress", "color": "#3b82f6"},
+    {"id": "code-review", "label": "Code Review", "color": "#ec4899"},
     {"id": "done", "label": "Done", "color": "#8b5cf6"},
+    {"id": "discarded", "label": "Discarded", "color": "#cbd5e1"},
 ]
 
 
@@ -109,6 +129,10 @@ def validate_lane_transition(item, new_status, statuses):
     """
     if new_status == item.get("status"):
         return True, None  # No move
+
+    # Discarding is always allowed from any lane — bypass gate rules
+    if new_status == "discarded":
+        return True, None
 
     old_idx = get_status_index(statuses, item.get("status", "backlog"))
     new_idx = get_status_index(statuses, new_status)
@@ -200,6 +224,8 @@ class BacklogHandler(BaseHTTPRequestHandler):
             params = parse_qs(parsed.query)
             agent = params.get("agent", [None])[0]
             self._serve_backlog(agent)
+        elif parsed.path == "/api/user":
+            self._serve_user()
         else:
             self.send_error(404)
 
@@ -229,6 +255,13 @@ class BacklogHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", len(content))
         self.end_headers()
         self.wfile.write(content)
+
+    def _serve_user(self):
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self._cors_headers()
+        self.end_headers()
+        self.wfile.write(json.dumps(GIT_USER).encode())
 
     def _serve_backlog(self, agent=None):
         data = read_backlog(self.backlog_file)
@@ -369,6 +402,7 @@ def main():
 
     print(f"Backlog board: {url}")
     print(f"Reading from:  {BacklogHandler.backlog_file}")
+    print(f"Git user:      {GIT_USER['name']} <{GIT_USER['email']}>")
     print("Press Ctrl+C to stop\n")
 
     webbrowser.open(url)
