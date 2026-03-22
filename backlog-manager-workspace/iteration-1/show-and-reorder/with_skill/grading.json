@@ -1,0 +1,40 @@
+{
+  "expectations": [
+    {
+      "text": "The backlog is displayed in a readable, grouped format",
+      "passed": true,
+      "evidence": "Displayed grouped by status: In Progress, Refined, New, Done — with position numbers and open-question flag"
+    },
+    {
+      "text": "All items from the fixture are shown",
+      "passed": true,
+      "evidence": "All 4 items shown: CI/CD pipeline, rate limiting, OAuth2, search performance"
+    },
+    {
+      "text": "The OAuth2 item is moved to the first position in the items array",
+      "passed": true,
+      "evidence": "backlog.json has ghi11111 (OAuth2) at index 0"
+    },
+    {
+      "text": "The updated backlog.json has OAuth2 item at index 0",
+      "passed": true,
+      "evidence": "First item in items array: {\"id\": \"ghi11111\", \"title\": \"Add OAuth2 support for the API\"}"
+    },
+    {
+      "text": "Other items maintain their relative order",
+      "passed": true,
+      "evidence": "Order after OAuth2: abc12345, def67890, jkl22222 — same relative order as original"
+    },
+    {
+      "text": "Claude confirms the reorder",
+      "passed": true,
+      "evidence": "Response: \"Got it -- I've moved Add OAuth2 support for the API to the top of the backlog\" with updated display"
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1.0
+  }
+}

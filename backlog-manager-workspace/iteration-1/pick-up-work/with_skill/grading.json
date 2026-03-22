@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Claude reads the backlog and identifies ready items",
+      "passed": true,
+      "evidence": "Read backlog and identified 2 ready items: 'Add rate limiting to API' and 'Implement email notifications'"
+    },
+    {
+      "text": "The highest-priority ready item is surfaced (Add rate limiting to API)",
+      "passed": true,
+      "evidence": "Response leads with: \"The next ready item is 'Add rate limiting to API'\""
+    },
+    {
+      "text": "Claude offers to pick it up or start working on it",
+      "passed": true,
+      "evidence": "Response: \"Should I start on this one?\""
+    },
+    {
+      "text": "Claude does not just start working without confirming with the user",
+      "passed": true,
+      "evidence": "Asked for confirmation, did not begin implementation"
+    }
+  ],
+  "summary": {
+    "passed": 4,
+    "failed": 0,
+    "total": 4,
+    "pass_rate": 1.0
+  }
+}

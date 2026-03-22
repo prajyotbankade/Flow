@@ -1,0 +1,30 @@
+{
+  "expectations": [
+    {
+      "text": "Claude reads the backlog",
+      "passed": true,
+      "evidence": "Read backlog_with_ready.json and reviewed all 5 items"
+    },
+    {
+      "text": "The highest-priority ready item is identified (Add rate limiting to API)",
+      "passed": true,
+      "evidence": "Response identifies 'Add rate limiting to API' as first ready item"
+    },
+    {
+      "text": "Claude presents the item details to the user",
+      "passed": true,
+      "evidence": "Showed description, key decisions, and full backlog table"
+    },
+    {
+      "text": "Claude suggests or offers to pick it up",
+      "passed": false,
+      "evidence": "Response says 'it is ready to be picked up for implementation' but does not explicitly offer or ask to start — it's informational rather than proactive"
+    }
+  ],
+  "summary": {
+    "passed": 3,
+    "failed": 1,
+    "total": 4,
+    "pass_rate": 0.75
+  }
+}

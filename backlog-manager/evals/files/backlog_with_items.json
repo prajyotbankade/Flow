@@ -1,0 +1,224 @@
+{
+  "version": 52,
+  "config": {
+    "scope": "project",
+    "project_name": "Job-Hunt",
+    "statuses": [
+      {
+        "id": "backlog",
+        "label": "Backlog",
+        "color": "#94a3b8"
+      },
+      {
+        "id": "ready",
+        "label": "Ready",
+        "color": "#10b981"
+      },
+      {
+        "id": "in-progress",
+        "label": "In Progress",
+        "color": "#3b82f6",
+        "requires": [
+          "ready"
+        ]
+      },
+      {
+        "id": "code-review",
+        "label": "Code Review",
+        "color": "#a9abe5",
+        "requires": [
+          "in-progress"
+        ]
+      },
+      {
+        "id": "done",
+        "label": "Done",
+        "color": "#8b5cf6",
+        "requires": [
+          "code-review"
+        ]
+      }
+    ]
+  },
+  "items": [
+    {
+      "id": "ghi11111",
+      "title": "Add OAuth2 support for the API",
+      "description": "Implement OAuth2 authentication flow",
+      "status": "backlog",
+      "assigned_to": null,
+      "lane_history": [
+        "backlog",
+        "ready",
+        "in-progress",
+        "in-progress",
+        "backlog",
+        "backlog",
+        "ready",
+        "in-progress",
+        "code-review",
+        "code-review"
+      ],
+      "threads": [],
+      "notes": "",
+      "created_at": "2026-03-18T16:00:00Z",
+      "updated_at": "2026-03-22T16:10:31.812Z",
+      "gate_from": 10
+    },
+    {
+      "id": "def67890",
+      "title": "Add rate limiting to API",
+      "description": "Implement rate limiting middleware to prevent abuse. Use token bucket algorithm.",
+      "status": "backlog",
+      "assigned_to": null,
+      "threads": [
+        {
+          "topic": "What should the default rate limit be?",
+          "resolved": true,
+          "created_at": "2026-03-16T09:00:00Z",
+          "thread": [
+            {
+              "role": "agent",
+              "message": "What should the default rate limit be?",
+              "at": "2026-03-16T09:00:00Z"
+            },
+            {
+              "role": "user",
+              "message": "100 requests per minute per user",
+              "at": "2026-03-16T11:00:00Z"
+            }
+          ]
+        }
+      ],
+      "lane_history": [],
+      "notes": "",
+      "created_at": "2026-03-15T10:30:00Z",
+      "updated_at": "2026-03-22T16:18:12.909Z"
+    },
+    {
+      "id": "9llng3hb",
+      "title": "one more item lowe priority",
+      "description": "",
+      "status": "backlog",
+      "assigned_to": null,
+      "threads": [
+        {
+          "topic": "q1",
+          "resolved": false,
+          "created_at": "2026-03-22T03:44:46.764Z",
+          "thread": [
+            {
+              "role": "user",
+              "message": "q1",
+              "at": "2026-03-22T03:44:46.764Z"
+            },
+            {
+              "role": "agent",
+              "message": "why",
+              "at": "2026-03-22T03:44:56.306Z"
+            },
+            {
+              "role": "user",
+              "message": "I think thiis is not good",
+              "at": "2026-03-22T03:53:29.606Z"
+            },
+            {
+              "role": "user",
+              "message": "why?",
+              "at": "2026-03-22T03:53:36.476Z"
+            }
+          ],
+          "waiting_on": "agent"
+        },
+        {
+          "topic": "q2",
+          "resolved": false,
+          "created_at": "2026-03-22T03:44:52.257Z",
+          "thread": [
+            {
+              "role": "user",
+              "message": "q2",
+              "at": "2026-03-22T03:44:52.257Z"
+            }
+          ]
+        }
+      ],
+      "lane_history": [],
+      "notes": "",
+      "created_at": "2026-03-22T03:44:39.848Z",
+      "updated_at": "2026-03-22T16:10:30.093Z"
+    },
+    {
+      "id": "abc12345",
+      "title": "Set up CI/CD pipeline",
+      "description": "Configure GitHub Actions for automated testing and deployment to production",
+      "status": "in-progress",
+      "assigned_to": "agent 1",
+      "lane_history": [
+        "backlog",
+        "backlog",
+        "ready",
+        {
+          "lane": "backlog",
+          "at": "2026-03-22T16:18:00.687Z",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-03-22T18:29:14.810386+00:00",
+          "by": "board"
+        }
+      ],
+      "threads": [],
+      "notes": "",
+      "created_at": "2026-03-15T10:00:00Z",
+      "updated_at": "2026-03-22T18:29:14.805Z",
+      "gate_from": 3
+    },
+    {
+      "id": "jkl22222",
+      "title": "Improve search performance",
+      "description": "Optimize database queries and add indexing for the search feature",
+      "status": "done",
+      "assigned_to": null,
+      "threads": [
+        {
+          "topic": "Which search endpoints are slowest?",
+          "resolved": true,
+          "created_at": "2026-03-17T10:00:00Z",
+          "thread": [
+            {
+              "role": "agent",
+              "message": "Which search endpoints are slowest?",
+              "at": "2026-03-17T10:00:00Z"
+            },
+            {
+              "role": "user",
+              "message": "_me",
+              "at": "2026-03-22T03:46:27.170Z"
+            }
+          ]
+        }
+      ],
+      "lane_history": [
+        "backlog",
+        "ready",
+        "ready",
+        {
+          "lane": "in-progress",
+          "at": "2026-03-22T16:18:03.270Z",
+          "by": "user"
+        },
+        "in-progress",
+        {
+          "lane": "code-review",
+          "at": "2026-03-22T18:30:13.710734+00:00",
+          "by": "board"
+        }
+      ],
+      "notes": "note 1",
+      "created_at": "2026-03-16T08:00:00Z",
+      "updated_at": "2026-03-22T18:30:13.708Z"
+    }
+  ]
+}

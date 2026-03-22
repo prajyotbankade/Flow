@@ -1,0 +1,220 @@
+{
+  "metadata": {
+    "skill_name": "backlog-manager",
+    "skill_path": "/Users/prajyotbankade/VibeCode/Job-Hunt/backlog-manager",
+    "executor_model": "claude-opus-4-6",
+    "timestamp": "2026-03-21T00:00:00Z",
+    "evals_run": [1, 2, 3, 4],
+    "runs_per_configuration": 1
+  },
+  "runs": [
+    {
+      "eval_id": 1,
+      "eval_name": "add-item",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 31.6,
+        "tokens": 28538,
+        "tool_calls": 6,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "A backlog.json file is created or updated", "passed": true, "evidence": "backlog.json created with proper structure"},
+        {"text": "The new item has status 'new'", "passed": true, "evidence": "status: new"},
+        {"text": "The item title references OAuth2 and API", "passed": true, "evidence": "Title: Add OAuth2 support for the API"},
+        {"text": "The item is appended at the end of the items array", "passed": true, "evidence": "Appended to empty array at index 0"},
+        {"text": "The item has an id, created_at, and updated_at field", "passed": true, "evidence": "All metadata fields present"},
+        {"text": "Claude confirms what was added", "passed": true, "evidence": "Confirmation message included"}
+      ]
+    },
+    {
+      "eval_id": 1,
+      "eval_name": "add-item",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 60.0,
+        "tokens": 35546,
+        "tool_calls": 18,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "A backlog.json file is created or updated", "passed": true, "evidence": "backlog.json created"},
+        {"text": "The new item has status 'new'", "passed": true, "evidence": "status: new"},
+        {"text": "The item title references OAuth2 and API", "passed": true, "evidence": "Title matches"},
+        {"text": "The item is appended at the end of the items array", "passed": true, "evidence": "Appended"},
+        {"text": "The item has an id, created_at, and updated_at field", "passed": true, "evidence": "All fields present"},
+        {"text": "Claude confirms what was added", "passed": true, "evidence": "Confirmation included"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "show-and-reorder",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 6,
+        "failed": 0,
+        "total": 6,
+        "time_seconds": 41.1,
+        "tokens": 29264,
+        "tool_calls": 5,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "The backlog is displayed in a readable, grouped format", "passed": true, "evidence": "Grouped by status with position numbers and flags"},
+        {"text": "All items from the fixture are shown", "passed": true, "evidence": "All 4 items displayed"},
+        {"text": "The OAuth2 item is moved to the first position in the items array", "passed": true, "evidence": "ghi11111 at index 0"},
+        {"text": "The updated backlog.json has OAuth2 item at index 0", "passed": true, "evidence": "Verified in output JSON"},
+        {"text": "Other items maintain their relative order", "passed": true, "evidence": "abc12345, def67890, jkl22222 in order"},
+        {"text": "Claude confirms the reorder", "passed": true, "evidence": "Confirmation with updated display"}
+      ]
+    },
+    {
+      "eval_id": 2,
+      "eval_name": "show-and-reorder",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.83,
+        "passed": 5,
+        "failed": 1,
+        "total": 6,
+        "time_seconds": 35.2,
+        "tokens": 27124,
+        "tool_calls": 5,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "The backlog is displayed in a readable, grouped format", "passed": false, "evidence": "Flat table, not grouped by status"},
+        {"text": "All items from the fixture are shown", "passed": true, "evidence": "All 4 items in table"},
+        {"text": "The OAuth2 item is moved to the first position in the items array", "passed": true, "evidence": "ghi11111 at index 0"},
+        {"text": "The updated backlog.json has OAuth2 item at index 0", "passed": true, "evidence": "Verified"},
+        {"text": "Other items maintain their relative order", "passed": true, "evidence": "Order preserved"},
+        {"text": "Claude confirms the reorder", "passed": true, "evidence": "Confirmation included"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "pick-up-work",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 29.7,
+        "tokens": 28684,
+        "tool_calls": 4,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Claude reads the backlog and identifies ready items", "passed": true, "evidence": "Identified 2 ready items"},
+        {"text": "The highest-priority ready item is surfaced (Add rate limiting to API)", "passed": true, "evidence": "Correct item surfaced"},
+        {"text": "Claude offers to pick it up or start working on it", "passed": true, "evidence": "Should I start on this one?"},
+        {"text": "Claude does not just start working without confirming with the user", "passed": true, "evidence": "Asked for confirmation"}
+      ]
+    },
+    {
+      "eval_id": 3,
+      "eval_name": "pick-up-work",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 26.6,
+        "tokens": 26384,
+        "tool_calls": 3,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Claude reads the backlog and identifies ready items", "passed": true, "evidence": "Identified 2 ready items"},
+        {"text": "The highest-priority ready item is surfaced (Add rate limiting to API)", "passed": true, "evidence": "Correct item first"},
+        {"text": "Claude offers to pick it up or start working on it", "passed": true, "evidence": "Want me to start working on it?"},
+        {"text": "Claude does not just start working without confirming with the user", "passed": true, "evidence": "Asked for confirmation"}
+      ]
+    },
+    {
+      "eval_id": 4,
+      "eval_name": "check-next",
+      "configuration": "with_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 1.0,
+        "passed": 4,
+        "failed": 0,
+        "total": 4,
+        "time_seconds": 27.5,
+        "tokens": 28784,
+        "tool_calls": 4,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Claude reads the backlog", "passed": true, "evidence": "Read and scanned all 5 items"},
+        {"text": "The highest-priority ready item is identified (Add rate limiting to API)", "passed": true, "evidence": "Correct item identified"},
+        {"text": "Claude presents the item details to the user", "passed": true, "evidence": "Full description and details included"},
+        {"text": "Claude suggests or offers to pick it up", "passed": true, "evidence": "Should I start on this one?"}
+      ]
+    },
+    {
+      "eval_id": 4,
+      "eval_name": "check-next",
+      "configuration": "without_skill",
+      "run_number": 1,
+      "result": {
+        "pass_rate": 0.75,
+        "passed": 3,
+        "failed": 1,
+        "total": 4,
+        "time_seconds": 25.4,
+        "tokens": 26367,
+        "tool_calls": 3,
+        "errors": 0
+      },
+      "expectations": [
+        {"text": "Claude reads the backlog", "passed": true, "evidence": "Read all 5 items"},
+        {"text": "The highest-priority ready item is identified (Add rate limiting to API)", "passed": true, "evidence": "Correct item identified"},
+        {"text": "Claude presents the item details to the user", "passed": true, "evidence": "Details and full table shown"},
+        {"text": "Claude suggests or offers to pick it up", "passed": false, "evidence": "Says 'ready to be picked up' but doesn't explicitly offer — informational, not proactive"}
+      ]
+    }
+  ],
+  "run_summary": {
+    "with_skill": {
+      "pass_rate": {"mean": 1.0, "stddev": 0.0, "min": 1.0, "max": 1.0},
+      "time_seconds": {"mean": 32.5, "stddev": 5.3, "min": 27.5, "max": 41.1},
+      "tokens": {"mean": 28818, "stddev": 261, "min": 28538, "max": 29264}
+    },
+    "without_skill": {
+      "pass_rate": {"mean": 0.90, "stddev": 0.11, "min": 0.75, "max": 1.0},
+      "time_seconds": {"mean": 36.8, "stddev": 14.1, "min": 25.4, "max": 60.0},
+      "tokens": {"mean": 28855, "stddev": 3789, "min": 26367, "max": 35546}
+    },
+    "delta": {
+      "pass_rate": "+0.10",
+      "time_seconds": "-4.3",
+      "tokens": "-37"
+    }
+  },
+  "notes": [
+    "Eval 1 (add-item) passes 100% in both configs — the baseline peeked at eval fixture files to infer the schema, making it non-discriminating",
+    "Eval 2 (show-and-reorder) is the clearest differentiator: skill grouped by status, baseline used flat table",
+    "Eval 4 (check-next) shows the proactive behavior difference: skill explicitly offers to start, baseline is informational",
+    "With-skill runs are more consistent (0 stddev on pass_rate) and faster on average despite baseline being simpler",
+    "Baseline eval 1 used 3x more tool calls (18 vs 6) because it had to search for schema — skill provides this knowledge upfront"
+  ]
+}

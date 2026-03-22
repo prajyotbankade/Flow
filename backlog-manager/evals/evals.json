@@ -1,0 +1,57 @@
+{
+  "skill_name": "backlog-manager",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Hey, I just thought of something — we need to add OAuth2 support for the API. Park that in the backlog for now, I'll flesh it out later.",
+      "expected_output": "Creates backlog.json with one new item titled something like 'Add OAuth2 support for the API' with status 'new', appended at the bottom",
+      "files": [],
+      "expectations": [
+        "A backlog.json file is created or updated",
+        "The new item has status 'new'",
+        "The item title references OAuth2 and API",
+        "The item is appended at the end of the items array",
+        "The item has an id, created_at, and updated_at field",
+        "Claude confirms what was added"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "Show me the backlog. Then move the OAuth item to the top — it's more urgent than I thought.",
+      "expected_output": "Displays the backlog in a readable format grouped by status, then moves the OAuth2 item to position 0 in the array",
+      "files": ["evals/files/backlog_with_items.json"],
+      "expectations": [
+        "The backlog is displayed in a readable, grouped format",
+        "All items from the fixture are shown",
+        "The OAuth2 item is moved to the first position in the items array",
+        "The updated backlog.json has OAuth2 item at index 0",
+        "Other items maintain their relative order",
+        "Claude confirms the reorder"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "I'm free now, what's next on the backlog?",
+      "expected_output": "Identifies the highest-priority ready item and offers to pick it up",
+      "files": ["evals/files/backlog_with_ready.json"],
+      "expectations": [
+        "Claude reads the backlog and identifies ready items",
+        "The highest-priority ready item is surfaced (Add rate limiting to API)",
+        "Claude offers to pick it up or start working on it",
+        "Claude does not just start working without confirming with the user"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "What is the next on the backlog?",
+      "expected_output": "Shows the next item to work on from the backlog, identifying the highest-priority ready item",
+      "files": ["evals/files/backlog_with_ready.json"],
+      "expectations": [
+        "Claude reads the backlog",
+        "The highest-priority ready item is identified (Add rate limiting to API)",
+        "Claude presents the item details to the user",
+        "Claude suggests or offers to pick it up"
+      ]
+    }
+  ]
+}

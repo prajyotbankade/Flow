@@ -1,0 +1,40 @@
+{
+  "expectations": [
+    {
+      "text": "A backlog.json file is created or updated",
+      "passed": true,
+      "evidence": "backlog.json was created in outputs/ with proper structure"
+    },
+    {
+      "text": "The new item has status 'new'",
+      "passed": true,
+      "evidence": "Item has \"status\": \"new\" in the output backlog.json"
+    },
+    {
+      "text": "The item title references OAuth2 and API",
+      "passed": true,
+      "evidence": "Title is \"Add OAuth2 support for the API\""
+    },
+    {
+      "text": "The item is appended at the end of the items array",
+      "passed": true,
+      "evidence": "Item is at index 0 (the only item, appended to empty array)"
+    },
+    {
+      "text": "The item has an id, created_at, and updated_at field",
+      "passed": true,
+      "evidence": "id: \"f7k2m9x1\", created_at: \"2026-03-21T00:00:00Z\", updated_at: \"2026-03-21T00:00:00Z\""
+    },
+    {
+      "text": "Claude confirms what was added",
+      "passed": true,
+      "evidence": "Response: \"Got it -- parked it in the backlog. I've added 'Add OAuth2 support for the API' as item #1 with status new.\""
+    }
+  ],
+  "summary": {
+    "passed": 6,
+    "failed": 0,
+    "total": 6,
+    "pass_rate": 1.0
+  }
+}

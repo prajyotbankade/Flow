@@ -1,0 +1,1731 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Backlog Board</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f0f2f5;
+      color: #1a1a2e;
+      min-height: 100vh;
+    }
+
+    /* Header */
+    .header {
+      background: #fff;
+      border-bottom: 1px solid #e0e0e0;
+      padding: 14px 24px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+    .header h1 { font-size: 18px; font-weight: 600; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .sync-indicator { font-size: 11px; color: #9ca3af; }
+
+    /* Board */
+    .board {
+      display: flex;
+      gap: 16px;
+      padding: 20px;
+      overflow-x: auto;
+      min-height: calc(100vh - 56px);
+      align-items: flex-start;
+    }
+
+    /* Columns */
+    .column {
+      background: #fff;
+      border-radius: 12px;
+      min-width: 272px;
+      max-width: 300px;
+      flex-shrink: 0;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      display: flex;
+      flex-direction: column;
+      max-height: calc(100vh - 96px);
+      transition: opacity 0.2s;
+    }
+    .column-header {
+      padding: 12px 14px;
+      font-weight: 600;
+      font-size: 13px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border-bottom: 2px solid;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-radius: 12px 12px 0 0;
+    }
+    .column-header .count {
+      background: rgba(0,0,0,0.06);
+      border-radius: 10px;
+      padding: 1px 8px;
+      font-size: 11px;
+      font-weight: 500;
+    }
+    /* Gate indicator on column header when dragging */
+    .column-header .gate-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 600;
+      display: none;
+      margin-left: 6px;
+    }
+    .column.gate-blocked .column-header .gate-badge {
+      display: inline;
+      background: #fee2e2;
+      color: #dc2626;
+    }
+    .column.gate-allowed .column-header .gate-badge {
+      display: inline;
+      background: #d1fae5;
+      color: #047857;
+    }
+    .column.gate-blocked { opacity: 0.5; }
+    .column.gate-blocked .column-body { pointer-events: none; }
+
+    .column-body {
+      padding: 8px;
+      min-height: 80px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .column-body.drag-over { background: #f0f4ff; }
+    .column.gate-blocked .column-body.drag-over { background: #fef2f2; }
+
+    /* Cards */
+    .card {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      cursor: grab;
+      transition: box-shadow 0.15s, transform 0.1s;
+      position: relative;
+    }
+    .card:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+    .card.dragging { opacity: 0.4; transform: rotate(1deg); }
+    .card-title { font-weight: 600; font-size: 13px; line-height: 1.3; margin-bottom: 2px; }
+    .card-desc {
+      font-size: 12px;
+      color: #6b7280;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+      line-height: 1.4;
+    }
+    .card-meta { display: flex; gap: 6px; margin-top: 6px; align-items: center; flex-wrap: wrap; }
+    .badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-weight: 500;
+    }
+    .badge-question { background: #fef3c7; color: #92400e; }
+    .badge-position { background: #f1f5f9; color: #64748b; }
+    .badge-agent { background: #ede9fe; color: #6d28d9; }
+    .card-dates { font-size: 10px; color: #9ca3af; margin-top: 4px; display: flex; justify-content: space-between; }
+
+    /* Reorder arrows */
+    .card-reorder {
+      position: absolute;
+      top: 4px;
+      right: 4px;
+      display: none;
+      flex-direction: column;
+      gap: 1px;
+      z-index: 2;
+    }
+    .card:hover .card-reorder { display: flex; }
+    .reorder-btn {
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 11px;
+      line-height: 1;
+      padding: 1px 4px;
+      color: #9ca3af;
+      transition: all 0.1s;
+    }
+    .reorder-btn:hover { background: #f0f4ff; color: #3b82f6; border-color: #93c5fd; }
+    .reorder-btn:disabled { opacity: 0; cursor: default; }
+
+    /* Drop indicator line */
+    .drop-line {
+      height: 3px;
+      background: #3b82f6;
+      border-radius: 2px;
+      margin: -2px 0 6px 0;
+      opacity: 0;
+      transition: opacity 0.1s;
+      pointer-events: none;
+    }
+    .drop-line.active { opacity: 1; }
+
+    /* Buttons */
+    .btn {
+      padding: 7px 14px;
+      border-radius: 8px;
+      border: none;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 0.15s;
+      font-family: inherit;
+    }
+    .btn-primary { background: #3b82f6; color: #fff; }
+    .btn-primary:hover { background: #2563eb; }
+    .btn-ghost { background: transparent; color: #6b7280; }
+    .btn-ghost:hover { background: #f3f4f6; color: #374151; }
+    .btn-danger { background: #fee2e2; color: #dc2626; }
+    .btn-danger:hover { background: #fecaca; }
+    .btn-sm { padding: 4px 10px; font-size: 12px; }
+
+    /* Modal (shared) */
+    .modal-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.4);
+      display: none;
+      justify-content: center;
+      align-items: flex-start;
+      padding-top: 48px;
+      z-index: 100;
+      backdrop-filter: blur(2px);
+    }
+    .modal-overlay.active { display: flex; }
+    .modal {
+      background: #fff;
+      border-radius: 16px;
+      width: 540px;
+      max-height: 82vh;
+      overflow-y: auto;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+      animation: modalIn 0.15s ease-out;
+    }
+    @keyframes modalIn { from { transform: translateY(-8px); opacity: 0; } }
+
+    .modal-header {
+      padding: 18px 22px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .modal-header h2 { font-size: 16px; font-weight: 600; }
+    .modal-body { padding: 14px 22px; }
+    .modal-footer {
+      padding: 14px 22px;
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px solid #f0f0f0;
+    }
+
+    /* Form */
+    .form-group { margin-bottom: 14px; }
+    .form-group label {
+      display: block;
+      font-size: 12px;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+    }
+    .form-group input,
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 8px 10px;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      font-size: 14px;
+      font-family: inherit;
+      background: #fff;
+    }
+    .form-group textarea { resize: vertical; min-height: 72px; }
+    .form-group input:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      outline: none;
+      border-color: #3b82f6;
+      box-shadow: 0 0 0 3px rgba(59,130,246,0.08);
+    }
+
+    /* Threads */
+    .threads-section { margin-top: 12px; }
+    .thread-item {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border-left: 3px solid #d1d5db;
+    }
+    .thread-item.unresolved { border-left-color: #f59e0b; }
+    .thread-item.resolved { border-left-color: #10b981; }
+    .thread-topic {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+    .thread-topic-text { font-weight: 600; font-size: 13px; color: #374151; cursor: pointer; }
+    .thread-topic-text:hover { color: #1d4ed8; }
+    .thread-actions { display: flex; gap: 4px; }
+    .thread-resolve-btn, .thread-tag-btn {
+      font-size: 10px;
+      padding: 2px 8px;
+      border-radius: 4px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      cursor: pointer;
+      color: #6b7280;
+    }
+    .thread-resolve-btn:hover, .thread-tag-btn:hover { background: #f3f4f6; }
+    .thread-resolve-btn.is-resolved { background: #d1fae5; color: #047857; border-color: #a7f3d0; }
+    .thread-tag-btn.is-tagged { background: #dbeafe; color: #1d4ed8; border-color: #93c5fd; }
+    .badge-tagged { background: #dbeafe; color: #1d4ed8; }
+    .thread-messages { margin-top: 4px; }
+    .thread-msg { font-size: 12px; padding: 3px 0; line-height: 1.4; }
+    .thread-msg .msg-role { font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: 0.3px; }
+    .thread-msg .msg-role.agent { color: #3b82f6; }
+    .thread-msg .msg-role.user { color: #8b5cf6; }
+    .thread-msg .msg-text { color: #374151; margin-left: 2px; }
+    .thread-reply-row { display: flex; gap: 6px; margin-top: 6px; }
+    .thread-reply-row input { flex: 1; padding: 4px 8px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; font-family: inherit; }
+    .thread-collapsed { display: none; }
+
+    .add-thread-row { display: flex; gap: 6px; margin-top: 8px; }
+    .add-thread-row input { flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-family: inherit; }
+
+    /* Close button */
+    .close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #9ca3af; padding: 2px 6px; border-radius: 4px; }
+    .close-btn:hover { color: #374151; background: #f3f4f6; }
+
+    /* Empty state */
+    .empty-state { text-align: center; padding: 20px 12px; color: #c0c4cc; font-size: 12px; }
+
+    /* ── Toast notification ── */
+    .toast {
+      position: fixed;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%) translateY(100px);
+      background: #1f2937;
+      color: #fff;
+      padding: 10px 20px;
+      border-radius: 10px;
+      font-size: 13px;
+      font-weight: 500;
+      z-index: 200;
+      opacity: 0;
+      transition: all 0.3s ease;
+      max-width: 480px;
+      text-align: center;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.2);
+    }
+    .toast.toast-error { background: #dc2626; }
+    .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+    /* ── Settings Modal ── */
+    .settings-lane-list { list-style: none; padding: 0; margin: 0; }
+    .settings-lane {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      margin-bottom: 6px;
+      background: #f9fafb;
+      border: 1px solid #e5e7eb;
+      border-radius: 8px;
+      transition: background 0.1s;
+    }
+    .settings-lane:hover { background: #f3f4f6; }
+    .settings-lane.drag-over-lane { background: #dbeafe; border-color: #93c5fd; }
+    .settings-lane.locked { background: #f0fdf4; border-color: #bbf7d0; }
+    .lane-drag-handle { cursor: grab; color: #9ca3af; font-size: 16px; padding: 0 2px; user-select: none; }
+    .lane-drag-handle:active { cursor: grabbing; }
+    .lane-color-swatch {
+      width: 28px; height: 28px; border-radius: 6px; border: 2px solid #e5e7eb;
+      cursor: pointer; flex-shrink: 0; position: relative; overflow: hidden;
+    }
+    .lane-color-swatch input[type="color"] {
+      position: absolute; inset: -4px; width: 36px; height: 36px; border: none; cursor: pointer; opacity: 0;
+    }
+    .lane-label-input {
+      flex: 1; padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 13px; font-family: inherit; background: #fff;
+    }
+    .lane-label-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.1); }
+    .lane-id-hint { font-size: 10px; color: #9ca3af; min-width: 80px; text-align: center; font-family: 'SF Mono', Monaco, monospace; }
+    .lane-delete-btn {
+      background: none; border: none; cursor: pointer; color: #d1d5db;
+      font-size: 16px; padding: 2px 4px; border-radius: 4px; transition: color 0.15s;
+    }
+    .lane-delete-btn:hover { color: #ef4444; background: #fef2f2; }
+    .lane-delete-btn:disabled { opacity: 0; cursor: default; }
+    .lane-lock-icon { font-size: 12px; color: #16a34a; padding: 2px 4px; min-width: 24px; text-align: center; }
+
+    /* Requires chips in settings */
+    .lane-requires-row {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 4px;
+      padding-left: 38px;
+      flex-wrap: wrap;
+    }
+    .lane-requires-label {
+      font-size: 10px;
+      color: #9ca3af;
+      text-transform: uppercase;
+      letter-spacing: 0.3px;
+      font-weight: 600;
+      margin-right: 2px;
+    }
+    .requires-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 3px;
+      padding: 1px 8px;
+      background: #fef3c7;
+      color: #92400e;
+      border-radius: 4px;
+      font-size: 10px;
+      font-weight: 500;
+    }
+    .requires-chip .chip-remove {
+      cursor: pointer;
+      font-size: 12px;
+      color: #b45309;
+      margin-left: 2px;
+    }
+    .requires-chip .chip-remove:hover { color: #dc2626; }
+    .requires-add-btn {
+      font-size: 10px;
+      padding: 1px 6px;
+      border: 1px dashed #d1d5db;
+      border-radius: 4px;
+      background: none;
+      color: #9ca3af;
+      cursor: pointer;
+    }
+    .requires-add-btn:hover { border-color: #3b82f6; color: #3b82f6; }
+
+    /* Requires dropdown */
+    .requires-dropdown {
+      position: relative;
+      display: inline-block;
+    }
+    .requires-dropdown-menu {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      background: #fff;
+      border: 1px solid #e5e7eb;
+      border-radius: 6px;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      z-index: 10;
+      min-width: 140px;
+      padding: 4px;
+      margin-top: 2px;
+    }
+    .requires-dropdown-item {
+      padding: 4px 8px;
+      font-size: 12px;
+      cursor: pointer;
+      border-radius: 4px;
+      color: #374151;
+    }
+    .requires-dropdown-item:hover { background: #f3f4f6; }
+
+    .add-lane-row { display: flex; gap: 8px; margin-top: 12px; align-items: center; }
+    .add-lane-row input { flex: 1; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; }
+    .settings-section-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
+    .settings-help { font-size: 11px; color: #9ca3af; margin-top: 4px; line-height: 1.4; }
+    .settings-project-input {
+      width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px;
+      font-size: 14px; font-family: inherit; margin-bottom: 18px;
+    }
+    .settings-project-input:focus { outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59,130,246,0.08); }
+    .settings-divider { border: none; border-top: 1px solid #f0f0f0; margin: 16px 0; }
+    .gear-btn {
+      background: none; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer;
+      font-size: 16px; padding: 3px 8px; color: #6b7280; transition: all 0.15s;
+    }
+    .gear-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+
+    /* Modal tabs */
+    .modal-tabs {
+      display: flex;
+      gap: 0;
+      padding: 12px 22px 0;
+      border-bottom: 1px solid #e5e7eb;
+    }
+    .modal-tab {
+      padding: 8px 16px;
+      font-size: 13px;
+      font-weight: 500;
+      color: #6b7280;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: all 0.15s;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+      font-family: inherit;
+    }
+    .modal-tab:hover { color: #374151; }
+    .modal-tab.active { color: #3b82f6; border-bottom-color: #3b82f6; }
+    .modal-tab-content { display: none; }
+    .modal-tab-content.active { display: block; }
+
+    /* History timeline */
+    .history-timeline {
+      padding: 8px 0;
+    }
+    .history-empty {
+      text-align: center;
+      padding: 24px 12px;
+      color: #c0c4cc;
+      font-size: 13px;
+    }
+    .history-entry {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 6px 0;
+      position: relative;
+    }
+    .history-entry:not(:last-child)::before {
+      content: '';
+      position: absolute;
+      left: 11px;
+      top: 24px;
+      bottom: -6px;
+      width: 2px;
+      background: #e5e7eb;
+    }
+    .history-dot {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 11px;
+      color: #fff;
+      font-weight: 600;
+      position: relative;
+      z-index: 1;
+    }
+    .history-body {
+      flex: 1;
+      min-width: 0;
+    }
+    .history-label {
+      font-size: 13px;
+      font-weight: 600;
+      color: #374151;
+    }
+    .history-sublabel {
+      font-size: 11px;
+      color: #9ca3af;
+      margin-top: 1px;
+    }
+    .history-reset {
+      background: #fef3c7;
+      border: 1px dashed #f59e0b;
+      border-radius: 6px;
+      padding: 4px 10px;
+      margin: 6px 0;
+      font-size: 11px;
+      color: #92400e;
+      font-weight: 500;
+    }
+    .history-current {
+      border: 2px solid #3b82f6;
+      border-radius: 8px;
+      padding: 8px 10px;
+      background: #eff6ff;
+      margin-top: 6px;
+    }
+    .history-current .history-label { color: #1d4ed8; }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1 id="project-title">Backlog Board</h1>
+    <div class="header-actions">
+      <span class="sync-indicator" id="sync-status">Synced</span>
+      <button class="gear-btn" onclick="openSettings()" title="Board Settings">&#9881;</button>
+      <button class="btn btn-ghost btn-sm" onclick="refreshBoard()" title="Refresh">&#x21bb;</button>
+      <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Item</button>
+    </div>
+  </div>
+
+  <div class="board" id="board"></div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
+
+  <!-- Item Modal -->
+  <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
+    <div class="modal" onclick="event.stopPropagation()">
+      <div class="modal-header">
+        <h2 id="modal-title">New Item</h2>
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-tabs" id="modal-tabs" style="display:none;">
+        <button class="modal-tab active" data-tab="details" onclick="switchModalTab('details')">Details</button>
+        <button class="modal-tab" data-tab="history" onclick="switchModalTab('history')">History</button>
+      </div>
+      <div class="modal-tab-content active" id="tab-details">
+        <div class="modal-body">
+          <div class="form-group">
+            <label>Title</label>
+            <input type="text" id="item-title" placeholder="What needs to be done?">
+          </div>
+          <div class="form-group">
+            <label>Description</label>
+            <textarea id="item-desc" rows="3" placeholder="Details, acceptance criteria, context..."></textarea>
+          </div>
+          <div class="form-group">
+            <label>Status</label>
+            <select id="item-status"></select>
+          </div>
+          <div class="form-group">
+            <label>Assigned To</label>
+            <input type="text" id="item-assigned" placeholder="Agent or person name (e.g., worker-1)">
+          </div>
+          <div class="form-group">
+            <label>Notes</label>
+            <textarea id="item-notes" rows="2" placeholder="Additional notes..."></textarea>
+          </div>
+          <div class="threads-section" id="threads-section">
+            <label style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.3px;">Threads</label>
+            <div id="threads-list"></div>
+            <div class="add-thread-row">
+              <input type="text" id="new-thread-topic" placeholder="Start a new thread...">
+              <button class="btn btn-ghost btn-sm" onclick="addThread()">Start</button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="modal-tab-content" id="tab-history">
+        <div class="modal-body">
+          <div id="history-content"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-danger btn-sm" id="delete-btn" onclick="deleteItem()" style="display:none;">Delete</button>
+        <div style="display:flex;gap:8px;margin-left:auto;">
+          <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveItem()">Save</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="settings-overlay" onclick="closeSettings(event)">
+    <div class="modal" onclick="event.stopPropagation()" style="width: 520px;">
+      <div class="modal-header">
+        <h2>Board Settings</h2>
+        <button class="close-btn" onclick="closeSettings()">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="settings-section-label">Project Name</div>
+        <input type="text" class="settings-project-input" id="settings-project-name" placeholder="My Project">
+
+        <hr class="settings-divider">
+
+        <div class="settings-section-label">Workflow Lanes</div>
+        <p class="settings-help" style="margin-bottom:12px;">
+          Drag to reorder. First lane is always Backlog (entry point). Last lane is your done state.
+          Use <strong>Requires</strong> to add gate rules — items must pass through required lanes before entering.
+        </p>
+
+        <ul class="settings-lane-list" id="settings-lane-list"></ul>
+
+        <div class="add-lane-row">
+          <input type="text" id="new-lane-name" placeholder="New lane name (e.g., Code Review)..."
+                 onkeydown="if(event.key==='Enter'){addLane();event.preventDefault();}">
+          <button class="btn btn-primary btn-sm" onclick="addLane()">+ Add Lane</button>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div style="display:flex;gap:8px;margin-left:auto;">
+          <button class="btn btn-ghost" onclick="closeSettings()">Cancel</button>
+          <button class="btn btn-primary" onclick="saveSettings()">Save Changes</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ── Defaults ──
+    const DEFAULT_STATUSES = [
+      { id: 'backlog',     label: 'Backlog',     color: '#94a3b8' },
+      { id: 'refined',     label: 'Refined',     color: '#f59e0b' },
+      { id: 'ready',       label: 'Ready',       color: '#10b981' },
+      { id: 'in-progress', label: 'In Progress', color: '#3b82f6' },
+      { id: 'done',        label: 'Done',        color: '#8b5cf6' }
+    ];
+
+    const COLOR_PALETTE = [
+      '#94a3b8', '#f59e0b', '#10b981', '#3b82f6', '#ec4899',
+      '#8b5cf6', '#14b8a6', '#f97316', '#06b6d4', '#ef4444',
+      '#84cc16', '#a855f7', '#f43f5e', '#0ea5e9', '#eab308'
+    ];
+
+    // ── State ──
+    let backlog = { version: 0, config: { scope: 'project', project_name: '' }, items: [] };
+    let statuses = DEFAULT_STATUSES;
+    let editingItemId = null;
+    let draggedCard = null;
+    let draggedItemId = null;
+
+    // Settings working copy
+    let settingsLanes = [];
+    let draggedLaneIdx = null;
+    let openRequiresDropdown = null; // index of lane with open dropdown
+
+    // ── Status helpers ──
+    function getStatuses() {
+      const cfg = backlog.config && backlog.config.statuses;
+      if (Array.isArray(cfg) && cfg.length >= 2) {
+        return cfg.map((s, i) => ({
+          id: s.id,
+          label: s.label || s.id,
+          color: s.color || COLOR_PALETTE[i % COLOR_PALETTE.length],
+          requires: Array.isArray(s.requires) ? s.requires : []
+        }));
+      }
+      return DEFAULT_STATUSES.map(s => ({ ...s, requires: [] }));
+    }
+
+    function darkenColor(hex) {
+      const r = parseInt(hex.slice(1, 3), 16);
+      const g = parseInt(hex.slice(3, 5), 16);
+      const b = parseInt(hex.slice(5, 7), 16);
+      const f = 0.6;
+      return `rgb(${Math.round(r * f)}, ${Math.round(g * f)}, ${Math.round(b * f)})`;
+    }
+
+    function firstStatusId() { return statuses[0].id; }
+
+    function labelToId(label) {
+      return label.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+    }
+
+    function getStatusIndex(id) {
+      return statuses.findIndex(s => s.id === id);
+    }
+
+    function getStatusLabel(id) {
+      const s = statuses.find(s => s.id === id);
+      return s ? s.label : id;
+    }
+
+    function populateStatusDropdown() {
+      const sel = document.getElementById('item-status');
+      sel.innerHTML = statuses.map(s =>
+        `<option value="${s.id}">${esc(s.label)}</option>`
+      ).join('');
+    }
+
+    // ── Gate Rule Engine ──
+    function checkGate(item, targetStatusId) {
+      // Returns { allowed: bool, missing: string[] (labels of missing lanes) }
+      const currentIdx = getStatusIndex(item.status || 'backlog');
+      const targetIdx = getStatusIndex(targetStatusId);
+
+      // Moving backward is always allowed
+      if (targetIdx <= currentIdx) return { allowed: true, missing: [] };
+
+      const targetStatus = statuses.find(s => s.id === targetStatusId);
+      if (!targetStatus || !targetStatus.requires || targetStatus.requires.length === 0) {
+        return { allowed: true, missing: [] };
+      }
+
+      const fullHistory = item.lane_history || [];
+      const gateFrom = item.gate_from || 0;
+      // Only consider history from the current journey (gate_from onward)
+      // Handle both old format (string) and new format (object with .lane)
+      const history = new Set(fullHistory.slice(gateFrom).map(e => typeof e === 'string' ? e : e.lane));
+      history.add(item.status || 'backlog'); // Current lane counts
+
+      const missing = targetStatus.requires.filter(r => !history.has(r));
+      return {
+        allowed: missing.length === 0,
+        missing: missing.map(id => getStatusLabel(id))
+      };
+    }
+
+    // Set gate_from watermark when moving backward.
+    // Full history is preserved (audit trail), but the rule engine only checks from gate_from onward.
+    function setGateWatermark(item) {
+      if (!item.lane_history) item.lane_history = [];
+      item.gate_from = item.lane_history.length;
+    }
+
+    // ── Toast ──
+    let toastTimeout = null;
+    function showToast(message, isError) {
+      const el = document.getElementById('toast');
+      el.textContent = message;
+      el.className = 'toast' + (isError ? ' toast-error' : '');
+      // Force reflow
+      void el.offsetHeight;
+      el.classList.add('show');
+      clearTimeout(toastTimeout);
+      toastTimeout = setTimeout(() => el.classList.remove('show'), 3500);
+    }
+
+    // ── API ──
+    async function loadBacklog() {
+      try {
+        const res = await fetch('/api/backlog');
+        backlog = await res.json();
+        statuses = getStatuses();
+        populateStatusDropdown();
+        const name = backlog.config.project_name;
+        document.getElementById('project-title').textContent =
+          name ? `${name} — Backlog` : 'Backlog Board';
+        renderBoard();
+        setSyncStatus('Synced');
+      } catch (e) {
+        console.error('Load failed:', e);
+        setSyncStatus('Offline');
+      }
+    }
+
+    async function saveBacklog() {
+      try {
+        setSyncStatus('Saving...');
+        const res = await fetch('/api/backlog', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(backlog, null, 2)
+        });
+        if (res.status === 409) {
+          setSyncStatus('Conflict — reloading...');
+          await loadBacklog();
+          return;
+        }
+        if (res.status === 422) {
+          const err = await res.json();
+          showToast(err.error || 'Gate rule violation', true);
+          await loadBacklog(); // Reload to reset state
+          return;
+        }
+        const result = await res.json();
+        if (result.version) backlog.version = result.version;
+        setSyncStatus('Synced');
+      } catch (e) {
+        console.error('Save failed:', e);
+        setSyncStatus('Save failed');
+      }
+    }
+
+    function setSyncStatus(text) {
+      document.getElementById('sync-status').textContent = text;
+    }
+
+    // ── Board Rendering ──
+    function renderBoard() {
+      const board = document.getElementById('board');
+      board.innerHTML = '';
+
+      statuses.forEach(statusDef => {
+        const statusId = statusDef.id;
+        const items = backlog.items.filter(i => i.status === statusId);
+        const col = document.createElement('div');
+        col.className = 'column';
+        col.dataset.status = statusId;
+
+        const color = statusDef.color;
+        const textColor = darkenColor(color);
+
+        const hasGates = statusDef.requires && statusDef.requires.length > 0;
+        const gateHint = hasGates ? statusDef.requires.map(r => getStatusLabel(r)).join(', ') : '';
+
+        col.innerHTML = `
+          <div class="column-header" style="border-color: ${color}; color: ${textColor};">
+            <span>
+              ${esc(statusDef.label)}
+              ${hasGates ? `<span class="gate-badge" title="Requires: ${esc(gateHint)}"></span>` : ''}
+            </span>
+            <span class="count">${items.length}</span>
+          </div>
+          <div class="column-body" data-status="${statusId}"></div>
+        `;
+
+        const body = col.querySelector('.column-body');
+
+        body.addEventListener('dragover', e => {
+          e.preventDefault();
+          if (col.classList.contains('gate-blocked')) {
+            e.dataTransfer.dropEffect = 'none';
+          } else {
+            e.dataTransfer.dropEffect = 'move';
+            body.classList.add('drag-over');
+          }
+        });
+        body.addEventListener('dragleave', e => {
+          if (!body.contains(e.relatedTarget)) body.classList.remove('drag-over');
+        });
+        body.addEventListener('drop', e => {
+          e.preventDefault();
+          body.classList.remove('drag-over');
+          if (col.classList.contains('gate-blocked')) return;
+          handleDrop(statusId, null);
+        });
+
+        if (items.length === 0) {
+          body.innerHTML = '<div class="empty-state">No items</div>';
+        } else {
+          items.forEach((item, idx) => {
+            // Drop indicator line before each card
+            const line = document.createElement('div');
+            line.className = 'drop-line';
+            line.dataset.beforeId = item.id;
+            body.appendChild(line);
+            body.appendChild(createCard(item, idx, items.length));
+          });
+          // One more drop line at the end
+          const endLine = document.createElement('div');
+          endLine.className = 'drop-line';
+          endLine.dataset.beforeId = '__end__';
+          body.appendChild(endLine);
+        }
+
+        board.appendChild(col);
+      });
+    }
+
+    function createCard(item, positionInColumn, totalInColumn) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.dataset.id = item.id;
+      card.draggable = true;
+
+      const openQ = (item.threads || []).filter(t => !t.resolved).length;
+      const taggedAgent = (item.threads || []).filter(t => t.waiting_on === 'agent').length;
+      const globalIdx = backlog.items.indexOf(item);
+      const isFirst = positionInColumn === 0;
+      const isLast = positionInColumn === totalInColumn - 1;
+
+      let meta = `<span class="badge badge-position">#${globalIdx + 1}</span>`;
+      if (item.assigned_to) {
+        meta += `<span class="badge badge-agent">${esc(item.assigned_to)}</span>`;
+      }
+      if (taggedAgent > 0) {
+        meta += `<span class="badge badge-tagged">@${taggedAgent}</span>`;
+      }
+      if (openQ > 0) {
+        meta += `<span class="badge badge-question">\u26a0 ${openQ}Q</span>`;
+      }
+      const dateFmt = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+      const created = new Date(item.created_at).toLocaleString('en-US', dateFmt);
+      const updated = item.updated_at && item.updated_at !== item.created_at
+        ? new Date(item.updated_at).toLocaleString('en-US', dateFmt) : null;
+
+      card.innerHTML = `
+        <div class="card-reorder">
+          <button class="reorder-btn" ${isFirst ? 'disabled' : ''} title="Move up" data-dir="up">&#9650;</button>
+          <button class="reorder-btn" ${isLast ? 'disabled' : ''} title="Move down" data-dir="down">&#9660;</button>
+        </div>
+        <div class="card-title">${esc(item.title)}</div>
+        ${item.description ? `<div class="card-desc">${esc(item.description)}</div>` : ''}
+        <div class="card-meta">${meta}</div>
+        <div class="card-dates">
+          <span>Created ${created}</span>
+          ${updated ? `<span>Updated ${updated}</span>` : ''}
+        </div>
+      `;
+
+      // Reorder button clicks
+      card.querySelectorAll('.reorder-btn').forEach(btn => {
+        btn.addEventListener('click', e => {
+          e.stopPropagation();
+          const dir = btn.dataset.dir;
+          reorderItem(item.id, dir);
+        });
+      });
+
+      card.addEventListener('click', e => {
+        if (!card.classList.contains('dragging') && !e.target.closest('.reorder-btn')) {
+          openEditModal(item.id);
+        }
+      });
+
+      card.addEventListener('dragstart', e => {
+        draggedCard = card;
+        draggedItemId = item.id;
+        card.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', item.id);
+        setTimeout(() => showGateIndicators(item), 0);
+      });
+
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        draggedCard = null;
+        draggedItemId = null;
+        clearGateIndicators();
+        clearDropLines();
+        document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+      });
+
+      card.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const col = card.closest('.column');
+        if (col && col.classList.contains('gate-blocked')) {
+          e.dataTransfer.dropEffect = 'none';
+          return;
+        }
+        e.dataTransfer.dropEffect = 'move';
+        // Show drop line above or below based on cursor position
+        const rect = card.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const body = card.closest('.column-body');
+        clearDropLines(body);
+        if (e.clientY < midY) {
+          // Show line ABOVE this card
+          const line = card.previousElementSibling;
+          if (line && line.classList.contains('drop-line')) line.classList.add('active');
+        } else {
+          // Show line BELOW this card
+          const line = card.nextElementSibling;
+          if (line && line.classList.contains('drop-line')) line.classList.add('active');
+        }
+      });
+
+      card.addEventListener('dragleave', e => {
+        const body = card.closest('.column-body');
+        if (body && !card.contains(e.relatedTarget)) {
+          clearDropLines(body);
+        }
+      });
+
+      card.addEventListener('drop', e => {
+        e.preventDefault();
+        e.stopPropagation();
+        const col = card.closest('.column');
+        if (col && col.classList.contains('gate-blocked')) return;
+        clearDropLines();
+
+        // Determine if dropping before or after based on cursor position
+        const rect = card.getBoundingClientRect();
+        const midY = rect.top + rect.height / 2;
+        const targetStatus = col.dataset.status;
+
+        if (e.clientY < midY) {
+          handleDrop(targetStatus, item.id);
+        } else {
+          // Drop after this card = before the next card in this status
+          const sameStatusItems = backlog.items.filter(i => i.status === targetStatus);
+          const thisIdx = sameStatusItems.indexOf(item);
+          const nextItem = sameStatusItems[thisIdx + 1];
+          handleDrop(targetStatus, nextItem ? nextItem.id : null);
+        }
+      });
+
+      return card;
+    }
+
+    function clearDropLines(scope) {
+      const container = scope || document;
+      container.querySelectorAll('.drop-line.active').forEach(l => l.classList.remove('active'));
+    }
+
+    function reorderItem(itemId, direction) {
+      const idx = backlog.items.findIndex(i => i.id === itemId);
+      if (idx === -1) return;
+
+      const item = backlog.items[idx];
+      const sameStatus = backlog.items.filter(i => i.status === item.status);
+      const posInStatus = sameStatus.indexOf(item);
+
+      if (direction === 'up' && posInStatus === 0) return;
+      if (direction === 'down' && posInStatus === sameStatus.length - 1) return;
+
+      // Find the swap target in the global array
+      const swapWith = direction === 'up' ? sameStatus[posInStatus - 1] : sameStatus[posInStatus + 1];
+      const swapIdx = backlog.items.indexOf(swapWith);
+
+      // Swap in the global array
+      backlog.items[idx] = swapWith;
+      backlog.items[swapIdx] = item;
+      item.updated_at = new Date().toISOString();
+
+      saveBacklog();
+      renderBoard();
+    }
+
+    // ── Gate visual indicators during drag ──
+    function showGateIndicators(item) {
+      document.querySelectorAll('.column').forEach(col => {
+        const statusId = col.dataset.status;
+        const result = checkGate(item, statusId);
+        const badge = col.querySelector('.gate-badge');
+
+        if (statusId === item.status) return; // Same column, skip
+
+        if (!result.allowed) {
+          col.classList.add('gate-blocked');
+          if (badge) {
+            badge.textContent = '\u{1F512} ' + result.missing.join(', ');
+            badge.style.display = 'inline';
+          }
+        } else {
+          col.classList.add('gate-allowed');
+          if (badge) {
+            badge.textContent = '\u2713';
+            badge.style.display = 'inline';
+          }
+        }
+      });
+    }
+
+    function clearGateIndicators() {
+      document.querySelectorAll('.column').forEach(col => {
+        col.classList.remove('gate-blocked', 'gate-allowed');
+        const badge = col.querySelector('.gate-badge');
+        if (badge) badge.style.display = 'none';
+      });
+    }
+
+    function handleDrop(targetStatus, beforeItemId) {
+      if (!draggedItemId) return;
+
+      const item = backlog.items.find(i => i.id === draggedItemId);
+      if (!item) return;
+
+      // Client-side gate check
+      const gateResult = checkGate(item, targetStatus);
+      if (!gateResult.allowed) {
+        showToast(`Blocked: requires ${gateResult.missing.join(', ')} first`, true);
+        clearGateIndicators();
+        return;
+      }
+
+      // Mark who moved it — server handles lane_history authoritatively
+      if (item.status && item.status !== targetStatus) {
+        item._moved_by = 'board';
+      }
+
+      // Remove from current position
+      backlog.items = backlog.items.filter(i => i.id !== draggedItemId);
+
+      // Update status
+      item.status = targetStatus;
+      item.updated_at = new Date().toISOString();
+
+      if (beforeItemId) {
+        const targetIdx = backlog.items.findIndex(i => i.id === beforeItemId);
+        if (targetIdx >= 0) backlog.items.splice(targetIdx, 0, item);
+        else backlog.items.push(item);
+      } else {
+        let insertIdx = -1;
+        for (let i = backlog.items.length - 1; i >= 0; i--) {
+          if (backlog.items[i].status === targetStatus) { insertIdx = i + 1; break; }
+        }
+        if (insertIdx === -1) backlog.items.push(item);
+        else backlog.items.splice(insertIdx, 0, item);
+      }
+
+      saveBacklog();
+      renderBoard();
+    }
+
+    // ── Item Modal ──
+    function openAddModal() {
+      editingItemId = null;
+      document.getElementById('modal-title').textContent = 'New Item';
+      document.getElementById('item-title').value = '';
+      document.getElementById('item-desc').value = '';
+      document.getElementById('item-status').value = firstStatusId();
+      document.getElementById('item-assigned').value = '';
+      document.getElementById('item-notes').value = '';
+      document.getElementById('threads-list').innerHTML = '';
+      document.getElementById('new-thread-topic').value = '';
+      document.getElementById('delete-btn').style.display = 'none';
+      // Hide tabs for new items
+      document.getElementById('modal-tabs').style.display = 'none';
+      switchModalTab('details');
+      document.getElementById('modal-overlay').classList.add('active');
+      setTimeout(() => document.getElementById('item-title').focus(), 50);
+    }
+
+    function openEditModal(id) {
+      const item = backlog.items.find(i => i.id === id);
+      if (!item) return;
+
+      editingItemId = id;
+      document.getElementById('modal-title').textContent = 'Edit Item';
+      document.getElementById('item-title').value = item.title;
+      document.getElementById('item-desc').value = item.description || '';
+      document.getElementById('item-status').value = item.status;
+      document.getElementById('item-assigned').value = item.assigned_to || '';
+      document.getElementById('item-notes').value = item.notes || '';
+      document.getElementById('new-thread-topic').value = '';
+      document.getElementById('delete-btn').style.display = 'block';
+
+      // Show tabs for existing items
+      document.getElementById('modal-tabs').style.display = 'flex';
+      switchModalTab('details');
+      renderThreads(item.threads || []);
+      renderHistory(item);
+      document.getElementById('modal-overlay').classList.add('active');
+    }
+
+    function switchModalTab(tabName) {
+      document.querySelectorAll('.modal-tab').forEach(t => {
+        t.classList.toggle('active', t.dataset.tab === tabName);
+      });
+      document.querySelectorAll('.modal-tab-content').forEach(c => {
+        c.classList.toggle('active', c.id === `tab-${tabName}`);
+      });
+    }
+
+    function renderHistory(item) {
+      const container = document.getElementById('history-content');
+      const history = item.lane_history || [];
+      const gateFrom = item.gate_from || 0;
+      const histTimeFmt = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+
+      // Helper: extract lane id from old (string) or new (object) format
+      function entryLane(e) { return typeof e === 'string' ? e : e.lane; }
+      function entryAt(e) { return typeof e === 'object' && e.at ? new Date(e.at).toLocaleString('en-US', histTimeFmt) : null; }
+      function entryBy(e) { return typeof e === 'object' && e.by ? e.by : null; }
+
+      if (history.length === 0) {
+        const createdAt = item.created_at ? new Date(item.created_at).toLocaleString('en-US', histTimeFmt) : '';
+        container.innerHTML = `
+          <div class="history-empty">
+            No lane movement yet — item is still in its first lane.
+          </div>
+          <div class="history-current">
+            <div class="history-entry" style="padding:0;">
+              <div class="history-dot" style="background:${getStatusColor(item.status)};">&#9679;</div>
+              <div class="history-body">
+                <div class="history-label">${esc(getStatusLabel(item.status))}</div>
+                <div class="history-sublabel">Current lane${createdAt ? ` &middot; since ${createdAt}` : ''}</div>
+              </div>
+            </div>
+          </div>
+        `;
+        return;
+      }
+
+      let html = '<div class="history-timeline">';
+
+      history.forEach((entry, i) => {
+        const laneId = entryLane(entry);
+        const at = entryAt(entry);
+        const by = entryBy(entry);
+        const color = getStatusColor(laneId);
+        const label = getStatusLabel(laneId);
+        const isBeforeGate = i < gateFrom;
+        const stepNum = i + 1;
+
+        // Show reset marker at the gate_from boundary
+        if (i === gateFrom && gateFrom > 0) {
+          html += `<div class="history-reset">&#8635; Moved backward — gates reset from here</div>`;
+        }
+
+        // Build sublabel with time + who
+        let sublabel = '';
+        if (at || by) {
+          const parts = [];
+          if (at) parts.push(at);
+          if (by) parts.push(`by ${esc(by)}`);
+          sublabel = parts.join(' &middot; ');
+        }
+
+        html += `
+          <div class="history-entry" ${isBeforeGate ? 'style="opacity:0.45;"' : ''}>
+            <div class="history-dot" style="background:${color};">${stepNum}</div>
+            <div class="history-body">
+              <div class="history-label">${esc(label)}${isBeforeGate ? ' <span style="font-size:10px;color:#9ca3af;font-weight:400;">(prior journey)</span>' : ''}</div>
+              ${sublabel ? `<div class="history-sublabel">${sublabel}</div>` : ''}
+            </div>
+          </div>
+        `;
+      });
+
+      // Current status
+      const lastEntry = history[history.length - 1];
+      const lastAt = entryAt(lastEntry);
+      const lastBy = entryBy(lastEntry);
+      let currentSub = 'Current lane';
+      if (lastAt) currentSub += ` &middot; moved here ${lastAt}`;
+      if (lastBy) currentSub += ` by ${esc(lastBy)}`;
+
+      html += `</div>`;
+      html += `
+        <div class="history-current">
+          <div class="history-entry" style="padding:0;">
+            <div class="history-dot" style="background:${getStatusColor(item.status)};">${history.length + 1}</div>
+            <div class="history-body">
+              <div class="history-label">${esc(getStatusLabel(item.status))}</div>
+              <div class="history-sublabel">${currentSub}</div>
+            </div>
+          </div>
+        </div>
+      `;
+
+      container.innerHTML = html;
+    }
+
+    function getStatusColor(id) {
+      const s = statuses.find(s => s.id === id);
+      return s ? s.color : '#94a3b8';
+    }
+
+    function closeModal(e) {
+      if (e && e.target !== document.getElementById('modal-overlay')) return;
+      document.getElementById('modal-overlay').classList.remove('active');
+      editingItemId = null;
+    }
+
+    function saveItem() {
+      const title = document.getElementById('item-title').value.trim();
+      if (!title) { document.getElementById('item-title').focus(); return; }
+
+      const now = new Date().toISOString();
+      const desc = document.getElementById('item-desc').value.trim();
+      const status = document.getElementById('item-status').value;
+      const assignedTo = document.getElementById('item-assigned').value.trim() || null;
+      const notes = document.getElementById('item-notes').value.trim();
+
+      if (editingItemId) {
+        const item = backlog.items.find(i => i.id === editingItemId);
+        if (item) {
+          // Gate check if status is changing
+          if (status !== item.status) {
+            const gateResult = checkGate(item, status);
+            if (!gateResult.allowed) {
+              showToast(`Blocked: requires ${gateResult.missing.join(', ')} first`, true);
+              return;
+            }
+            // Mark who moved it — server handles lane_history authoritatively
+            item._moved_by = 'board';
+          }
+          item.title = title;
+          item.description = desc;
+          item.status = status;
+          item.assigned_to = assignedTo;
+          item.notes = notes;
+          item.updated_at = now;
+        }
+      } else {
+        backlog.items.push({
+          id: genId(),
+          title,
+          description: desc,
+          status,
+          assigned_to: assignedTo,
+          lane_history: [],
+          gate_from: 0,
+          threads: [],
+          notes,
+          created_at: now,
+          updated_at: now
+        });
+      }
+
+      saveBacklog();
+      closeModal();
+      renderBoard();
+    }
+
+    function deleteItem() {
+      if (!editingItemId || !confirm('Delete this item?')) return;
+      backlog.items = backlog.items.filter(i => i.id !== editingItemId);
+      saveBacklog();
+      closeModal();
+      renderBoard();
+    }
+
+    // ── Threads ──
+    function renderThreads(threads) {
+      const list = document.getElementById('threads-list');
+      list.innerHTML = threads.map((t, i) => {
+        const resolved = t.resolved;
+        const msgs = (t.thread || []).map(m => `
+          <div class="thread-msg">
+            <span class="msg-role ${m.role}">${m.role}:</span>
+            <span class="msg-text">${esc(m.message)}</span>
+          </div>
+        `).join('');
+        const tagged = t.waiting_on === 'agent';
+        return `
+          <div class="thread-item ${resolved ? 'resolved' : 'unresolved'}">
+            <div class="thread-topic">
+              <span class="thread-topic-text" onclick="toggleThread(${i})">${esc(t.topic)}</span>
+              <div class="thread-actions">
+                ${!resolved ? `<button class="thread-tag-btn ${tagged ? 'is-tagged' : ''}"
+                        onclick="toggleTag(${i})">
+                  ${tagged ? '@Agent' : '@ Tag'}
+                </button>` : ''}
+                <button class="thread-resolve-btn ${resolved ? 'is-resolved' : ''}"
+                        onclick="toggleResolve(${i})">
+                  ${resolved ? 'Resolved' : 'Resolve'}
+                </button>
+              </div>
+            </div>
+            <div class="thread-messages" id="thread-msgs-${i}">
+              ${msgs}
+              ${!resolved ? `
+                <div class="thread-reply-row">
+                  <input type="text" placeholder="Reply..." onkeydown="if(event.key==='Enter')replyToThread(${i},this.value,this)">
+                  <button class="btn btn-ghost btn-sm" onclick="replyToThread(${i},this.previousElementSibling.value,this.previousElementSibling)">Reply</button>
+                </div>
+              ` : ''}
+            </div>
+          </div>
+        `;
+      }).join('');
+    }
+
+    function toggleThread(index) {
+      const msgs = document.getElementById(`thread-msgs-${index}`);
+      if (msgs) msgs.classList.toggle('thread-collapsed');
+    }
+
+    function addThread() {
+      const input = document.getElementById('new-thread-topic');
+      const topic = input.value.trim();
+      if (!topic || !editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item) return;
+      if (!item.threads) item.threads = [];
+      const now = new Date().toISOString();
+      item.threads.push({ topic, resolved: false, waiting_on: null, created_at: now, thread: [{ role: 'user', message: topic, at: now }] });
+      input.value = '';
+      renderThreads(item.threads);
+      saveBacklog();
+    }
+
+    function replyToThread(threadIndex, message, inputEl) {
+      if (!message || !message.trim() || !editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item || !item.threads || !item.threads[threadIndex]) return;
+      item.threads[threadIndex].thread.push({ role: 'user', message: message.trim(), at: new Date().toISOString() });
+      item.updated_at = new Date().toISOString();
+      renderThreads(item.threads);
+      saveBacklog();
+    }
+
+    function toggleResolve(threadIndex) {
+      if (!editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item || !item.threads || !item.threads[threadIndex]) return;
+      item.threads[threadIndex].resolved = !item.threads[threadIndex].resolved;
+      if (item.threads[threadIndex].resolved) item.threads[threadIndex].waiting_on = null;
+      item.updated_at = new Date().toISOString();
+      renderThreads(item.threads);
+      saveBacklog();
+    }
+
+    function toggleTag(threadIndex) {
+      if (!editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item || !item.threads || !item.threads[threadIndex]) return;
+      const current = item.threads[threadIndex].waiting_on;
+      item.threads[threadIndex].waiting_on = current === 'agent' ? null : 'agent';
+      item.updated_at = new Date().toISOString();
+      renderThreads(item.threads);
+      saveBacklog();
+    }
+
+    // ═══════════════════════════════════════════════
+    // ── Settings Panel ──
+    // ═══════════════════════════════════════════════
+
+    function openSettings() {
+      settingsLanes = statuses.map(s => ({ ...s, requires: [...(s.requires || [])] }));
+      document.getElementById('settings-project-name').value = backlog.config.project_name || '';
+      renderSettingsLanes();
+      document.getElementById('settings-overlay').classList.add('active');
+    }
+
+    function closeSettings(e) {
+      if (e && e.target !== document.getElementById('settings-overlay')) return;
+      document.getElementById('settings-overlay').classList.remove('active');
+      openRequiresDropdown = null;
+    }
+
+    function renderSettingsLanes() {
+      const list = document.getElementById('settings-lane-list');
+      list.innerHTML = settingsLanes.map((lane, i) => {
+        const isFirst = i === 0;
+        const requires = lane.requires || [];
+        const availableForRequires = settingsLanes.filter((l, j) => j !== i && j !== 0 && !requires.includes(l.id));
+
+        // Requires chips HTML
+        const chipsHtml = requires.map(reqId => {
+          const reqLane = settingsLanes.find(l => l.id === reqId);
+          const label = reqLane ? reqLane.label : reqId;
+          return `<span class="requires-chip">${esc(label)}<span class="chip-remove" onclick="removeRequires(${i}, '${reqId}')">&times;</span></span>`;
+        }).join('');
+
+        return `
+          <li>
+            <div class="settings-lane ${isFirst ? 'locked' : ''}"
+                draggable="${isFirst ? 'false' : 'true'}"
+                data-lane-idx="${i}"
+                ondragstart="onLaneDragStart(event, ${i})"
+                ondragover="onLaneDragOver(event, ${i})"
+                ondragleave="onLaneDragLeave(event)"
+                ondrop="onLaneDrop(event, ${i})"
+                ondragend="onLaneDragEnd()">
+              ${isFirst
+                ? `<span class="lane-lock-icon" title="Entry point — always first">&#128274;</span>`
+                : `<span class="lane-drag-handle" title="Drag to reorder">&#9776;</span>`
+              }
+              <div class="lane-color-swatch" style="background: ${lane.color};" title="Click to change color">
+                <input type="color" value="${lane.color}"
+                       onchange="updateLaneColor(${i}, this.value)"
+                       oninput="this.parentElement.style.background = this.value">
+              </div>
+              <input type="text" class="lane-label-input" value="${esc(lane.label)}"
+                     ${isFirst ? 'disabled' : ''}
+                     onchange="updateLaneLabel(${i}, this.value)"
+                     placeholder="Lane name...">
+              <span class="lane-id-hint">${lane.id}</span>
+              ${isFirst
+                ? `<span class="lane-lock-icon"></span>`
+                : `<button class="lane-delete-btn" onclick="deleteLane(${i})" title="Remove lane">&times;</button>`
+              }
+            </div>
+            ${!isFirst ? `
+              <div class="lane-requires-row">
+                <span class="lane-requires-label">Requires:</span>
+                ${chipsHtml || '<span style="font-size:10px;color:#d1d5db;">none</span>'}
+                ${availableForRequires.length > 0 ? `
+                  <div class="requires-dropdown" id="requires-dd-${i}">
+                    <button class="requires-add-btn" onclick="toggleRequiresDropdown(${i})">+ gate</button>
+                    ${openRequiresDropdown === i ? `
+                      <div class="requires-dropdown-menu">
+                        ${availableForRequires.map(l => `
+                          <div class="requires-dropdown-item" onclick="addRequires(${i}, '${l.id}')">${esc(l.label)}</div>
+                        `).join('')}
+                      </div>
+                    ` : ''}
+                  </div>
+                ` : ''}
+              </div>
+            ` : ''}
+          </li>
+        `;
+      }).join('');
+    }
+
+    function toggleRequiresDropdown(idx) {
+      openRequiresDropdown = openRequiresDropdown === idx ? null : idx;
+      renderSettingsLanes();
+    }
+
+    function addRequires(laneIdx, requiredId) {
+      if (!settingsLanes[laneIdx].requires) settingsLanes[laneIdx].requires = [];
+      if (!settingsLanes[laneIdx].requires.includes(requiredId)) {
+        settingsLanes[laneIdx].requires.push(requiredId);
+      }
+      openRequiresDropdown = null;
+      renderSettingsLanes();
+    }
+
+    function removeRequires(laneIdx, requiredId) {
+      if (!settingsLanes[laneIdx].requires) return;
+      settingsLanes[laneIdx].requires = settingsLanes[laneIdx].requires.filter(r => r !== requiredId);
+      renderSettingsLanes();
+    }
+
+    function updateLaneColor(idx, color) {
+      settingsLanes[idx].color = color;
+    }
+
+    function updateLaneLabel(idx, label) {
+      const oldId = settingsLanes[idx].id;
+      const newId = labelToId(label);
+      settingsLanes[idx].label = label;
+      settingsLanes[idx].id = newId;
+      // Update any requires references to the old id
+      settingsLanes.forEach(lane => {
+        if (lane.requires) {
+          lane.requires = lane.requires.map(r => r === oldId ? newId : r);
+        }
+      });
+      renderSettingsLanes();
+    }
+
+    function deleteLane(idx) {
+      if (idx === 0) return;
+      const lane = settingsLanes[idx];
+      const itemCount = backlog.items.filter(i => i.status === lane.id).length;
+      if (itemCount > 0) {
+        if (!confirm(`"${lane.label}" has ${itemCount} item(s). They'll be moved to Backlog. Continue?`)) return;
+      }
+      // Remove this lane from any requires lists
+      const removedId = lane.id;
+      settingsLanes.splice(idx, 1);
+      settingsLanes.forEach(l => {
+        if (l.requires) l.requires = l.requires.filter(r => r !== removedId);
+      });
+      renderSettingsLanes();
+    }
+
+    function addLane() {
+      const input = document.getElementById('new-lane-name');
+      const name = input.value.trim();
+      if (!name) { input.focus(); return; }
+      const id = labelToId(name);
+      if (settingsLanes.some(l => l.id === id)) { alert(`A lane with ID "${id}" already exists.`); return; }
+      const colorIdx = settingsLanes.length % COLOR_PALETTE.length;
+      settingsLanes.push({ id, label: name, color: COLOR_PALETTE[colorIdx], requires: [] });
+      input.value = '';
+      renderSettingsLanes();
+    }
+
+    // ── Lane drag-and-drop reordering ──
+    function onLaneDragStart(e, idx) {
+      if (idx === 0) { e.preventDefault(); return; }
+      draggedLaneIdx = idx;
+      e.dataTransfer.effectAllowed = 'move';
+      e.target.style.opacity = '0.4';
+    }
+
+    function onLaneDragOver(e, idx) {
+      e.preventDefault();
+      if (idx === 0 || draggedLaneIdx === null) return;
+      e.dataTransfer.dropEffect = 'move';
+      const el = e.currentTarget;
+      el.classList.add('drag-over-lane');
+    }
+
+    function onLaneDragLeave(e) { e.currentTarget.classList.remove('drag-over-lane'); }
+
+    function onLaneDrop(e, targetIdx) {
+      e.preventDefault();
+      e.currentTarget.classList.remove('drag-over-lane');
+      if (targetIdx === 0 || draggedLaneIdx === null || draggedLaneIdx === targetIdx) return;
+      const [moved] = settingsLanes.splice(draggedLaneIdx, 1);
+      settingsLanes.splice(targetIdx, 0, moved);
+      draggedLaneIdx = null;
+      renderSettingsLanes();
+    }
+
+    function onLaneDragEnd() {
+      draggedLaneIdx = null;
+      document.querySelectorAll('.settings-lane').forEach(el => {
+        el.style.opacity = '1';
+        el.classList.remove('drag-over-lane');
+      });
+    }
+
+    function saveSettings() {
+      if (settingsLanes.length < 2) { alert('You need at least 2 lanes.'); return; }
+      for (const lane of settingsLanes) {
+        if (!lane.label.trim() || !lane.id.trim()) { alert('All lanes must have a name.'); return; }
+      }
+      const ids = settingsLanes.map(l => l.id);
+      const dupes = ids.filter((id, i) => ids.indexOf(id) !== i);
+      if (dupes.length > 0) { alert(`Duplicate lane IDs: ${dupes.join(', ')}`); return; }
+
+      // Validate requires references exist
+      const idSet = new Set(ids);
+      for (const lane of settingsLanes) {
+        if (lane.requires) {
+          const invalid = lane.requires.filter(r => !idSet.has(r));
+          if (invalid.length > 0) {
+            alert(`Lane "${lane.label}" requires non-existent lane(s): ${invalid.join(', ')}`);
+            return;
+          }
+        }
+      }
+
+      // Move orphaned items to backlog
+      const newIds = new Set(ids);
+      const removedStatuses = statuses.filter(s => !newIds.has(s.id)).map(s => s.id);
+      if (removedStatuses.length > 0) {
+        for (const item of backlog.items) {
+          if (removedStatuses.includes(item.status)) {
+            item.status = 'backlog';
+            item.updated_at = new Date().toISOString();
+          }
+        }
+      }
+
+      // Apply
+      backlog.config.project_name = document.getElementById('settings-project-name').value.trim();
+      backlog.config.statuses = settingsLanes.map(l => {
+        const s = { id: l.id, label: l.label, color: l.color };
+        if (l.requires && l.requires.length > 0) s.requires = l.requires;
+        return s;
+      });
+
+      statuses = getStatuses();
+      populateStatusDropdown();
+
+      const name = backlog.config.project_name;
+      document.getElementById('project-title').textContent =
+        name ? `${name} — Backlog` : 'Backlog Board';
+
+      saveBacklog();
+      renderBoard();
+      closeSettings();
+    }
+
+    // ── Utils ──
+    function genId() { return Math.random().toString(36).substring(2, 10); }
+    function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+    function refreshBoard() { loadBacklog(); }
+
+    // ── Keyboard shortcuts ──
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        if (document.getElementById('settings-overlay').classList.contains('active')) closeSettings();
+        else { document.getElementById('modal-overlay').classList.remove('active'); editingItemId = null; }
+      }
+      const active = document.activeElement;
+      const isTyping = ['INPUT', 'TEXTAREA', 'SELECT'].includes(active.tagName);
+      const anyModalOpen = document.querySelector('.modal-overlay.active');
+      if (e.key === 'n' && !isTyping && !anyModalOpen) { e.preventDefault(); openAddModal(); }
+    });
+
+    // Close requires dropdown on outside click
+    document.addEventListener('click', e => {
+      if (openRequiresDropdown !== null && !e.target.closest('.requires-dropdown')) {
+        openRequiresDropdown = null;
+        renderSettingsLanes();
+      }
+    });
+
+    // ── Auto-refresh ──
+    setInterval(() => { if (!document.querySelector('.modal-overlay.active')) loadBacklog(); }, 5000);
+
+    // ── Init ──
+    loadBacklog();
+  </script>
+</body>
+</html>

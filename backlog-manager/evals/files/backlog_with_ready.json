@@ -1,0 +1,117 @@
+{
+  "version": 5,
+  "config": {
+    "scope": "project",
+    "project_name": "Job-Hunt",
+    "statuses": [
+      { "id": "backlog", "label": "Backlog", "color": "#94a3b8" },
+      { "id": "refined", "label": "Refined", "color": "#f59e0b" },
+      { "id": "ready", "label": "Ready", "color": "#10b981" },
+      { "id": "in-progress", "label": "In Progress", "color": "#3b82f6" },
+      { "id": "done", "label": "Done", "color": "#8b5cf6" }
+    ]
+  },
+  "items": [
+    {
+      "id": "abc12345",
+      "title": "Set up CI/CD pipeline",
+      "description": "Configure GitHub Actions for automated testing and deployment to production",
+      "status": "done",
+      "assigned_to": null,
+      "lane_history": ["backlog", "refined", "ready", "in-progress"],
+      "threads": [],
+      "notes": "Completed — using GitHub Actions with staging and prod environments",
+      "created_at": "2026-03-10T10:00:00Z",
+      "updated_at": "2026-03-14T16:00:00Z"
+    },
+    {
+      "id": "def67890",
+      "title": "Add rate limiting to API",
+      "description": "Implement rate limiting middleware to prevent abuse. Use token bucket algorithm. 100 requests per minute per user.",
+      "status": "ready",
+      "assigned_to": null,
+      "lane_history": ["backlog", "refined"],
+      "threads": [
+        {
+          "topic": "What should the default rate limit be?",
+          "resolved": true,
+          "created_at": "2026-03-12T09:00:00Z",
+          "thread": [
+            { "role": "agent", "message": "What should the default rate limit be?", "at": "2026-03-12T09:00:00Z" },
+            { "role": "user", "message": "100 requests per minute per user", "at": "2026-03-12T11:00:00Z" }
+          ]
+        },
+        {
+          "topic": "Should we use Redis for the rate limit store?",
+          "resolved": true,
+          "created_at": "2026-03-12T14:00:00Z",
+          "thread": [
+            { "role": "agent", "message": "Should we use Redis for the rate limit store?", "at": "2026-03-12T14:00:00Z" },
+            { "role": "user", "message": "Yes, use Redis with a fallback to in-memory for local dev", "at": "2026-03-12T15:30:00Z" },
+            { "role": "agent", "message": "Got it — Redis primary, in-memory fallback. Any specific Redis library preference?", "at": "2026-03-12T15:35:00Z" },
+            { "role": "user", "message": "ioredis", "at": "2026-03-12T15:40:00Z" }
+          ]
+        }
+      ],
+      "notes": "",
+      "created_at": "2026-03-11T10:30:00Z",
+      "updated_at": "2026-03-15T09:00:00Z"
+    },
+    {
+      "id": "ghi11111",
+      "title": "Implement email notifications",
+      "description": "Send email notifications when application status changes. Use SendGrid API.",
+      "status": "ready",
+      "assigned_to": null,
+      "lane_history": ["backlog", "refined"],
+      "threads": [
+        {
+          "topic": "Which events should trigger emails?",
+          "resolved": true,
+          "created_at": "2026-03-13T10:00:00Z",
+          "thread": [
+            { "role": "agent", "message": "Which events should trigger emails?", "at": "2026-03-13T10:00:00Z" },
+            { "role": "user", "message": "Application received, interview scheduled, offer received, rejection", "at": "2026-03-13T12:00:00Z" }
+          ]
+        }
+      ],
+      "notes": "",
+      "created_at": "2026-03-12T08:00:00Z",
+      "updated_at": "2026-03-15T09:00:00Z"
+    },
+    {
+      "id": "jkl22222",
+      "title": "Add OAuth2 support for the API",
+      "description": "Implement OAuth2 authentication flow for third-party integrations",
+      "status": "refined",
+      "assigned_to": null,
+      "lane_history": ["backlog"],
+      "threads": [
+        {
+          "topic": "Which OAuth2 providers should we support?",
+          "resolved": true,
+          "created_at": "2026-03-14T09:00:00Z",
+          "thread": [
+            { "role": "agent", "message": "Which OAuth2 providers should we support?", "at": "2026-03-14T09:00:00Z" },
+            { "role": "user", "message": "Google and GitHub to start", "at": "2026-03-14T10:00:00Z" }
+          ]
+        }
+      ],
+      "notes": "",
+      "created_at": "2026-03-13T16:00:00Z",
+      "updated_at": "2026-03-14T10:00:00Z"
+    },
+    {
+      "id": "mno33333",
+      "title": "Dark mode toggle",
+      "description": "Add a dark mode toggle to the settings page",
+      "status": "backlog",
+      "assigned_to": null,
+      "lane_history": [],
+      "threads": [],
+      "notes": "",
+      "created_at": "2026-03-15T11:00:00Z",
+      "updated_at": "2026-03-15T11:00:00Z"
+    }
+  ]
+}
