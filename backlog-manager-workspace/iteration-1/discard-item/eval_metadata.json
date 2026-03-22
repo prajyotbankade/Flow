@@ -1,0 +1,19 @@
+{
+  "eval_id": 5,
+  "eval_name": "discard-item",
+  "prompt": "We're not doing the auth migration anymore — drop it.",
+  "fixture": {
+    "description": "Backlog with one item in 'in-progress' status (auth-migration) and one in 'ready'",
+    "items": [
+      { "id": "auth0001", "title": "Auth migration", "status": "in-progress" },
+      { "id": "rate0001", "title": "Add rate limiting", "status": "ready" }
+    ]
+  },
+  "assertions": [
+    "The auth migration item's status is set to 'discarded'",
+    "No gate rule check is performed — discard is allowed from any lane",
+    "The item remains in backlog.json (not deleted)",
+    "Claude confirms the item was discarded",
+    "The remaining ready item is unaffected"
+  ]
+}

@@ -4,7 +4,7 @@
   "prompt": "Hey, I just thought of something — we need to add OAuth2 support for the API. Park that in the backlog for now, I'll flesh it out later.",
   "assertions": [
     "A backlog.json file is created or updated",
-    "The new item has status 'new'",
+    "The new item has status 'backlog'",
     "The item title references OAuth2 and API",
     "The item is appended at the end of the items array",
     "The item has an id, created_at, and updated_at field",

@@ -19,15 +19,20 @@
       border-bottom: 1px solid #e0e0e0;
       padding: 14px 24px;
       display: flex;
-      justify-content: space-between;
       align-items: center;
+      gap: 16px;
       position: sticky;
       top: 0;
       z-index: 10;
     }
     .header h1 { font-size: 18px; font-weight: 600; }
-    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .header-left { display: flex; gap: 8px; align-items: center; }
+    .header-right { display: flex; gap: 8px; align-items: center; margin-left: auto; }
     .sync-indicator { font-size: 11px; color: #9ca3af; }
+    .board-toolbar {
+      display: flex; align-items: center; gap: 8px;
+      padding: 10px 20px; background: #f8f9fb; border-bottom: 1px solid #e5e7eb;
+    }
     .user-indicator {
       font-size: 11px; color: #6b7280;
       background: #f3f4f6; border-radius: 6px;
@@ -505,9 +510,14 @@
     .settings-divider { border: none; border-top: 1px solid #f0f0f0; margin: 16px 0; }
     .gear-btn {
       background: none; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer;
-      font-size: 16px; padding: 3px 8px; color: #6b7280; transition: all 0.15s;
+      font-size: 22px; padding: 3px 8px; color: #6b7280; transition: all 0.15s; line-height: 1;
     }
     .gear-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
+    .refresh-btn {
+      background: none; border: 1px solid #e5e7eb; border-radius: 8px; cursor: pointer;
+      font-size: 22px; padding: 3px 8px; color: #6b7280; transition: all 0.15s; line-height: 1;
+    }
+    .refresh-btn:hover { background: #f3f4f6; color: #374151; border-color: #d1d5db; }
 
     /* Modal tabs */
     .modal-tabs {
@@ -624,25 +634,87 @@
       color: #374151; margin-top: 4px;
     }
     .column.discarded-col .card:hover .restore-btn { display: inline-block; }
+
+    /* Bell / Alerts Dropdown */
+    .bell-wrap { position: relative; }
+    .bell-btn {
+      position: relative; background: none; border: 1px solid #e5e7eb; border-radius: 8px;
+      padding: 5px 8px; cursor: pointer; font-size: 15px; color: #374151;
+      display: flex; align-items: center; transition: background 0.15s;
+    }
+    .bell-btn:hover { background: #f3f4f6; }
+    .bell-badge {
+      position: absolute; top: -5px; right: -5px;
+      background: #ef4444; color: #fff; font-size: 9px; font-weight: 700;
+      border-radius: 999px; min-width: 16px; height: 16px; padding: 0 3px;
+      display: flex; align-items: center; justify-content: center;
+      border: 2px solid #fff; line-height: 1;
+    }
+    .alerts-dd-menu {
+      display: none; position: absolute; top: calc(100% + 8px); right: 0;
+      background: #fff; border: 1px solid #e5e7eb; border-radius: 12px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.12); z-index: 100; width: 360px; overflow: hidden;
+    }
+    .alerts-dd-menu.open { display: block; }
+    .alerts-dd-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 12px 14px 10px; border-bottom: 1px solid #f3f4f6;
+    }
+    .alerts-dd-title { font-size: 12px; font-weight: 700; color: #374151; text-transform: uppercase; letter-spacing: 0.4px; }
+    .alerts-dismiss-all { font-size: 11px; color: #6b7280; background: none; border: none; cursor: pointer; text-decoration: underline; }
+    .alerts-dismiss-all:hover { color: #374151; }
+    .alerts-dd-body { padding: 8px; display: flex; flex-direction: column; gap: 4px; max-height: 360px; overflow-y: auto; }
+    .alerts-dd-empty { padding: 24px 14px; text-align: center; font-size: 13px; color: #9ca3af; }
+    .alert-item {
+      display: flex; align-items: flex-start; gap: 8px;
+      font-size: 12px; color: #374151; background: #f9fafb;
+      border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px 10px; border-left-width: 3px;
+    }
+    .alert-item.type-tagged { border-left-color: #8b5cf6; }
+    .alert-item.type-moved-back { border-left-color: #3b82f6; }
+    .alert-icon { font-size: 14px; flex-shrink: 0; margin-top: 1px; }
+    .alert-msg { flex: 1; line-height: 1.5; }
+    .alert-msg a { color: #1d4ed8; cursor: pointer; font-weight: 500; text-decoration: none; }
+    .alert-msg a:hover { text-decoration: underline; }
+    .alert-dismiss { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 15px; padding: 0; flex-shrink: 0; line-height: 1; }
+    .alert-dismiss:hover { color: #374151; }
   </style>
 </head>
 <body>
   <div class="header">
-    <h1 id="project-title">Backlog Board</h1>
-    <div class="header-actions">
-      <input type="text" class="search-input" id="search-input"
-             placeholder="Search by # or title…"
-             oninput="onSearch(this.value)"
-             title="Search by position (#3) or title. Press / to focus.">
-      <div class="assignee-dd" id="assignee-dd">
-        <div class="assignee-dd-trigger" id="assignee-dd-trigger" onclick="toggleAssigneeDd()" title="Filter by assignee">Assignee</div>
-        <div class="assignee-dd-menu" id="assignee-dd-menu"></div>
-      </div>
+    <h1 id="project-title">Flow Board</h1>
+    <div class="header-left">
+      <button class="refresh-btn" onclick="refreshBoard()" title="Refresh">&#x21bb;</button>
+      <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Item</button>
+    </div>
+    <div class="header-right">
       <span class="user-indicator" id="user-display" title="Git user identity"></span>
       <span class="sync-indicator" id="sync-status">Synced</span>
       <button class="gear-btn" onclick="openSettings()" title="Board Settings">&#9881;</button>
-      <button class="btn btn-ghost btn-sm" onclick="refreshBoard()" title="Refresh">&#x21bb;</button>
-      <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Item</button>
+      <div class="bell-wrap" id="bell-wrap">
+        <button class="bell-btn" id="bell-btn" onclick="toggleAlertsDd()" title="Alerts">
+          &#x1F514;
+          <span class="bell-badge" id="bell-badge" style="display:none">0</span>
+        </button>
+        <div class="alerts-dd-menu" id="alerts-dd-menu">
+          <div class="alerts-dd-header">
+            <span class="alerts-dd-title" id="alerts-title">Alerts</span>
+            <button class="alerts-dismiss-all" onclick="dismissAllAlerts()">Dismiss all</button>
+          </div>
+          <div class="alerts-dd-body" id="alerts-list"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="board-toolbar">
+    <input type="text" class="search-input" id="search-input"
+           placeholder="Search by # or title…"
+           oninput="onSearch(this.value)"
+           title="Search by position (#3) or title. Press / to focus.">
+    <div class="assignee-dd" id="assignee-dd">
+      <div class="assignee-dd-trigger" id="assignee-dd-trigger" onclick="toggleAssigneeDd()" title="Filter by assignee">Assignee</div>
+      <div class="assignee-dd-menu" id="assignee-dd-menu"></div>
     </div>
   </div>
 
@@ -884,11 +956,12 @@
         populateStatusDropdown();
         const name = backlog.config.project_name;
         document.getElementById('project-title').textContent =
-          name ? `${name} — Backlog` : 'Backlog Board';
+          name ? `${name} — Flow Board` : 'Flow Board';
         renderBoard();
         populateAssigneeDropdown();
         setSyncStatus('Synced');
         applyFilters();
+        renderAlerts();
       } catch (e) {
         console.error('Load failed:', e);
         setSyncStatus('Offline');
@@ -1032,7 +1105,7 @@
       if (openQ > 0) {
         meta += `<span class="badge badge-question">\u26a0 ${openQ}Q</span>`;
       }
-      const dateFmt = { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' };
+      const dateFmt = { month: '2-digit', day: '2-digit', year: '2-digit', hour: 'numeric', minute: '2-digit' };
       const created = new Date(item.created_at).toLocaleString('en-US', dateFmt);
       const updated = item.updated_at && item.updated_at !== item.created_at
         ? new Date(item.updated_at).toLocaleString('en-US', dateFmt) : null;
@@ -1046,8 +1119,8 @@
         ${item.description ? `<div class="card-desc">${esc(item.description)}</div>` : ''}
         <div class="card-meta">${meta}</div>
         <div class="card-dates">
-          <span>Created ${created}</span>
-          ${updated ? `<span>Updated ${updated}</span>` : ''}
+          <span>c: ${created}</span>
+          ${updated ? `<span>u: ${updated}</span>` : ''}
         </div>
         ${isDiscarded ? `<button class="restore-btn" data-id="${item.id}">↩ Restore to backlog</button>` : ''}
       `;
@@ -1475,12 +1548,15 @@
       const list = document.getElementById('threads-list');
       list.innerHTML = threads.map((t, i) => {
         const resolved = t.resolved;
-        const msgs = (t.thread || []).map(m => `
+        const msgs = (t.thread || []).map(m => {
+          const label = m.role === 'user' ? currentUser.name : 'agent';
+          return `
           <div class="thread-msg">
-            <span class="msg-role ${m.role}">${m.role}:</span>
+            <span class="msg-role ${m.role}">${esc(label)}:</span>
             <span class="msg-text">${esc(m.message)}</span>
           </div>
-        `).join('');
+          `;
+        }).join('');
         const tagged = t.waiting_on === 'agent';
         return `
           <div class="thread-item ${resolved ? 'resolved' : 'unresolved'}">
@@ -1948,6 +2024,83 @@
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
     function refreshBoard() { loadBacklog(); }
 
+    // ── Alerts ──
+    let dismissedAlerts = new Set();
+    let alertsDdOpen = false;
+
+    function toggleAlertsDd() {
+      alertsDdOpen = !alertsDdOpen;
+      document.getElementById('alerts-dd-menu').classList.toggle('open', alertsDdOpen);
+    }
+
+    function computeAlerts() {
+      const alerts = [];
+      backlog.items.forEach((item, idx) => {
+        const pos = idx + 1;
+        const titleEsc = esc(item.title);
+
+        // Thread tagged waiting on user
+        (item.threads || []).forEach((t, ti) => {
+          if (!t.resolved && t.waiting_on === 'user') {
+            const id = `${item.id}:thread:${ti}:${(t.thread || []).length}`;
+            alerts.push({
+              id, type: 'tagged', itemId: item.id,
+              icon: '💬',
+              message: `<a onclick="openEditModal('${item.id}')">#${pos} ${titleEsc}</a> — agent tagged you on thread: <em>${esc(t.topic)}</em>`,
+            });
+          }
+        });
+
+        // Item moved back to backlog (has lane history = wasn't just created there)
+        if (item.status === 'backlog' && (item.lane_history || []).length > 0) {
+          const id = `${item.id}:backlog:${item.lane_history.length}`;
+          alerts.push({
+            id, type: 'moved-back', itemId: item.id,
+            icon: '↩',
+            message: `<a onclick="openEditModal('${item.id}')">#${pos} ${titleEsc}</a> was moved back to backlog`,
+          });
+        }
+      });
+      return alerts.filter(a => !dismissedAlerts.has(a.id));
+    }
+
+    function renderAlerts() {
+      const alerts = computeAlerts();
+      const badge = document.getElementById('bell-badge');
+      const list = document.getElementById('alerts-list');
+      const title = document.getElementById('alerts-title');
+
+      // Badge
+      if (alerts.length === 0) {
+        badge.style.display = 'none';
+      } else {
+        badge.style.display = 'flex';
+        badge.textContent = alerts.length > 9 ? '9+' : alerts.length;
+      }
+
+      // Dropdown title + list
+      title.textContent = `${alerts.length} Alert${alerts.length !== 1 ? 's' : ''}`;
+      list.innerHTML = alerts.length === 0
+        ? `<div class="alerts-dd-empty">&#x2713; All caught up</div>`
+        : alerts.map(a => `
+          <div class="alert-item type-${a.type}">
+            <span class="alert-icon">${a.icon}</span>
+            <span class="alert-msg">${a.message}</span>
+            <button class="alert-dismiss" onclick="dismissAlert('${a.id}')" title="Dismiss">&times;</button>
+          </div>
+        `).join('');
+    }
+
+    function dismissAlert(id) {
+      dismissedAlerts.add(id);
+      renderAlerts();
+    }
+
+    function dismissAllAlerts() {
+      computeAlerts().forEach(a => dismissedAlerts.add(a.id));
+      renderAlerts();
+    }
+
     // ── Keyboard shortcuts ──
     document.addEventListener('keydown', e => {
       if (e.key === 'Escape') {
@@ -1974,6 +2127,10 @@
       if (assigneeDdOpen && !e.target.closest('.assignee-dd')) {
         assigneeDdOpen = false;
         document.getElementById('assignee-dd-menu').classList.remove('open');
+      }
+      if (alertsDdOpen && !e.target.closest('.bell-wrap')) {
+        alertsDdOpen = false;
+        document.getElementById('alerts-dd-menu').classList.remove('open');
       }
     });
 
