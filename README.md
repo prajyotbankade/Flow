@@ -18,9 +18,11 @@ Flow turns Claude into a project partner that thinks in backlogs. Say "park this
 
 ## Quick Start
 
-### Install the skill
+There are two ways to install Flow depending on how you want to use it.
 
-Copy the `skills/backlog-manager/` folder into your Claude Code skills directory:
+### Option A — Standalone install (single user, simplest)
+
+Copy the skill directly into your Claude Code skills directory:
 
 ```bash
 # Available across all your projects (recommended)
@@ -30,11 +32,31 @@ cp -r skills/backlog-manager ~/.claude/skills/
 cp -r skills/backlog-manager .claude/skills/
 ```
 
-Claude Code auto-discovers skills in these directories — no restart needed.
+Claude Code auto-discovers skills in these directories — no restart needed. Invoke the skill as **`/backlog-manager`**.
+
+### Option B — Plugin install (via marketplace)
+
+Once available in the Anthropic marketplace, install with:
+
+```
+/plugin install flow
+```
+
+After installation, the skill is invoked as **`/flow:backlog-manager`**.
+
+### Test locally (developers)
+
+To try the plugin without installing it:
+
+```bash
+claude --plugin-dir .
+```
+
+Then invoke as `/flow:backlog-manager` within that session.
 
 ### Start using it
 
-Just talk to Claude:
+Just talk to Claude — no command needed once the skill is active:
 
 ```
 "Add OAuth2 support to the backlog"
@@ -46,8 +68,16 @@ Just talk to Claude:
 
 ### Launch the visual board
 
+From the repo (or wherever you cloned it):
+
 ```bash
 python skills/backlog-manager/scripts/backlog_server.py
+```
+
+After a standalone install:
+
+```bash
+python ~/.claude/skills/backlog-manager/scripts/backlog_server.py
 ```
 
 Opens a Kanban board at `http://localhost:8089` with drag-and-drop cards, threaded conversations, and real-time sync.
