@@ -1,0 +1,13 @@
+{
+  "name": "flow",
+  "version": "1.0.0",
+  "description": "Conversational backlog management for Claude Code — add, prioritize, refine, and pick up work items through conversation or a visual Kanban board.",
+  "author": {
+    "name": "Prajyot Bankade",
+    "url": "https://github.com/prajyotbankade"
+  },
+  "homepage": "https://github.com/prajyotbankade/Flow",
+  "repository": "https://github.com/prajyotbankade/Flow",
+  "license": "MIT",
+  "keywords": ["backlog", "kanban", "project-management", "agile", "productivity", "task-management"]
+}

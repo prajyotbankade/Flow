@@ -18,25 +18,39 @@
         "id": "ready",
         "label": "Ready",
         "color": "#10b981",
-        "requires": ["refined"]
+        "requires": [
+          "refined"
+        ]
       },
       {
         "id": "in-progress",
         "label": "In Progress",
         "color": "#3b82f6",
-        "requires": ["refined", "ready"]
+        "requires": [
+          "refined",
+          "ready"
+        ]
       },
       {
         "id": "code-review",
         "label": "Code Review",
         "color": "#ec4899",
-        "requires": ["refined", "ready", "in-progress"]
+        "requires": [
+          "refined",
+          "ready",
+          "in-progress"
+        ]
       },
       {
         "id": "done",
         "label": "Done",
         "color": "#8b5cf6",
-        "requires": ["refined", "ready", "in-progress", "code-review"]
+        "requires": [
+          "refined",
+          "ready",
+          "in-progress",
+          "code-review"
+        ]
       },
       {
         "id": "discarded",

@@ -20,11 +20,17 @@ Flow turns Claude into a project partner that thinks in backlogs. Say "park this
 
 ### Install the skill
 
-Copy the `backlog-manager/` folder into your Claude Code skills directory, or point Claude at it:
+Copy the `skills/backlog-manager/` folder into your Claude Code skills directory:
 
+```bash
+# Available across all your projects (recommended)
+cp -r skills/backlog-manager ~/.claude/skills/
+
+# Available in this project only
+cp -r skills/backlog-manager .claude/skills/
 ```
-/skill add ./backlog-manager
-```
+
+Claude Code auto-discovers skills in these directories — no restart needed.
 
 ### Start using it
 
@@ -41,7 +47,7 @@ Just talk to Claude:
 ### Launch the visual board
 
 ```bash
-python backlog-manager/scripts/backlog_server.py
+python skills/backlog-manager/scripts/backlog_server.py
 ```
 
 Opens a Kanban board at `http://localhost:8089` with drag-and-drop cards, threaded conversations, and real-time sync.
@@ -98,19 +104,21 @@ Multiple agents or the web board can write simultaneously without data loss:
 
 ```
 Flow/
-├── backlog-manager/
-│   ├── SKILL.md              # Skill instructions (the brain)
-│   ├── scripts/
-│   │   └── backlog_server.py # REST API + web board server
-│   ├── assets/
-│   │   └── backlog-board.html # Kanban board UI
-│   ├── references/
-│   │   └── schema.md         # JSON schema documentation
-│   └── evals/
-│       ├── evals.json        # Test cases and assertions
-│       └── files/            # Fixture data for evals
-├── backlog-manager-workspace/ # Eval results and benchmarks
-└── backlog.json              # Your backlog (created on first use)
+├── .claude-plugin/
+│   └── plugin.json           # Plugin manifest for distribution
+├── skills/
+│   └── backlog-manager/
+│       ├── SKILL.md              # Skill instructions (the brain)
+│       ├── scripts/
+│       │   └── backlog_server.py # REST API + web board server
+│       ├── assets/
+│       │   └── backlog-board.html # Kanban board UI
+│       ├── references/
+│       │   └── schema.md         # JSON schema documentation
+│       └── evals/
+│           ├── evals.json        # Test cases and assertions
+│           └── files/            # Fixture data for evals
+└── backlog.json              # Your backlog (zero items, ready to use)
 ```
 
 ## Board Features
