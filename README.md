@@ -44,6 +44,16 @@ python backlog-manager/scripts/backlog_server.py
 
 Opens a Kanban board at `http://localhost:8089` with drag-and-drop cards, threaded conversations, and real-time sync.
 
+## Out of the Box
+
+The repo ships with a starter `backlog.json` — zero items, but fully configured with the default workflow lanes and gate rules. You can see exactly how the board is structured before adding anything:
+
+```
+backlog → refined → ready → in-progress → code-review → done
+```
+
+Gate rules are pre-configured: items must pass through each stage in order (e.g., nothing reaches Done without Code Review). Customize the lanes anytime by editing the `statuses` array in `backlog.json` — or just start adding items and the defaults will work.
+
 ## How It Works
 
 Everything lives in a single `backlog.json` at your project root. Items are stored in an ordered array — position = priority. The file is the source of truth for both the CLI agent and the web board.

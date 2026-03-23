@@ -1,0 +1,49 @@
+{
+  "version": 0,
+  "config": {
+    "scope": "project",
+    "project_name": "Flow",
+    "statuses": [
+      {
+        "id": "backlog",
+        "label": "Backlog",
+        "color": "#94a3b8"
+      },
+      {
+        "id": "refined",
+        "label": "Refined",
+        "color": "#f59e0b"
+      },
+      {
+        "id": "ready",
+        "label": "Ready",
+        "color": "#10b981",
+        "requires": ["refined"]
+      },
+      {
+        "id": "in-progress",
+        "label": "In Progress",
+        "color": "#3b82f6",
+        "requires": ["refined", "ready"]
+      },
+      {
+        "id": "code-review",
+        "label": "Code Review",
+        "color": "#ec4899",
+        "requires": ["refined", "ready", "in-progress"]
+      },
+      {
+        "id": "done",
+        "label": "Done",
+        "color": "#8b5cf6",
+        "requires": ["refined", "ready", "in-progress", "code-review"]
+      },
+      {
+        "id": "discarded",
+        "label": "Discarded",
+        "color": "#cbd5e1"
+      }
+    ]
+  },
+  "items": []
+}

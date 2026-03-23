@@ -27,7 +27,9 @@ backlog → refined → ready → in-progress → code-review → done
 
 ## Setup
 
-If `backlog.json` doesn't exist when the user wants to use the backlog, create it:
+The repo ships with a starter `backlog.json` at the project root — zero items, but pre-configured with the default workflow lanes and gate rules. If a user clones the repo, they can start adding items immediately without any setup.
+
+If `backlog.json` doesn't exist (e.g., the user deleted it or is starting fresh), create it:
 
 ```json
 {
