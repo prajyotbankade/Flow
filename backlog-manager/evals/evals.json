@@ -4,11 +4,11 @@
     {
       "id": 1,
       "prompt": "Hey, I just thought of something — we need to add OAuth2 support for the API. Park that in the backlog for now, I'll flesh it out later.",
-      "expected_output": "Creates backlog.json with one new item titled something like 'Add OAuth2 support for the API' with status 'new', appended at the bottom",
+      "expected_output": "Creates backlog.json with one new item titled something like 'Add OAuth2 support for the API' with status 'backlog', appended at the bottom",
       "files": [],
       "expectations": [
         "A backlog.json file is created or updated",
-        "The new item has status 'new'",
+        "The new item has status 'backlog'",
         "The item title references OAuth2 and API",
         "The item is appended at the end of the items array",
         "The item has an id, created_at, and updated_at field",
@@ -18,7 +18,7 @@
     {
       "id": 2,
       "prompt": "Show me the backlog. Then move the OAuth item to the top — it's more urgent than I thought.",
-      "expected_output": "Displays the backlog in a readable format grouped by status, then moves the OAuth2 item to position 0 in the array",
+      "expected_output": "Displays the backlog in a readable format grouped by status, then moves the OAuth2 item (currently at index 3) to position 0 in the array",
       "files": ["evals/files/backlog_with_items.json"],
       "expectations": [
         "The backlog is displayed in a readable, grouped format",
@@ -51,6 +51,18 @@
         "The highest-priority ready item is identified (Add rate limiting to API)",
         "Claude presents the item details to the user",
         "Claude suggests or offers to pick it up"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I'm free now, what should I work on?",
+      "expected_output": "Recognizes the backlog is empty and suggests the user add items rather than offering to pick something up",
+      "files": [],
+      "expectations": [
+        "Claude reads the backlog or recognizes it doesn't exist / is empty",
+        "Claude does NOT offer to pick up a task",
+        "Claude suggests adding items to the backlog",
+        "The response is helpful and conversational, not a dead end"
       ]
     }
   ]

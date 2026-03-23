@@ -44,6 +44,8 @@ The `scope` field supports two modes:
 - `"project"` (default): `backlog.json` lives in the project root
 - `"global"`: `backlog.json` lives at `~/.claude/backlog.json` — useful for monorepos or cross-project work
 
+**Choosing scope at setup**: If the project directory appears to be a monorepo (e.g., contains `packages/`, `apps/`, or `services/` directories, or multiple distinct sub-projects), ask the user: "Is this a per-project backlog or a single backlog across the whole repo?" and set `scope` accordingly. For single-project repos, default to `"project"` without asking.
+
 ## Configurable Workflow Lanes
 
 Every team works differently. The board's columns (lanes) are fully configurable via `config.statuses`. If omitted, the default flow is used:
@@ -182,6 +184,8 @@ This is the collaborative process of making an item actionable. When the user as
 5. Once all threads are resolved and you have enough context to execute, suggest moving it to `refined`
 6. The user decides when to mark it `ready`
 
+**Keep refinement conversational**: Ask a maximum of **2 questions** at a time. Prioritize the most blocking unknowns first. Once those are answered, follow up with the next batch if needed. This keeps the flow natural — refinement should feel like a quick chat, not a questionnaire.
+
 **Responding to tagged threads**: The user can tag you on a thread by setting `waiting_on: "agent"` (via the web board's @Agent button). When you see threads tagged for you, prioritize responding to them. After responding, set `waiting_on` to `"user"` or `null`. When checking the backlog, always scan for threads with `waiting_on: "agent"` — these are the user explicitly asking for your input.
 
 Threads are like mini-conversations within an item. Each one focuses on a specific topic — scope, dependencies, acceptance criteria, etc. This keeps discussions organized and makes it easy to see what's still unresolved.
@@ -206,6 +210,8 @@ When the user says "pick up the next task" or "what should I work on next":
 1. Find the highest-priority item with status `ready` (earliest in the array)
 2. Confirm: "The next ready item is **#N <title>**. Should I start on it?"
 3. On confirmation, set status to `in-progress`, set `assigned_to` to your agent name, and begin working
+
+**When there's nothing to pick up**: If the backlog is empty or has no `ready` items, don't offer to pick something up — there's nothing to pick. Instead, let the user know and suggest they add items: "The backlog is empty — want to add something?" or "There are N items in the backlog but none are marked ready yet. Want to refine one or add something new?" Meet the user where they are instead of dead-ending the conversation.
 
 **Being proactive**: After completing a task, if there are more `ready` items, mention it naturally: "I've finished '#N <title>'. There are N more ready items — want me to pick up '#M <next title>'?" This keeps the work flowing without the user having to remember to check the board.
 
@@ -264,8 +270,14 @@ The backlog uses optimistic concurrency control to prevent data loss when multip
 
 - Every write increments a `version` field in `backlog.json`
 - The server rejects writes where the client's version is behind the current version (HTTP 409)
-- On conflict, re-read the file and retry your write
 - File writes are atomic (temp file + rename) to prevent corruption
+
+**If you receive a 409 Conflict error, you MUST follow this exact sequence:**
+1. **Re-read** `backlog.json` (or `GET /api/backlog`) to get the latest version and data
+2. **Re-apply** your intended change on top of the fresh data — do NOT replay stale data
+3. **Retry** the write with the updated version
+
+Never guess or manually increment the version to work around a 409 — always sync from the source first.
 
 When writing via the CLI (Read/Write tools), always re-read `backlog.json` before writing to get the latest version. Increment the `version` field in your write.
 
