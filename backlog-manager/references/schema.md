@@ -43,6 +43,7 @@
   "status": "string — must match one of the status IDs from config.statuses",
   "assigned_to": "string | null — name of the agent or person assigned to this item",
   "threads": [Thread, ...],
+  "links": [Link, ...],
   "lane_history": [LaneMove, ...],
   "gate_from": "integer — index into lane_history where the current journey starts (default 0)",
   "notes": "string — additional context, completion notes, etc.",
@@ -64,6 +65,26 @@ A thread is a conversation about a specific topic on a backlog item — typicall
   "thread": [Message, ...]
 }
 ```
+
+## Link
+
+A connection between two backlog items — tracks why they're related and how the relationship was discovered.
+
+```json
+{
+  "item_id": "string — ID of the linked item",
+  "type": "discovered-during | follow-up | blocks | related",
+  "reason": "string — one sentence explaining why these items are connected"
+}
+```
+
+- `item_id`: The 8-char ID of the other item. Links are stored on one side only — both directions can be resolved at read time.
+- `type`: The nature of the relationship:
+  - `discovered-during` — Found while working on another task (e.g., bug spotted during implementation)
+  - `follow-up` — Work that should happen after the linked item is done
+  - `blocks` — This item blocks progress on the linked item
+  - `related` — General connection (same code area, shared context)
+- `reason`: Required. A brief explanation that makes sense from either item's perspective. This is what gives the link value weeks later when the context is forgotten.
 
 ## LaneMove
 
@@ -108,3 +129,6 @@ A record of an item moving through a lane. Appended to `lane_history` every time
 - `gate_from` is a watermark index into `lane_history`. When an item moves backward, `gate_from` is set to the current length of `lane_history`, marking the start of a new journey. The rule engine only checks entries from `gate_from` onward when evaluating gate requirements. Default is `0`.
 - Lane gate rules (`requires`) are enforced at 3 layers: web board (blocked drop zones), server API (HTTP 422), and agent instructions (SKILL.md)
 - Moving backward is always allowed (e.g., back to backlog from any lane) — gate rules only apply when moving forward
+- `links` is an array of connections to other items. Each link has a `type`, `item_id`, and `reason`. Links are stored on one side only — resolve both directions at read time.
+- Every link must have a `reason` — no naked links. The reason should make sense from either item's perspective.
+- Valid link types: `discovered-during`, `follow-up`, `blocks`, `related`

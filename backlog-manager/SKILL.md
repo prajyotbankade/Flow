@@ -1,6 +1,6 @@
 ---
 name: backlog-manager
-description: Manage a project backlog board — add, prioritize, refine, and pick up work items. Use this skill whenever the user mentions backlog, sprint planning, task queue, work items, story grooming, picking up tasks, prioritizing work, or wants to organize tasks like a PM/engineer would in an agile workflow. Also triggers when the user says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", or "what's in my backlog". If you've just finished a task and the user hasn't given you a new one, check the backlog for ready items and offer to pick one up.
+description: Manage a project backlog board — add, prioritize, refine, link, and pick up work items. Use this skill whenever the user mentions backlog, sprint planning, task queue, work items, story grooming, picking up tasks, prioritizing work, linking issues, or wants to organize tasks like a PM/engineer would in an agile workflow. Also triggers when the user says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", or "how are these related". If you've just finished a task and the user hasn't given you a new one, check the backlog for ready items and offer to pick one up. When you discover bugs, tech debt, or follow-ups while working, add them to the backlog and link them back to the source task.
 ---
 
 # Backlog Manager
@@ -136,6 +136,41 @@ When the user says something like "add X to the backlog", "park this for later",
 3. Append to the END of the items array — new items always go to the bottom
 4. Generate an 8-character ID (e.g., `a1b2c3d4`)
 5. Confirm what you added with the title and position (e.g., "Added as #5")
+
+### Agent-Initiated Items
+
+You don't have to wait for the user to add items. When you discover something concrete while working — a bug, tech debt, a missing edge case, a follow-up task — add it yourself:
+
+1. Create the item with a clear title and a brief description of *what* you found and *where*
+2. Set status to `backlog`, append to the bottom — never self-prioritize
+3. **Link it back** to the item you were working on (see Linking Items below)
+4. Mention it naturally: "While working on #3, I found the error handler doesn't cover timeouts — added as #8, linked back."
+
+**What to add**: Concrete, actionable things — bugs found during implementation, tech debt spotted in adjacent code, edge cases that need their own task, follow-up work after a feature lands.
+
+**What NOT to add**: Vague suggestions ("maybe we should refactor everything"), speculative ideas, or duplicates of existing items. If you're not sure it's worth adding, mention it to the user instead and let them decide.
+
+### Linking Items
+
+Items can be linked to show how they're connected. Each link has a `type`, the `item_id` of the related item, and a `reason` explaining the connection:
+
+```json
+"links": [
+  { "item_id": "abc12345", "type": "discovered-during", "reason": "N+1 query found in user search while implementing rate limiter" }
+]
+```
+
+**Link types:**
+- `discovered-during` — Found while working on another task
+- `follow-up` — Work that should happen after the linked item is done
+- `blocks` — This item blocks progress on the linked item
+- `related` — General connection, same code area or shared context
+
+**Rules:**
+- Every link must have a `reason` — no naked links. One sentence that answers "why are these connected?"
+- Links are stored on one side only. When displaying, resolve both directions (e.g., if #8 links to #3, show the link from both items)
+- When creating an agent-initiated item, always link back to the item that prompted its creation
+- The reason should make sense from either item's perspective
 
 ### Listing the Backlog
 

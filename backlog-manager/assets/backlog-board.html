@@ -357,6 +357,51 @@
     .add-thread-row { display: flex; gap: 6px; margin-top: 8px; }
     .add-thread-row input { flex: 1; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; font-family: inherit; }
 
+    /* Links */
+    .links-section { margin-top: 12px; }
+    .link-item {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      border: 1px solid #e5e7eb;
+    }
+    .link-item.reverse { border-left: 3px solid #c7d2fe; }
+    .link-type-badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .link-type-discovered-during { background: #fef3c7; color: #92400e; }
+    .link-type-follow-up { background: #dbeafe; color: #1d4ed8; }
+    .link-type-blocks { background: #fee2e2; color: #dc2626; }
+    .link-type-related { background: #e0e7ff; color: #4338ca; }
+    .link-body { flex: 1; min-width: 0; }
+    .link-target { font-weight: 600; font-size: 12px; color: #374151; }
+    .link-reason { font-size: 11px; color: #6b7280; margin-top: 2px; line-height: 1.3; }
+    .link-reverse-hint { font-size: 10px; color: #9ca3af; font-weight: 400; }
+    .link-remove-btn {
+      background: none; border: none; cursor: pointer; color: #d1d5db;
+      font-size: 16px; padding: 0 2px; flex-shrink: 0; line-height: 1;
+    }
+    .link-remove-btn:hover { color: #ef4444; }
+    .add-link-row {
+      display: flex; gap: 6px; margin-top: 8px; align-items: flex-end; flex-wrap: wrap;
+    }
+    .add-link-row select, .add-link-row input {
+      padding: 5px 8px; border: 1px solid #d1d5db; border-radius: 6px;
+      font-size: 12px; font-family: inherit; background: #fff;
+    }
+    .add-link-row select { min-width: 130px; }
+    .add-link-row input { flex: 1; min-width: 120px; }
+    .badge-link { background: #e0e7ff; color: #4338ca; }
+
     /* Close button */
     .close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #9ca3af; padding: 2px 6px; border-radius: 4px; }
     .close-btn:hover { color: #374151; background: #f3f4f6; }
@@ -764,6 +809,21 @@
               <button class="btn btn-ghost btn-sm" onclick="addThread()">Start</button>
             </div>
           </div>
+          <div class="links-section" id="links-section">
+            <label style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.3px;">Links</label>
+            <div id="links-list"></div>
+            <div class="add-link-row">
+              <select id="new-link-type">
+                <option value="discovered-during">discovered-during</option>
+                <option value="follow-up">follow-up</option>
+                <option value="blocks">blocks</option>
+                <option value="related">related</option>
+              </select>
+              <select id="new-link-target"></select>
+              <input type="text" id="new-link-reason" placeholder="Reason...">
+              <button class="btn btn-ghost btn-sm" onclick="addLink()">Add</button>
+            </div>
+          </div>
         </div>
       </div>
       <div class="modal-tab-content" id="tab-history">
@@ -1105,6 +1165,12 @@
       if (openQ > 0) {
         meta += `<span class="badge badge-question">\u26a0 ${openQ}Q</span>`;
       }
+      const forwardLinkCount = (item.links || []).length;
+      const reverseLinkCount = getReverseLinkCount(item.id);
+      const totalLinkCount = forwardLinkCount + reverseLinkCount;
+      if (totalLinkCount > 0) {
+        meta += `<span class="badge badge-link">\uD83D\uDD17 ${totalLinkCount}</span>`;
+      }
       const dateFmt = { month: '2-digit', day: '2-digit', year: '2-digit', hour: 'numeric', minute: '2-digit' };
       const created = new Date(item.created_at).toLocaleString('en-US', dateFmt);
       const updated = item.updated_at && item.updated_at !== item.created_at
@@ -1342,6 +1408,9 @@
       document.getElementById('item-notes').value = '';
       document.getElementById('threads-list').innerHTML = '';
       document.getElementById('new-thread-topic').value = '';
+      document.getElementById('links-list').innerHTML = '<div style="font-size:12px;color:#9ca3af;padding:4px 0;">Save item first to add links</div>';
+      document.getElementById('new-link-target').innerHTML = '';
+      document.getElementById('new-link-reason').value = '';
       document.getElementById('delete-btn').style.display = 'none';
       // Hide tabs for new items
       document.getElementById('modal-tabs').style.display = 'none';
@@ -1368,6 +1437,7 @@
       document.getElementById('modal-tabs').style.display = 'flex';
       switchModalTab('details');
       renderThreads(item.threads || []);
+      renderLinks(item);
       renderHistory(item);
       document.getElementById('modal-overlay').classList.add('active');
     }
@@ -1522,6 +1592,7 @@
           lane_history: [],
           gate_from: 0,
           threads: [],
+          links: [],
           notes,
           created_at: now,
           updated_at: now
@@ -1636,6 +1707,126 @@
       item.updated_at = new Date().toISOString();
       renderThreads(item.threads);
       saveBacklog();
+    }
+
+    // ── Links ──
+    function getReverseLinkCount(itemId) {
+      let count = 0;
+      backlog.items.forEach(other => {
+        if (other.id === itemId) return;
+        (other.links || []).forEach(link => {
+          if (link.item_id === itemId) count++;
+        });
+      });
+      return count;
+    }
+
+    function renderLinks(item) {
+      const list = document.getElementById('links-list');
+      const forwardLinks = item.links || [];
+
+      // Find reverse links: other items that link TO this item
+      const reverseLinks = [];
+      backlog.items.forEach((other, otherIdx) => {
+        if (other.id === item.id) return;
+        (other.links || []).forEach(link => {
+          if (link.item_id === item.id) {
+            reverseLinks.push({
+              type: link.type,
+              reason: link.reason,
+              sourceId: other.id,
+              sourceTitle: other.title,
+              sourcePos: otherIdx + 1
+            });
+          }
+        });
+      });
+
+      let html = '';
+
+      // Forward links
+      forwardLinks.forEach((link, i) => {
+        const target = backlog.items.find(it => it.id === link.item_id);
+        const targetPos = target ? backlog.items.indexOf(target) + 1 : '?';
+        const targetTitle = target ? target.title : '(deleted item)';
+        html += `
+          <div class="link-item">
+            <span class="link-type-badge link-type-${link.type}">${esc(link.type)}</span>
+            <div class="link-body">
+              <div class="link-target">#${targetPos} ${esc(targetTitle)}</div>
+              ${link.reason ? `<div class="link-reason">${esc(link.reason)}</div>` : ''}
+            </div>
+            <button class="link-remove-btn" onclick="removeLink(${i})" title="Remove link">&times;</button>
+          </div>
+        `;
+      });
+
+      // Reverse links
+      reverseLinks.forEach(rl => {
+        html += `
+          <div class="link-item reverse">
+            <span class="link-type-badge link-type-${rl.type}">${esc(rl.type)}</span>
+            <div class="link-body">
+              <div class="link-target">#${rl.sourcePos} ${esc(rl.sourceTitle)} <span class="link-reverse-hint">(from #${rl.sourcePos})</span></div>
+              ${rl.reason ? `<div class="link-reason">${esc(rl.reason)}</div>` : ''}
+            </div>
+          </div>
+        `;
+      });
+
+      if (forwardLinks.length === 0 && reverseLinks.length === 0) {
+        html = '<div style="font-size:12px;color:#9ca3af;padding:4px 0;">No links yet</div>';
+      }
+
+      list.innerHTML = html;
+
+      // Populate the target dropdown
+      const targetSelect = document.getElementById('new-link-target');
+      targetSelect.innerHTML = backlog.items
+        .filter(it => it.id !== item.id)
+        .map((it, idx) => {
+          const pos = backlog.items.indexOf(it) + 1;
+          return `<option value="${it.id}">#${pos} ${esc(it.title)}</option>`;
+        }).join('');
+    }
+
+    function addLink() {
+      if (!editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item) return;
+
+      const type = document.getElementById('new-link-type').value;
+      const targetId = document.getElementById('new-link-target').value;
+      const reason = document.getElementById('new-link-reason').value.trim();
+
+      if (!targetId) return;
+      if (!item.links) item.links = [];
+
+      // Prevent duplicate links to the same item with the same type
+      if (item.links.some(l => l.item_id === targetId && l.type === type)) {
+        showToast('Link already exists', true);
+        return;
+      }
+
+      item.links.push({ item_id: targetId, type, reason: reason || undefined });
+      item.updated_at = new Date().toISOString();
+      document.getElementById('new-link-reason').value = '';
+      renderLinks(item);
+      saveBacklog();
+      renderBoard();
+      applyFilters();
+    }
+
+    function removeLink(index) {
+      if (!editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item || !item.links) return;
+      item.links.splice(index, 1);
+      item.updated_at = new Date().toISOString();
+      renderLinks(item);
+      saveBacklog();
+      renderBoard();
+      applyFilters();
     }
 
     // ═══════════════════════════════════════════════

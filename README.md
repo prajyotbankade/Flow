@@ -7,6 +7,8 @@ Flow turns Claude into a project partner that thinks in backlogs. Say "park this
 ## What It Does
 
 - **Conversational backlog management** — add, reorder, refine, and complete items by talking naturally
+- **Agent-initiated items** — the agent adds bugs, tech debt, and follow-ups it discovers while working, linked back to the source task
+- **Linked items** — connect related items with typed links (`discovered-during`, `follow-up`, `blocks`, `related`) and a reason, so context isn't lost weeks later
 - **Visual Kanban board** — drag-and-drop web UI that syncs with the same `backlog.json`
 - **Configurable workflow lanes** — default agile flow (`backlog → refined → ready → in-progress → code-review → done`) or define your own
 - **Lane gate rules** — enforce process (e.g., nothing reaches Done without passing through Code Review)
@@ -69,6 +71,7 @@ backlog.json
     ├── id, title, description, status
     ├── assigned_to
     ├── threads[]   # Refinement Q&A
+    ├── links[]     # Connections to related items (type + reason)
     ├── lane_history[] + gate_from  # Audit trail + rule engine
     └── created_at, updated_at
 ```
@@ -115,8 +118,9 @@ Flow/
 - Drag-and-drop cards between lanes
 - Click cards to edit — full modal with all fields
 - Threaded conversations with `@Agent` tagging
+- Linked items — view, add, and manage connections between items with type badges and reasons
 - Assignment dropdown
-- Position numbers, timestamps, unresolved thread counts
+- Position numbers, timestamps, unresolved thread counts, link counts
 - Auto-refreshes every 5 seconds
 - Keyboard shortcuts: `N` to add, `Esc` to close
 
