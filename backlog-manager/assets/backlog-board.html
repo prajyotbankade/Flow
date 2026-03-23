@@ -832,7 +832,6 @@
         </div>
       </div>
       <div class="modal-footer">
-        <button class="btn btn-danger btn-sm" id="delete-btn" onclick="deleteItem()" style="display:none;">Delete</button>
         <div style="display:flex;gap:8px;margin-left:auto;">
           <button class="btn btn-ghost" onclick="closeModal()">Cancel</button>
           <button class="btn btn-primary" onclick="saveItem()">Save</button>
@@ -1028,7 +1027,9 @@
       }
     }
 
+    let isSaving = false;
     async function saveBacklog() {
+      isSaving = true;
       try {
         setSyncStatus('Saving...');
         const res = await fetch('/api/backlog', {
@@ -1053,6 +1054,8 @@
       } catch (e) {
         console.error('Save failed:', e);
         setSyncStatus('Save failed');
+      } finally {
+        isSaving = false;
       }
     }
 
@@ -1411,7 +1414,7 @@
       document.getElementById('links-list').innerHTML = '<div style="font-size:12px;color:#9ca3af;padding:4px 0;">Save item first to add links</div>';
       document.getElementById('new-link-target').innerHTML = '';
       document.getElementById('new-link-reason').value = '';
-      document.getElementById('delete-btn').style.display = 'none';
+      document.getElementById('item-status').disabled = true;
       // Hide tabs for new items
       document.getElementById('modal-tabs').style.display = 'none';
       switchModalTab('details');
@@ -1430,8 +1433,8 @@
       document.getElementById('item-status').value = item.status;
       document.getElementById('item-assigned').value = item.assigned_to || '';
       document.getElementById('item-notes').value = item.notes || '';
+      document.getElementById('item-status').disabled = false;
       document.getElementById('new-thread-topic').value = '';
-      document.getElementById('delete-btn').style.display = 'block';
 
       // Show tabs for existing items
       document.getElementById('modal-tabs').style.display = 'flex';
@@ -1587,7 +1590,7 @@
           id: genId(),
           title,
           description: desc,
-          status,
+          status: firstStatusId(),
           assigned_to: assignedTo,
           lane_history: [],
           gate_from: 0,
@@ -1604,14 +1607,6 @@
       renderBoard();
       populateAssigneeDropdown();
       applyFilters();
-    }
-
-    function deleteItem() {
-      if (!editingItemId || !confirm('Delete this item?')) return;
-      backlog.items = backlog.items.filter(i => i.id !== editingItemId);
-      saveBacklog();
-      closeModal();
-      renderBoard();
     }
 
     // ── Threads ──
@@ -1857,7 +1852,7 @@
         const chipsHtml = requires.map(reqId => {
           const reqLane = settingsLanes.find(l => l.id === reqId);
           const label = reqLane ? reqLane.label : reqId;
-          return `<span class="requires-chip">${esc(label)}<span class="chip-remove" onclick="removeRequires(${i}, '${reqId}')">&times;</span></span>`;
+          return `<span class="requires-chip">${esc(label)}<span class="chip-remove" onclick="removeRequires(${i}, '${escJs(reqId)}')">&times;</span></span>`;
         }).join('');
 
         return `
@@ -1899,7 +1894,7 @@
                     ${openRequiresDropdown === i ? `
                       <div class="requires-dropdown-menu">
                         ${availableForRequires.map(l => `
-                          <div class="requires-dropdown-item" onclick="addRequires(${i}, '${l.id}')">${esc(l.label)}</div>
+                          <div class="requires-dropdown-item" onclick="addRequires(${i}, '${escJs(l.id)}')">${esc(l.label)}</div>
                         `).join('')}
                       </div>
                     ` : ''}
@@ -2139,8 +2134,8 @@
         </div>
         ${assignees.map(a => {
           const checked = selectedAssignees.has(a);
-          return `<div class="assignee-dd-item" onclick="toggleAssignee('${esc(a)}', false)">
-            <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation();toggleAssignee('${esc(a)}',false)">
+          return `<div class="assignee-dd-item" onclick="toggleAssignee('${escJs(a)}', false)">
+            <input type="checkbox" ${checked ? 'checked' : ''} onclick="event.stopPropagation();toggleAssignee('${escJs(a)}',false)">
             ${esc(a)}
           </div>`;
         }).join('')}
@@ -2213,6 +2208,7 @@
     // ── Utils ──
     function genId() { return Math.random().toString(36).substring(2, 10); }
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
+    function escJs(str) { return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
     function refreshBoard() { loadBacklog(); }
 
     // ── Alerts ──
@@ -2237,7 +2233,7 @@
             alerts.push({
               id, type: 'tagged', itemId: item.id,
               icon: '💬',
-              message: `<a onclick="openEditModal('${item.id}')">#${pos} ${titleEsc}</a> — agent tagged you on thread: <em>${esc(t.topic)}</em>`,
+              message: `<a onclick="openEditModal('${escJs(item.id)}')">#${pos} ${titleEsc}</a> — agent tagged you on thread: <em>${esc(t.topic)}</em>`,
             });
           }
         });
@@ -2248,7 +2244,7 @@
           alerts.push({
             id, type: 'moved-back', itemId: item.id,
             icon: '↩',
-            message: `<a onclick="openEditModal('${item.id}')">#${pos} ${titleEsc}</a> was moved back to backlog`,
+            message: `<a onclick="openEditModal('${escJs(item.id)}')">#${pos} ${titleEsc}</a> was moved back to backlog`,
           });
         }
       });
@@ -2277,7 +2273,7 @@
           <div class="alert-item type-${a.type}">
             <span class="alert-icon">${a.icon}</span>
             <span class="alert-msg">${a.message}</span>
-            <button class="alert-dismiss" onclick="dismissAlert('${a.id}')" title="Dismiss">&times;</button>
+            <button class="alert-dismiss" onclick="dismissAlert('${escJs(a.id)}')" title="Dismiss">&times;</button>
           </div>
         `).join('');
     }
@@ -2326,7 +2322,7 @@
     });
 
     // ── Auto-refresh ──
-    setInterval(() => { if (!document.querySelector('.modal-overlay.active')) loadBacklog(); }, 5000);
+    setInterval(() => { if (!document.querySelector('.modal-overlay.active') && !isSaving) loadBacklog(); }, 5000);
 
     // ── Init ──
     loadUser();

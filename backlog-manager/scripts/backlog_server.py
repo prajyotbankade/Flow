@@ -36,6 +36,9 @@ ASSETS_DIR = SCRIPT_DIR.parent / "assets"
 # Lock to serialize writes — prevents race conditions between concurrent requests
 write_lock = threading.Lock()
 
+# Maximum allowed request body size (10 MB)
+MAX_BODY_SIZE = 10 * 1024 * 1024
+
 
 def get_git_user():
     """Read the local git user identity. Falls back gracefully if git is unavailable."""
@@ -55,14 +58,15 @@ GIT_USER = get_git_user()
 
 
 def read_backlog(filepath):
-    """Read backlog.json, returning parsed data."""
+    """Read backlog.json, returning parsed data.
+    Raises ValueError if the file exists but contains invalid JSON."""
     try:
         with open(filepath, "r") as f:
             return json.load(f)
     except FileNotFoundError:
         return {"version": 0, "config": {"scope": "project", "project_name": ""}, "items": []}
-    except json.JSONDecodeError:
-        return {"version": 0, "config": {"scope": "project", "project_name": ""}, "items": []}
+    except json.JSONDecodeError as e:
+        raise ValueError(f"backlog.json is corrupted and cannot be read: {e}")
 
 
 DEFAULT_STATUSES = [
@@ -239,11 +243,6 @@ class BacklogHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404)
 
-    def do_OPTIONS(self):
-        self.send_response(200)
-        self._cors_headers()
-        self.end_headers()
-
     def _serve_html(self):
         html_path = ASSETS_DIR / "backlog-board.html"
         if not html_path.exists():
@@ -259,22 +258,27 @@ class BacklogHandler(BaseHTTPRequestHandler):
     def _serve_user(self):
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self._cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(GIT_USER).encode())
 
     def _serve_backlog(self, agent=None):
-        data = read_backlog(self.backlog_file)
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError as e:
+            self._json_error(500, str(e))
+            return
         if agent:
             data = filter_for_agent(data, agent)
         self.send_response(200)
         self.send_header("Content-Type", "application/json")
-        self._cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(data, indent=2).encode())
 
     def _save_backlog(self):
         content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_BODY_SIZE:
+            self._json_error(413, "Request body too large")
+            return
         body = self.rfile.read(content_length)
         try:
             incoming = json.loads(body)
@@ -283,7 +287,12 @@ class BacklogHandler(BaseHTTPRequestHandler):
             return
 
         with write_lock:
-            current = read_backlog(self.backlog_file)
+            try:
+                current = read_backlog(self.backlog_file)
+            except ValueError as e:
+                self._json_error(500, str(e))
+                return
+
             incoming_version = incoming.get("version", 0)
             current_version = current.get("version", 0)
 
@@ -296,6 +305,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
             # Gate validation + lane_history enforcement for items whose status changed
             statuses = get_status_config(incoming)
             current_items = {i.get("id"): i for i in current.get("items", [])}
+            first_status = statuses[0].get("id", "backlog") if statuses else "backlog"
             for item in incoming.get("items", []):
                 old_item = current_items.get(item.get("id"))
                 if old_item and item.get("status") != old_item.get("status"):
@@ -305,6 +315,13 @@ class BacklogHandler(BaseHTTPRequestHandler):
                         return
                     # Server-side enforcement: append lane_history + set watermark
                     enforce_lane_history(old_item, item, statuses)
+                elif not old_item and item.get("status", first_status) != first_status:
+                    # New item — validate it can enter the chosen lane
+                    virtual_old = {"status": first_status, "lane_history": [], "gate_from": 0}
+                    ok, err = validate_lane_transition(virtual_old, item.get("status"), statuses)
+                    if not ok:
+                        self._json_error(422, err)
+                        return
                 else:
                     # Clean up _moved_by hint if present but no status change
                     item.pop("_moved_by", None)
@@ -318,6 +335,9 @@ class BacklogHandler(BaseHTTPRequestHandler):
     def _update_item(self, item_id):
         """Update a single item by ID. Reads current file, patches the item, writes back."""
         content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_BODY_SIZE:
+            self._json_error(413, "Request body too large")
+            return
         body = self.rfile.read(content_length)
         try:
             item_data = json.loads(body)
@@ -326,7 +346,12 @@ class BacklogHandler(BaseHTTPRequestHandler):
             return
 
         with write_lock:
-            data = read_backlog(self.backlog_file)
+            try:
+                data = read_backlog(self.backlog_file)
+            except ValueError as e:
+                self._json_error(500, str(e))
+                return
+
             client_version = item_data.pop("_version", None)
             current_version = data.get("version", 0)
 
@@ -368,21 +393,14 @@ class BacklogHandler(BaseHTTPRequestHandler):
     def _json_response(self, status, obj):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self._cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps(obj).encode())
 
     def _json_error(self, status, message):
         self.send_response(status)
         self.send_header("Content-Type", "application/json")
-        self._cors_headers()
         self.end_headers()
         self.wfile.write(json.dumps({"error": message}).encode())
-
-    def _cors_headers(self):
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Access-Control-Allow-Methods", "GET, PUT, OPTIONS")
-        self.send_header("Access-Control-Allow-Headers", "Content-Type")
 
     def log_message(self, format, *args):
         if args and (str(args[0]).startswith("4") or str(args[0]).startswith("5")):
@@ -393,6 +411,7 @@ def main():
     parser = argparse.ArgumentParser(description="Backlog Board Server")
     parser.add_argument("--port", type=int, default=8089, help="Port (default: 8089)")
     parser.add_argument("--file", type=str, default="backlog.json", help="Path to backlog.json")
+    parser.add_argument("--no-open", action="store_true", help="Don't auto-open the browser")
     args = parser.parse_args()
 
     BacklogHandler.backlog_file = os.path.abspath(args.file)
@@ -405,7 +424,8 @@ def main():
     print(f"Git user:      {GIT_USER['name']} <{GIT_USER['email']}>")
     print("Press Ctrl+C to stop\n")
 
-    webbrowser.open(url)
+    if not args.no_open:
+        webbrowser.open(url)
 
     try:
         server.serve_forever()
