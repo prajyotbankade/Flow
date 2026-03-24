@@ -401,6 +401,22 @@
     .add-link-row select { min-width: 130px; }
     .add-link-row input { flex: 1; min-width: 120px; }
     .badge-link { background: #e0e7ff; color: #4338ca; }
+    .badge-score { font-weight: 600; }
+    .badge-score-high { background: #dcfce7; color: #166534; }
+    .badge-score-mid { background: #fef9c3; color: #854d0e; }
+    .badge-score-low { background: #f1f5f9; color: #64748b; }
+    .badge-category { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.3px; }
+    .badge-bug { background: #fee2e2; color: #991b1b; }
+    .badge-feature { background: #dbeafe; color: #1e40af; }
+    .badge-chore { background: #f3f4f6; color: #4b5563; }
+    .badge-tech-debt { background: #fef3c7; color: #92400e; }
+    .complexity-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; vertical-align: middle; }
+    .complexity-low { background: #22c55e; }
+    .complexity-medium { background: #eab308; }
+    .complexity-high { background: #ef4444; }
+    .card.stale-item { border-left: 3px solid #f59e0b; }
+    .sort-toggle { padding: 5px 10px; border: 1px solid #e5e7eb; border-radius: 8px; font-size: 12px; font-family: inherit; background: #f9fafb; color: #374151; cursor: pointer; }
+    .sort-toggle.active { background: #eef2ff; border-color: #818cf8; color: #4338ca; }
 
     /* Close button */
     .close-btn { background: none; border: none; font-size: 18px; cursor: pointer; color: #9ca3af; padding: 2px 6px; border-radius: 4px; }
@@ -645,6 +661,17 @@
       color: #9ca3af;
       margin-top: 1px;
     }
+    .intel-score-big { font-size: 36px; font-weight: 700; text-align: center; margin: 12px 0; }
+    .intel-breakdown { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; font-size: 12px; padding: 12px; background: #f9fafb; border-radius: 8px; margin-bottom: 16px; }
+    .intel-breakdown dt { color: #6b7280; }
+    .intel-breakdown dd { text-align: right; font-weight: 500; font-variant-numeric: tabular-nums; }
+    .intel-rec { background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+    .intel-rec-label { font-size: 10px; font-weight: 600; text-transform: uppercase; color: #15803d; letter-spacing: 0.3px; margin-bottom: 4px; }
+    .intel-rec-value { font-size: 14px; font-weight: 500; color: #166534; }
+    .intel-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 12px; }
+    .intel-meta-item { background: #f9fafb; padding: 8px; border-radius: 6px; }
+    .intel-meta-label { color: #9ca3af; font-size: 10px; text-transform: uppercase; }
+    .intel-meta-value { font-weight: 600; margin-top: 2px; }
     .history-reset {
       background: #fef3c7;
       border: 1px dashed #f59e0b;
@@ -757,6 +784,7 @@
            placeholder="Search by # or title…"
            oninput="onSearch(this.value)"
            title="Search by position (#3) or title. Press / to focus.">
+    <button class="sort-toggle" id="sort-toggle" onclick="toggleSortMode()" title="Toggle score-based sorting">Sort: Position</button>
     <div class="assignee-dd" id="assignee-dd">
       <div class="assignee-dd-trigger" id="assignee-dd-trigger" onclick="toggleAssigneeDd()" title="Filter by assignee">Assignee</div>
       <div class="assignee-dd-menu" id="assignee-dd-menu"></div>
@@ -777,6 +805,7 @@
       </div>
       <div class="modal-tabs" id="modal-tabs" style="display:none;">
         <button class="modal-tab active" data-tab="details" onclick="switchModalTab('details')">Details</button>
+        <button class="modal-tab" data-tab="intelligence" onclick="switchModalTab('intelligence')">Intelligence</button>
         <button class="modal-tab" data-tab="history" onclick="switchModalTab('history')">History</button>
       </div>
       <div class="modal-tab-content active" id="tab-details">
@@ -796,6 +825,37 @@
           <div class="form-group">
             <label>Assigned To</label>
             <input type="text" id="item-assigned" placeholder="Agent or person name (e.g., worker-1)">
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group">
+              <label>Complexity</label>
+              <select id="item-complexity">
+                <option value="">Not set</option>
+                <option value="low">Low</option>
+                <option value="medium">Medium</option>
+                <option value="high">High</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label>Category</label>
+              <select id="item-category">
+                <option value="">Not set</option>
+                <option value="bug">Bug</option>
+                <option value="feature">Feature</option>
+                <option value="chore">Chore</option>
+                <option value="tech-debt">Tech Debt</option>
+              </select>
+            </div>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+            <div class="form-group">
+              <label>Priority Weight <span style="color:#9ca3af;font-weight:400;">(1-10)</span></label>
+              <input type="number" id="item-priority-weight" min="1" max="10" placeholder="Auto (position-based)">
+            </div>
+            <div class="form-group">
+              <label>Tags <span style="color:#9ca3af;font-weight:400;">(comma-separated)</span></label>
+              <input type="text" id="item-tags" placeholder="e.g. auth, backend">
+            </div>
           </div>
           <div class="form-group">
             <label>Notes</label>
@@ -830,6 +890,11 @@
       <div class="modal-tab-content" id="tab-history">
         <div class="modal-body">
           <div id="history-content"></div>
+        </div>
+      </div>
+      <div class="modal-tab-content" id="tab-intelligence">
+        <div class="modal-body">
+          <div id="intel-content"><div style="color:#9ca3af;text-align:center;padding:24px;">Loading scores...</div></div>
         </div>
       </div>
       <div class="modal-footer">
@@ -867,6 +932,27 @@
                  onkeydown="if(event.key==='Enter'){addLane();event.preventDefault();}">
           <button class="btn btn-primary btn-sm" onclick="addLane()">+ Add Lane</button>
         </div>
+
+        <hr class="settings-divider">
+
+        <div class="settings-section-label">Agent Profiles</div>
+        <p class="settings-help" style="margin-bottom:12px;">
+          Define agent capabilities for intelligent work assignment. Skills are matched against item tags.
+        </p>
+        <div id="settings-agents-list"></div>
+        <div class="add-lane-row">
+          <input type="text" id="new-agent-name" placeholder="Agent name (e.g., worker-1)..."
+                 onkeydown="if(event.key==='Enter'){addAgentProfile();event.preventDefault();}">
+          <button class="btn btn-primary btn-sm" onclick="addAgentProfile()">+ Add Agent</button>
+        </div>
+
+        <hr class="settings-divider">
+
+        <div class="settings-section-label">Scoring Weights</div>
+        <p class="settings-help" style="margin-bottom:12px;">
+          Adjust how the intelligence engine scores and ranks work items.
+        </p>
+        <div id="settings-scoring-weights" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
       </div>
       <div class="modal-footer">
         <div style="display:flex;gap:8px;margin-left:auto;">
@@ -906,6 +992,8 @@
     let searchQuery = '';
     let selectedAssignees = new Set(); // empty = All
     let assigneeDdOpen = false;
+    let scoreData = {};  // {item_id: {score, score_breakdown, recommended_agent, recommended_model}}
+    let sortByScore = false;
 
     // Settings working copy
     let settingsLanes = [];
@@ -1009,6 +1097,16 @@
     }
 
     // ── API ──
+    async function loadScores() {
+      try {
+        const res = await fetch('/api/scores');
+        if (!res.ok) return;
+        const data = await res.json();
+        scoreData = {};
+        (data.items || []).forEach(s => { scoreData[s.id] = s; });
+      } catch(e) { /* scores are optional */ }
+    }
+
     async function loadBacklog() {
       try {
         const res = await fetch('/api/backlog');
@@ -1018,6 +1116,7 @@
         const name = backlog.config.project_name;
         document.getElementById('project-title').textContent =
           name ? `${name} — Flow Board` : 'Flow Board';
+        await loadScores();
         renderBoard();
         populateAssigneeDropdown();
         setSyncStatus('Synced');
@@ -1076,6 +1175,9 @@
       statuses.forEach(statusDef => {
         const statusId = statusDef.id;
         const items = backlog.items.filter(i => i.status === statusId);
+          if (sortByScore) {
+            items.sort((a, b) => ((scoreData[b.id] || {}).score || 0) - ((scoreData[a.id] || {}).score || 0));
+          }
         const isDiscarded = statusId === 'discarded';
         const isCollapsed = isDiscarded && discardedCollapsed;
         const col = document.createElement('div');
@@ -1176,10 +1278,34 @@
       if (totalLinkCount > 0) {
         meta += `<span class="badge badge-link">\uD83D\uDD17 ${totalLinkCount}</span>`;
       }
+      // Intelligence badges
+      if (item.category) {
+        const catClass = {'bug':'badge-bug','feature':'badge-feature','chore':'badge-chore','tech-debt':'badge-tech-debt'}[item.category] || '';
+        meta += `<span class="badge badge-category ${catClass}">${item.category}</span>`;
+      }
+      if (item.complexity) {
+        meta += `<span class="complexity-dot complexity-${item.complexity}" title="Complexity: ${item.complexity}"></span>`;
+      }
+      const sd = scoreData[item.id];
+      if (sd) {
+        const sc = sd.score;
+        const cls = sc > 7 ? 'badge-score-high' : sc > 4 ? 'badge-score-mid' : 'badge-score-low';
+        meta += `<span class="badge badge-score ${cls}" title="Intelligence Score">${sc}</span>`;
+      }
       const dateFmt = { month: '2-digit', day: '2-digit', year: '2-digit', hour: 'numeric', minute: '2-digit' };
       const created = new Date(item.created_at).toLocaleString('en-US', dateFmt);
       const updated = item.updated_at && item.updated_at !== item.created_at
         ? new Date(item.updated_at).toLocaleString('en-US', dateFmt) : null;
+
+      // Staleness detection
+      const thresholds = backlog.config && backlog.config.thresholds || {};
+      if (item.status === 'refined' || item.status === 'ready') {
+        const daysSinceUpdate = (Date.now() - new Date(item.updated_at).getTime()) / 86400000;
+        const threshold = item.status === 'refined'
+          ? (thresholds.staleness_days_refined || 7)
+          : (thresholds.staleness_days_ready || 5);
+        if (daysSinceUpdate > threshold) card.className += ' stale-item';
+      }
 
       card.innerHTML = `
         <div class="card-reorder">
@@ -1416,6 +1542,10 @@
       document.getElementById('new-thread-topic').value = '';
       document.getElementById('new-link-type').value = '';
       document.getElementById('new-link-reason').value = '';
+      document.getElementById('item-complexity').value = '';
+      document.getElementById('item-category').value = '';
+      document.getElementById('item-priority-weight').value = '';
+      document.getElementById('item-tags').value = '';
       populateLinkTargetDropdown(null);
       renderPendingLinks();
       document.getElementById('item-status').disabled = true;
@@ -1437,6 +1567,10 @@
       document.getElementById('item-status').value = item.status;
       document.getElementById('item-assigned').value = item.assigned_to || '';
       document.getElementById('item-notes').value = item.notes || '';
+      document.getElementById('item-complexity').value = item.complexity || '';
+      document.getElementById('item-category').value = item.category || '';
+      document.getElementById('item-priority-weight').value = item.priority_weight != null ? item.priority_weight : '';
+      document.getElementById('item-tags').value = (item.tags || []).join(', ');
       document.getElementById('item-status').disabled = false;
       document.getElementById('new-thread-topic').value = '';
       document.getElementById('new-link-type').value = '';
@@ -1448,6 +1582,7 @@
       renderThreads(item.threads || []);
       renderLinks(item);
       renderHistory(item);
+      renderIntelligence(item);
       document.getElementById('modal-overlay').classList.add('active');
     }
 
@@ -1550,6 +1685,46 @@
       container.innerHTML = html;
     }
 
+    function renderIntelligence(item) {
+      const container = document.getElementById('intel-content');
+      const sd = scoreData[item.id];
+      if (!sd) {
+        container.innerHTML = '<div style="color:#9ca3af;text-align:center;padding:24px;">No score data yet. Scores are computed when items have been saved.</div>';
+        return;
+      }
+      const sc = sd.score;
+      const colorClass = sc > 7 ? '#166534' : sc > 4 ? '#854d0e' : '#64748b';
+      const bd = sd.score_breakdown || {};
+      let breakdownHtml = '';
+      const labels = {
+        base_priority: 'Base Priority', unblock: 'Unblock Value', freshness: 'Freshness',
+        complexity: 'Complexity', blocked_penalty: 'Blocked Penalty', quick_win: 'Quick Win',
+        reopen: 'Reopen Penalty', skip_floor: 'Skip Floor', critical_bug: 'Critical Bug Boost'
+      };
+      for (const [key, label] of Object.entries(labels)) {
+        const val = bd[key] || 0;
+        if (val === 0 && key !== 'base_priority') continue;
+        const sign = val > 0 ? '+' : '';
+        breakdownHtml += `<dt>${label}</dt><dd>${sign}${val.toFixed(1)}</dd>`;
+      }
+      let recHtml = '';
+      if (sd.recommended_agent) {
+        recHtml += `<div class="intel-rec"><div class="intel-rec-label">Recommended Agent</div><div class="intel-rec-value">${esc(sd.recommended_agent)}</div></div>`;
+      }
+      if (sd.recommended_model) {
+        recHtml += `<div class="intel-rec"><div class="intel-rec-label">Recommended Model</div><div class="intel-rec-value">${esc(sd.recommended_model)}</div></div>`;
+      }
+      container.innerHTML = `
+        <div class="intel-score-big" style="color:${colorClass};">${sc}</div>
+        <dl class="intel-breakdown">${breakdownHtml}</dl>
+        ${recHtml}
+        <div class="intel-meta">
+          <div class="intel-meta-item"><div class="intel-meta-label">Reopen Count</div><div class="intel-meta-value">${item.reopen_count || 0}</div></div>
+          <div class="intel-meta-item"><div class="intel-meta-label">Skip Count</div><div class="intel-meta-value">${item.skip_count || 0}</div></div>
+        </div>
+      `;
+    }
+
     function getStatusColor(id) {
       const s = statuses.find(s => s.id === id);
       return s ? s.color : '#94a3b8';
@@ -1570,6 +1745,12 @@
       const status = document.getElementById('item-status').value;
       const assignedTo = document.getElementById('item-assigned').value.trim() || null;
       const notes = document.getElementById('item-notes').value.trim();
+      const complexity = document.getElementById('item-complexity').value || null;
+      const category = document.getElementById('item-category').value || null;
+      const priorityWeightRaw = document.getElementById('item-priority-weight').value;
+      const priorityWeight = priorityWeightRaw ? Math.min(10, Math.max(1, parseInt(priorityWeightRaw))) : null;
+      const tagsRaw = document.getElementById('item-tags').value;
+      const tags = tagsRaw ? tagsRaw.split(',').map(t => t.trim()).filter(Boolean) : [];
 
       if (editingItemId) {
         const item = backlog.items.find(i => i.id === editingItemId);
@@ -1589,6 +1770,10 @@
           item.status = status;
           item.assigned_to = assignedTo;
           item.notes = notes;
+          item.complexity = complexity;
+          item.category = category;
+          item.priority_weight = priorityWeight;
+          item.tags = tags;
           item.updated_at = now;
         }
       } else {
@@ -1603,6 +1788,12 @@
           threads: [],
           links: [...pendingLinks],
           notes,
+          complexity,
+          category,
+          priority_weight: priorityWeight,
+          tags,
+          reopen_count: 0,
+          skip_count: 0,
           created_at: now,
           updated_at: now
         });
@@ -1887,6 +2078,10 @@
       settingsLanes = statuses.map(s => ({ ...s, requires: [...(s.requires || [])] }));
       document.getElementById('settings-project-name').value = backlog.config.project_name || '';
       renderSettingsLanes();
+      settingsAgents = JSON.parse(JSON.stringify(backlog.config.agents || {}));
+      settingsScoring = JSON.parse(JSON.stringify(backlog.config.scoring || {}));
+      renderSettingsAgents();
+      renderSettingsScoring();
       document.getElementById('settings-overlay').classList.add('active');
     }
 
@@ -2104,6 +2299,10 @@
         if (l.requires && l.requires.length > 0) s.requires = l.requires;
         return s;
       });
+      backlog.config.agents = JSON.parse(JSON.stringify(settingsAgents));
+      if (Object.keys(settingsScoring).length > 0) {
+        backlog.config.scoring = JSON.parse(JSON.stringify(settingsScoring));
+      }
 
       statuses = getStatuses();
       populateStatusDropdown();
@@ -2115,6 +2314,76 @@
       saveBacklog();
       renderBoard();
       closeSettings();
+    }
+
+    // ── Agent Profile Settings ──
+    let settingsAgents = {};
+    let settingsScoring = {};
+
+    function renderSettingsAgents() {
+      const container = document.getElementById('settings-agents-list');
+      const agents = settingsAgents;
+      if (!Object.keys(agents).length) {
+        container.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:8px 0;">No agents configured yet.</div>';
+        return;
+      }
+      container.innerHTML = Object.entries(agents).map(([name, profile]) => `
+        <div style="background:#f9fafb;border-radius:8px;padding:10px;margin-bottom:8px;">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+            <strong style="font-size:13px;">${esc(name)}</strong>
+            <button class="btn btn-ghost btn-sm" onclick="removeAgentProfile('${escJs(name)}')" style="color:#ef4444;font-size:11px;">Remove</button>
+          </div>
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;">
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:10px;">Skills (comma-separated)</label>
+              <input type="text" value="${esc((profile.skills||[]).join(', '))}" onchange="settingsAgents['${escJs(name)}'].skills = this.value.split(',').map(s=>s.trim()).filter(Boolean)" style="font-size:12px;padding:4px 6px;">
+            </div>
+            <div class="form-group" style="margin:0;">
+              <label style="font-size:10px;">Max Active Tasks</label>
+              <input type="number" value="${profile.max_active || 3}" min="1" max="10" onchange="settingsAgents['${escJs(name)}'].max_active = parseInt(this.value)" style="font-size:12px;padding:4px 6px;">
+            </div>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    function addAgentProfile() {
+      const input = document.getElementById('new-agent-name');
+      const name = input.value.trim();
+      if (!name || settingsAgents[name]) return;
+      settingsAgents[name] = { skills: [], max_active: 3, preferred_complexity: ['low', 'medium', 'high'] };
+      input.value = '';
+      renderSettingsAgents();
+    }
+
+    function removeAgentProfile(name) {
+      delete settingsAgents[name];
+      renderSettingsAgents();
+    }
+
+    function renderSettingsScoring() {
+      const container = document.getElementById('settings-scoring-weights');
+      const defaults = {
+        priority_weight_factor: 1.0, unblock_weight: 2.0, freshness_boost_days: 3,
+        freshness_decay_days: 14, freshness_decay_factor: 0.5, blocked_penalty: -3.0,
+        quick_win_bonus: 1.0, reopen_penalty_per: -0.5, skip_floor_per: 0.3,
+        position_weight: 0.5, critical_bug_boost: 5.0
+      };
+      const labels = {
+        priority_weight_factor: 'Priority Factor', unblock_weight: 'Unblock Weight',
+        freshness_boost_days: 'Freshness Boost (days)', freshness_decay_days: 'Staleness Threshold (days)',
+        freshness_decay_factor: 'Staleness Factor', blocked_penalty: 'Blocked Penalty',
+        quick_win_bonus: 'Quick Win Bonus', reopen_penalty_per: 'Reopen Penalty',
+        skip_floor_per: 'Skip Floor (per skip)', position_weight: 'Position Weight',
+        critical_bug_boost: 'Critical Bug Boost'
+      };
+      container.innerHTML = Object.entries(labels).map(([key, label]) => {
+        const val = settingsScoring[key] != null ? settingsScoring[key] : defaults[key];
+        return `<div class="form-group" style="margin:0;">
+          <label style="font-size:10px;">${label}</label>
+          <input type="number" step="0.1" value="${val}" onchange="settingsScoring['${key}'] = parseFloat(this.value)" style="font-size:12px;padding:4px 6px;">
+        </div>`;
+      }).join('');
     }
 
     // ── Search & Filters ──
@@ -2205,6 +2474,14 @@
         if (!isNaN(num)) return backlog.items.indexOf(item) + 1 === num;
       }
       return item.title.toLowerCase().includes(searchQuery.toLowerCase());
+    }
+
+    function toggleSortMode() {
+      sortByScore = !sortByScore;
+      document.getElementById('sort-toggle').textContent = sortByScore ? 'Sort: Score' : 'Sort: Position';
+      document.getElementById('sort-toggle').classList.toggle('active', sortByScore);
+      renderBoard();
+      applyFilters();
     }
 
     function applyFilters() {

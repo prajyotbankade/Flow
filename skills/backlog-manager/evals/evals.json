@@ -64,6 +64,73 @@
         "Claude suggests adding items to the backlog",
         "The response is helpful and conversational, not a dead end"
       ]
+    },
+    {
+      "id": 6,
+      "prompt": "What should I work on next?",
+      "expected_output": "Generates a work brief using the scoring engine — recommends #1 (Fix auth token expiry crash) as the top item because it blocks 2 other items and is a critical bug",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude generates a structured work brief, not just a list",
+        "The auth token crash (#1) is recommended as the NEXT item due to high score (blocks 2 items + critical bug boost)",
+        "The work brief includes score values and reasoning (Why line)",
+        "Quick win items like #2 (retry logic, low complexity) are mentioned as a secondary recommendation",
+        "The WATCH section flags #3 (skip count 6, past escalation threshold) and #3's staleness in refined",
+        "Agent assignment recommendations are included (worker-auth for auth items)",
+        "Model routing is mentioned (e.g., sonnet for medium complexity)"
+      ]
+    },
+    {
+      "id": 7,
+      "prompt": "There's a critical production bug — the payment API is returning 500 errors for all transactions. Add this as a critical bug.",
+      "expected_output": "Creates a new item with category=bug, priority_weight=10, and announces reprioritization since it's a critical bug",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "A new item is created with category 'bug'",
+        "The item has priority_weight of 9 or 10",
+        "The item has complexity set (likely medium or high)",
+        "Tags are set (e.g., payment, backend, api)",
+        "Claude announces this as a reprioritization event",
+        "Claude suggests this new bug should be worked on immediately based on its score"
+      ]
+    },
+    {
+      "id": 8,
+      "prompt": "The login redirect loop bug (#6) is back again after we thought we fixed it. Move it back to ready.",
+      "expected_output": "Moves item #6 back from its current state, increments reopen_count, and flags the complexity mis-estimate and potential need for redesign",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Item #6 is moved back to ready (or appropriate lane)",
+        "Claude notes this is a reopen (the item's reopen_count should be referenced)",
+        "Claude flags that the complexity estimate may be wrong since it keeps getting reopened",
+        "With reopen_count reaching 3+, Claude suggests considering a redesign rather than another fix",
+        "Claude mentions the pattern of auth-related reopens (opportunistic redesign detection)"
+      ]
+    },
+    {
+      "id": 9,
+      "prompt": "I just completed the auth token expiry fix (#1). Mark it as done.",
+      "expected_output": "Marks #1 as done and announces that items previously blocked by #1 are now unblocked, with updated scoring recommendations",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Item #1 status is moved toward done (respecting gate rules — needs in-progress and code-review first, or Claude explains the gate requirement)",
+        "Claude mentions the blocker_resolved event — #4 (session management) and #5 (SSO) are now unblocked",
+        "Claude provides a quick work brief for what's next now that blockers are cleared",
+        "The unblocked items' improved scores are noted"
+      ]
+    },
+    {
+      "id": 10,
+      "prompt": "Show me the backlog. Which items are stale and need attention?",
+      "expected_output": "Displays the backlog and identifies stale items — #3 has been in refined since March 8 (15+ days past threshold) and has skip_count of 6",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "The backlog is displayed grouped by status",
+        "Claude identifies #3 as stale (in refined for 15+ days, threshold is 7)",
+        "Claude notes #3's skip count of 6 (past escalation threshold of 5)",
+        "Claude recommends a decision: kill it, bump it, or reprioritize",
+        "Intelligence scoring context is provided for the recommendations"
+      ]
     }
   ]
 }

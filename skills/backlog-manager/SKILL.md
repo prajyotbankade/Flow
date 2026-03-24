@@ -1,15 +1,15 @@
 ---
 name: backlog-manager
-description: Manage a project backlog board — add, prioritize, refine, link, and pick up work items. Use this skill whenever the user mentions backlog, sprint planning, task queue, work items, story grooming, picking up tasks, prioritizing work, linking issues, or wants to organize tasks like a PM/engineer would in an agile workflow. Also triggers when the user says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", or "how are these related". If you've just finished a task and the user hasn't given you a new one, check the backlog for ready items and offer to pick one up. When you discover bugs, tech debt, or follow-ups while working, add them to the backlog and link them back to the source task.
+description: Manage an intelligent project backlog — score, prioritize, assign, and pick up work items using a Work Intelligence Engine. Use this skill whenever the user mentions backlog, task queue, work items, story grooming, picking up tasks, prioritizing work, linking issues, work briefs, scoring, agent assignment, what to work on next, reprioritization, or wants to organize tasks like a PM/engineer would in an agile workflow. Also triggers when the user says things like "add this to the list for later", "what should I work on next", "generate a work brief", "what's the priority", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", "which agent should take this", or "what's blocking progress". If you've just finished a task and the user hasn't given you a new one, generate a work brief and offer to pick up the top-scored item. When you discover bugs, tech debt, or follow-ups while working, add them to the backlog with complexity, category, and tags, and link them back to the source task.
 ---
 
 # Backlog Manager
 
-You are managing a project backlog — a prioritized list of work items that flow through stages from idea to completion. Think of it like a scrum board: the user (PM/engineer) adds and prioritizes items, and you (the engineer) refine and execute them.
+You are managing an intelligent project backlog — a prioritized list of work items that flow through stages from idea to completion. You don't just track work — you actively decide what matters next using a scoring engine, assign work based on agent capabilities, and surface reprioritization triggers. Think of it like a scrum board with an AI brain: the user (PM/engineer) adds items, and you (the engineer) score, prioritize, refine, and execute them.
 
 ## How It Works
 
-The backlog lives in `backlog.json` at the project root. Items are stored in an ordered array — **position in the array is the priority** (first item = highest priority). Each item moves through these statuses:
+The backlog lives in `backlog.json` at the project root. Items are stored in an ordered array and each gets a **computed intelligence score** based on priority weight, blocking relationships, freshness, complexity, and more. The score — not just array position — determines what matters next. Each item moves through these statuses:
 
 ```
 backlog → refined → ready → in-progress → code-review → done
@@ -135,7 +135,8 @@ When the user says something like "add X to the backlog", "park this for later",
 2. Set status to `backlog`
 3. Append to the END of the items array — new items always go to the bottom
 4. Generate an 8-character ID (e.g., `a1b2c3d4`)
-5. Confirm what you added with the title and position (e.g., "Added as #5")
+5. **Set intelligence fields if context is available**: If the user's description implies a category (bug, feature, chore, tech-debt), set `category`. If you can estimate complexity (low/medium/high), set `complexity`. Add relevant `tags` from the description (e.g., "auth", "frontend", "database"). Set `priority_weight` (1-10) if the user indicates urgency. Don't ask for these — infer from context when possible.
+6. Confirm what you added with the title, position, and any intelligence fields you set (e.g., "Added as #5 (bug, medium complexity, [auth, backend])")
 
 ### Agent-Initiated Items
 
@@ -143,8 +144,9 @@ You don't have to wait for the user to add items. When you discover something co
 
 1. Create the item with a clear title and a brief description of *what* you found and *where*
 2. Set status to `backlog`, append to the bottom — never self-prioritize
-3. **Link it back** to the item you were working on (see Linking Items below)
-4. Mention it naturally: "While working on #3, I found the error handler doesn't cover timeouts — added as #8, linked back."
+3. **Set intelligence fields**: Always set `category` (bug/feature/chore/tech-debt), estimate `complexity` (low/medium/high) based on what you know about the code involved, and add relevant `tags` (e.g., module names, areas like "auth", "database"). Set `priority_weight` (1-10) only for bugs — score based on severity
+4. **Link it back** to the item you were working on (see Linking Items below)
+5. Mention it naturally: "While working on #3, I found the error handler doesn't cover timeouts — added as #8 (bug, medium complexity, [error-handling]), linked back."
 
 **What to add**: Concrete, actionable things — bugs found during implementation, tech debt spotted in adjacent code, edge cases that need their own task, follow-up work after a feature lands.
 
@@ -174,24 +176,25 @@ Items can be linked to show how they're connected. Each link has a `type`, the `
 
 ### Listing the Backlog
 
-When the user wants to see the backlog, display it grouped by status. Show position number, title, assignment, and any flags (like unresolved threads). Something like:
+When the user wants to see the backlog, display it grouped by status. Show position number, title, score, assignment, complexity, and any flags (like unresolved threads or staleness). Something like:
 
 ```
 # Backlog — ProjectName
 
 ## In Progress
-  → #1 Fix login redirect bug (assigned: worker-1)
+  → #1 Fix login redirect bug [score: 9.0] (assigned: worker-1, low, bug)
 
 ## Ready
-  #2 Implement user auth flow
-  #3 Add email notifications
+  #2 Fix auth token crash [score: 18.1] (medium, bug) — blocks #4, #5
+  #3 Add retry logic [score: 7.5] (low, feature) — quick win
 
 ## Refined
-  #4 Refactor API error handling
+  #4 Refactor session management [score: 2.0] (high, chore) — blocked by #2
+  #5 Redesign settings page [score: 4.7] — ⚠ stale 15d, skipped 6x
 
 ## Backlog
-  #5 Add dark mode toggle
-  #6 Improve search performance — ⚠ 1 unresolved thread
+  #6 Add dark mode toggle
+  #7 Improve search performance — ⚠ 1 unresolved thread
 
 ## Done (recent)
   ✓ Set up CI pipeline
@@ -204,7 +207,7 @@ The user might say "move #5 above #1", "move X to position 2", "prioritize X", o
 
 ### Editing Items
 
-The user can update any field: title, description, notes, status, assigned_to. Apply changes and confirm.
+The user can update any field: title, description, notes, status, assigned_to, complexity, priority_weight, category, tags. Apply changes and confirm. When updating intelligence fields, mention the scoring impact if relevant (e.g., "Set complexity to high — this will reduce the score slightly but recommend opus for execution").
 
 ### Assignment
 
@@ -242,15 +245,18 @@ This prevents items from sitting in `in-progress` or `ready` when they can't act
 
 ### Picking Up Work
 
-When the user says "pick up the next task" or "what should I work on next":
+When the user says "pick up the next task", "what should I work on next", or when you need to decide what matters next:
 
-1. Find the highest-priority item with status `ready` (earliest in the array)
-2. Confirm: "The next ready item is **#N <title>**. Should I start on it?"
-3. On confirmation, set status to `in-progress`, set `assigned_to` to your agent name, and begin working
+1. **Run the Work Intelligence Engine** (see below) to score all items and generate a work brief
+2. Present the work brief with the top-scored items, their reasoning, and recommended assignments
+3. Confirm: "Based on scoring, I'd recommend **#N <title>** (score: X.X). Should I start on it?"
+4. On confirmation, set status to `in-progress`, set `assigned_to` to your agent name, and begin working
+
+**Do NOT rely only on backlog position.** The scoring engine evaluates items using: whether they unblock other work, readiness, complexity, recency, skip count, and blocker status. Position is just one input.
 
 **When there's nothing to pick up**: If the backlog is empty or has no `ready` items, don't offer to pick something up — there's nothing to pick. Instead, let the user know and suggest they add items: "The backlog is empty — want to add something?" or "There are N items in the backlog but none are marked ready yet. Want to refine one or add something new?" Meet the user where they are instead of dead-ending the conversation.
 
-**Being proactive**: After completing a task, if there are more `ready` items, mention it naturally: "I've finished '#N <title>'. There are N more ready items — want me to pick up '#M <next title>'?" This keeps the work flowing without the user having to remember to check the board.
+**Being proactive**: After completing a task, if there are more `ready` items, generate a quick work brief: "I've finished '#N <title>'. Based on scores, next up would be '#M <next title>' (unblocks 2 items, score: X.X) — want me to pick it up?" This keeps the work flowing with informed recommendations.
 
 ### Completing Items
 
@@ -274,6 +280,145 @@ To restore a discarded item:
 2. The `gate_from` watermark resets, so the item must re-earn any gates on its new journey
 3. Tell the user: "#N has been restored to backlog."
 
+## Work Intelligence Engine
+
+The backlog is not just a list — it has a brain. Every item gets a computed score that determines what matters next. You use this engine whenever someone asks "what should I work on?", after completing a task, or when reprioritization triggers fire.
+
+### Scoring Formula
+
+For each item, compute:
+
+```
+score = base_priority
+      + unblock_weight × (# items this blocks)
+      + freshness_component
+      + complexity_component
+      + blocked_penalty (if blocked by incomplete items)
+      + quick_win_bonus (if low complexity AND not blocked)
+      + reopen_count × reopen_penalty
+      + skip_count × skip_floor
+      + critical_bug_boost (if category=bug AND priority_weight ≥ 9)
+```
+
+**Components:**
+- **base_priority**: Use `priority_weight × priority_weight_factor` if set. Otherwise derive from array position: `(total_items - index) / total_items × 10 × position_weight`
+- **unblock_weight**: Count how many items this item blocks (resolve `blocks` links bidirectionally). Multiply by `config.scoring.unblock_weight` (default 2.0). Items that unblock multiple others score highest.
+- **freshness**: Items updated within `freshness_boost_days` (default 3) get a boost. Items not updated for `freshness_decay_days` (default 14) get a decay penalty. Between is neutral.
+- **complexity_component**: From `config.scoring.complexity_bonus` — low: +1.5, medium: 0, high: -1.0. Null complexity treated as medium.
+- **blocked_penalty**: If any item that blocks this one is not `done` or `discarded`, apply penalty (default -3.0)
+- **quick_win_bonus**: Low complexity + not blocked = +1.0 bonus. Maintains momentum.
+- **reopen_penalty**: Each reopen (from done back to any lane) penalizes by -0.5. Signals complexity was underestimated.
+- **skip_floor**: Each time this item is evaluated but not picked, its score rises by +0.3. Prevents permanent neglect — eventually forces a "kill it or bump it" decision.
+- **critical_bug_boost**: +5.0 for items with `category: "bug"` AND `priority_weight >= 9`. Critical bugs dominate the ranking.
+
+All weights are configurable via `config.scoring` in `backlog.json`. See `references/schema.md` for defaults.
+
+### Generating Work Briefs
+
+When asked "what should I work on?", after completing a task, or when a reprioritization trigger fires, produce a **work brief** — not just a sorted list:
+
+```
+=== WORK BRIEF ===
+
+NEXT: #3 — Fix auth timeout
+  Score: 9.2 | Blocks: #7, #11 | Age: 4d in ready
+  Assign: Agent-B (worked on auth in #1, load: 1/3)
+  Model: sonnet (medium complexity)
+  Why: Unblocks 2 critical items, freshness penalty kicking in
+
+THEN: #4 — Add retry logic
+  Score: 7.1 | Quick win (low complexity)
+  Assign: Agent-A (skill match: backend, load: 0/3)
+  Model: haiku
+  Why: Clears simple item, maintains momentum
+
+---
+WATCH:
+  #12 — Stuck in refined 9d (threshold: 7d). Kill or promote?
+  Module /auth — 3 reopens in 14d across #1, #3, #9. Consider redesign.
+  #6 — Skipped 5 times. Score floor rising. Needs attention or discard.
+
+UNASSIGNED CRITICAL:
+  #15 — Production crash (bug, priority: 10). Unassigned 2h. Assign now.
+```
+
+**Rules for work briefs:**
+- Show the top 2-3 scored items from `ready` or `in-progress` lanes
+- Include score, blocking info, age in current lane, recommended agent, and model
+- The **Why** line explains the scoring reasoning in plain language
+- WATCH section flags: stale items, skip-escalated items, areas with repeated reopens
+- UNASSIGNED CRITICAL flags: critical bugs that lack an assignee past the threshold
+
+**When to generate:**
+- User asks "what should I work on?" or "what's next?"
+- After completing a task (brief version: NEXT recommendation + remaining count)
+- After a reprioritization trigger fires
+- When proactively checking in after idle time
+
+### Reprioritization Triggers
+
+After every write to `backlog.json` (via server or direct write), check the response for `_events`. The server detects these events by comparing old and new state:
+
+| Event | Meaning | Your Action |
+|-------|---------|-------------|
+| `critical_bug_created` | New item with category=bug, priority_weight≥9 | Re-score all items. If this bug is now top-ranked, announce: "Critical bug #N created — it scores highest. Should I start on it?" |
+| `blocker_resolved` | An item with `blocks` links moved to done/discarded | Re-score unblocked items. If any jumped significantly in rank, highlight: "#N is now unblocked and scores X.X — ready to pick up." |
+| `item_reopened` | An item moved backward from done | The server auto-increments `reopen_count`. Flag it: "#N was reopened (reopen #X). Complexity estimate may need adjustment." |
+| `blocks_changed` | An item gained new `blocks` links | Re-score the newly-blocked items. Note the impact in your next work brief. |
+
+**Staleness detection** (agent-side, not event-driven): When generating any work brief, scan all items in `refined` and `ready`. If `updated_at` is older than `staleness_days_refined` (default 7) or `staleness_days_ready` (default 5), flag them in the WATCH section.
+
+### Assignment Intelligence
+
+When recommending who should work on an item, compute affinity for each configured agent (from `config.agents`):
+
+- **+2** per matching tag between item `tags` and agent `skills`
+- **+3** if the agent previously worked on a linked item (check `assigned_to` and `lane_history.by` on linked items)
+- **+1** if the item's `complexity` is in the agent's `preferred_complexity` list
+- **-5** if the agent is at or above their `max_active` task cap
+
+**Rules:**
+- Pick the agent with the highest positive affinity
+- If no agent has positive affinity, or if top agents are tied, **ask the user** — don't silently assign
+- Always show the agent's current load in the work brief: `load: 1/3` (current/max)
+- If an item is critical (bug, priority ≥ 9) and has been unassigned longer than `critical_unassigned_hours` (default 4h), escalate in UNASSIGNED CRITICAL
+
+### Model Routing
+
+Based on item `complexity` and `config.model_routing`:
+- `low` → haiku (fast, cheap)
+- `medium` → sonnet (balanced)
+- `high` → opus (most capable)
+
+This is advisory — shown in the work brief as `Model: sonnet (medium complexity)`. It helps the user or orchestrator choose the right model for the task. Don't use expensive models for low-impact/nice-to-have items.
+
+### Staleness & Skip Tracking
+
+**Staleness**: Items stuck in `refined` or `ready` past their threshold days are going stale. Flag them in WATCH with the number of days and suggest: "Kill or promote?"
+
+**Skip tracking**: Every time you generate a work brief and an item is scored but not in the top recommendations, increment its `skip_count` by 1. When `skip_count` reaches `skip_escalation_count` (default 5), escalate it in WATCH: "#N has been skipped 5 times. Score floor is rising. Decide: pick it up, reprioritize, or discard."
+
+When an item is finally picked up (moved to `in-progress`), reset its `skip_count` to 0.
+
+### Feedback Loop
+
+If a scored item is picked up, worked, and then reopened (moved back from `done`), the scoring engine's complexity estimate was likely wrong:
+
+- The server automatically increments `reopen_count`
+- Each reopen adds a penalty to the item's score
+- When you see a reopened item, note: "This item has been reopened N times — the complexity may be higher than estimated. Consider upgrading complexity from [current] to [suggested]."
+- If `reopen_count >= 3`, suggest the user re-evaluate whether this item needs a redesign rather than another fix attempt.
+
+### Opportunistic Redesign Detection
+
+Track patterns across items. If you notice:
+- **3+ items** in the same `tag` area have been **reopened** within the last 14 days
+- A cluster of `blocks` links all point to items in the same module or tag group
+
+Flag it in the WATCH section: "Module /auth — 3 reopens in 14d across #1, #3, #9. Recurring fixes suggest structural issues. Consider a redesign pass before adding more features."
+
+This is proactive — you detect the pattern, the user decides whether to act on it.
+
 ## Visual Board
 
 The skill includes a web-based Kanban board for visual management. To launch it:
@@ -286,7 +431,7 @@ This opens a drag-and-drop board in the browser that reads/writes the same `back
 
 The board auto-refreshes every 5 seconds, so changes made via CLI or by editing the file directly show up automatically.
 
-**Board features**: cards show position number, assignment badge, created/updated dates, @tagged count, and unresolved thread count. Click a card to edit — the modal includes an assignment dropdown, threaded conversations, and all item fields.
+**Board features**: cards show position number, intelligence score, complexity dot, category badge, assignment badge, created/updated dates, @tagged count, and unresolved thread count. Items past staleness thresholds get an amber border. Click a card to edit — the modal includes an assignment dropdown, complexity/category/priority/tags fields, threaded conversations, an Intelligence tab (score breakdown, recommended agent/model, reopen/skip counts), and all item fields. Use the Sort toggle in the toolbar to switch between position-based and score-based ordering.
 
 **Keyboard shortcuts in the board**: `N` to add new item, `Esc` to close modals.
 
@@ -300,6 +445,15 @@ GET /api/backlog?agent=worker-1
 ```
 
 This returns only items where `assigned_to` matches the agent name, plus any unassigned `ready` items that any agent could pick up.
+
+### Intelligence API Endpoints
+
+The server provides intelligence data for agents and the board:
+
+- `GET /api/scores` — Returns all items with computed scores, score breakdowns, recommended agents, and recommended models. Use this to inform work briefs and task selection.
+- `GET /api/agents` — Returns configured agent profiles with current load (in-progress item count). Use this to check agent availability before assigning work.
+
+Write responses (`PUT /api/backlog`, `PUT /api/items/<id>`) include an `_events` array when reprioritization triggers fire. Always check this array and act on events (see Reprioritization Triggers).
 
 ## Concurrency Safety
 

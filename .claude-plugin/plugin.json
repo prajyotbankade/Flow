@@ -1,7 +1,7 @@
 {
   "name": "flow",
-  "version": "1.0.0",
-  "description": "Conversational backlog management for Claude Code — add, prioritize, refine, and pick up work items through conversation or a visual Kanban board.",
+  "version": "2.0.0",
+  "description": "AI-driven work intelligence engine for Claude Code — scores, prioritizes, assigns, and picks up work items with a scoring engine, reprioritization triggers, assignment intelligence, and a visual Kanban board.",
   "author": {
     "name": "Prajyot Bankade",
     "url": "https://github.com/prajyotbankade"
@@ -9,5 +9,5 @@
   "homepage": "https://github.com/prajyotbankade/Flow",
   "repository": "https://github.com/prajyotbankade/Flow",
   "license": "MIT",
-  "keywords": ["backlog", "kanban", "project-management", "agile", "productivity", "task-management"]
+  "keywords": ["backlog", "kanban", "project-management", "agile", "productivity", "task-management", "work-intelligence", "scoring-engine", "ai-prioritization", "assignment-intelligence"]
 }

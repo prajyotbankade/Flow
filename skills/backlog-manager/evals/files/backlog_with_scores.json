@@ -1,0 +1,205 @@
+{
+  "version": 12,
+  "config": {
+    "scope": "project",
+    "project_name": "Flow",
+    "statuses": [
+      { "id": "backlog", "label": "Backlog", "color": "#94a3b8" },
+      { "id": "refined", "label": "Refined", "color": "#f59e0b" },
+      { "id": "ready", "label": "Ready", "color": "#10b981", "requires": ["refined"] },
+      { "id": "in-progress", "label": "In Progress", "color": "#3b82f6", "requires": ["refined", "ready"] },
+      { "id": "code-review", "label": "Code Review", "color": "#ec4899", "requires": ["refined", "ready", "in-progress"] },
+      { "id": "done", "label": "Done", "color": "#8b5cf6", "requires": ["refined", "ready", "in-progress", "code-review"] },
+      { "id": "discarded", "label": "Discarded", "color": "#cbd5e1" }
+    ],
+    "scoring": {
+      "priority_weight_factor": 1.0,
+      "unblock_weight": 2.0,
+      "freshness_boost_days": 3,
+      "freshness_decay_days": 14,
+      "freshness_decay_factor": 0.5,
+      "complexity_bonus": { "low": 1.5, "medium": 0.0, "high": -1.0 },
+      "blocked_penalty": -3.0,
+      "quick_win_bonus": 1.0,
+      "reopen_penalty_per": -0.5,
+      "skip_floor_per": 0.3,
+      "position_weight": 0.5,
+      "critical_bug_boost": 5.0
+    },
+    "agents": {
+      "worker-auth": {
+        "skills": ["auth", "backend", "security"],
+        "max_active": 3,
+        "preferred_complexity": ["medium", "high"]
+      },
+      "worker-ui": {
+        "skills": ["frontend", "css", "ux"],
+        "max_active": 2,
+        "preferred_complexity": ["low", "medium"]
+      }
+    },
+    "thresholds": {
+      "max_active_per_agent": 3,
+      "staleness_days_refined": 7,
+      "staleness_days_ready": 5,
+      "critical_unassigned_hours": 4,
+      "skip_escalation_count": 5
+    },
+    "model_routing": {
+      "low": "haiku",
+      "medium": "sonnet",
+      "high": "opus"
+    }
+  },
+  "items": [
+    {
+      "id": "item0001",
+      "title": "Fix auth token expiry crash",
+      "description": "Production crash when auth tokens expire during active sessions. Users see a 500 error.",
+      "status": "ready",
+      "assigned_to": null,
+      "complexity": "medium",
+      "priority_weight": 9,
+      "category": "bug",
+      "tags": ["auth", "backend", "security"],
+      "reopen_count": 0,
+      "skip_count": 0,
+      "threads": [],
+      "links": [
+        { "item_id": "item0004", "type": "blocks", "reason": "Auth crash blocks the session management refactor" },
+        { "item_id": "item0005", "type": "blocks", "reason": "SSO integration depends on stable auth tokens" }
+      ],
+      "lane_history": [
+        { "lane": "backlog", "at": "2026-03-15T10:00:00Z", "by": "user" },
+        { "lane": "refined", "at": "2026-03-16T14:00:00Z", "by": "user" }
+      ],
+      "gate_from": 0,
+      "notes": "",
+      "created_at": "2026-03-15T10:00:00Z",
+      "updated_at": "2026-03-21T09:00:00Z"
+    },
+    {
+      "id": "item0002",
+      "title": "Add retry logic to webhook delivery",
+      "description": "Webhooks fail silently on timeout. Add exponential backoff retry with 3 attempts.",
+      "status": "ready",
+      "assigned_to": null,
+      "complexity": "low",
+      "priority_weight": 5,
+      "category": "feature",
+      "tags": ["backend", "webhooks"],
+      "reopen_count": 0,
+      "skip_count": 0,
+      "threads": [],
+      "links": [],
+      "lane_history": [
+        { "lane": "backlog", "at": "2026-03-14T08:00:00Z", "by": "user" },
+        { "lane": "refined", "at": "2026-03-17T11:00:00Z", "by": "user" }
+      ],
+      "gate_from": 0,
+      "notes": "",
+      "created_at": "2026-03-14T08:00:00Z",
+      "updated_at": "2026-03-20T10:00:00Z"
+    },
+    {
+      "id": "item0003",
+      "title": "Redesign settings page layout",
+      "description": "Current settings page is cluttered. Redesign with tabs and better grouping.",
+      "status": "refined",
+      "assigned_to": null,
+      "complexity": "medium",
+      "priority_weight": 3,
+      "category": "feature",
+      "tags": ["frontend", "ux"],
+      "reopen_count": 0,
+      "skip_count": 6,
+      "threads": [],
+      "links": [],
+      "lane_history": [
+        { "lane": "backlog", "at": "2026-03-05T10:00:00Z", "by": "user" }
+      ],
+      "gate_from": 0,
+      "notes": "",
+      "created_at": "2026-03-05T10:00:00Z",
+      "updated_at": "2026-03-08T12:00:00Z"
+    },
+    {
+      "id": "item0004",
+      "title": "Refactor session management",
+      "description": "Replace cookie-based sessions with JWT. Needs auth token crash fixed first.",
+      "status": "ready",
+      "assigned_to": null,
+      "complexity": "high",
+      "priority_weight": 6,
+      "category": "chore",
+      "tags": ["auth", "backend"],
+      "reopen_count": 0,
+      "skip_count": 0,
+      "threads": [],
+      "links": [],
+      "lane_history": [
+        { "lane": "backlog", "at": "2026-03-12T10:00:00Z", "by": "user" },
+        { "lane": "refined", "at": "2026-03-18T10:00:00Z", "by": "user" }
+      ],
+      "gate_from": 0,
+      "notes": "",
+      "created_at": "2026-03-12T10:00:00Z",
+      "updated_at": "2026-03-19T15:00:00Z"
+    },
+    {
+      "id": "item0005",
+      "title": "Add SSO integration",
+      "description": "Support Google and GitHub SSO login. Depends on stable auth tokens.",
+      "status": "refined",
+      "assigned_to": null,
+      "complexity": "high",
+      "priority_weight": 7,
+      "category": "feature",
+      "tags": ["auth", "security", "frontend"],
+      "reopen_count": 0,
+      "skip_count": 0,
+      "threads": [],
+      "links": [],
+      "lane_history": [
+        { "lane": "backlog", "at": "2026-03-10T10:00:00Z", "by": "user" }
+      ],
+      "gate_from": 0,
+      "notes": "",
+      "created_at": "2026-03-10T10:00:00Z",
+      "updated_at": "2026-03-20T10:00:00Z"
+    },
+    {
+      "id": "item0006",
+      "title": "Fix login redirect loop",
+      "description": "Login page redirects to itself when session cookie is malformed.",
+      "status": "ready",
+      "assigned_to": "worker-auth",
+      "complexity": "low",
+      "priority_weight": 7,
+      "category": "bug",
+      "tags": ["auth", "frontend"],
+      "reopen_count": 2,
+      "skip_count": 0,
+      "threads": [],
+      "links": [
+        { "item_id": "item0001", "type": "related", "reason": "Both involve auth token/session issues" }
+      ],
+      "lane_history": [
+        { "lane": "backlog", "at": "2026-03-08T10:00:00Z", "by": "user" },
+        { "lane": "refined", "at": "2026-03-10T10:00:00Z", "by": "user" },
+        { "lane": "ready", "at": "2026-03-11T10:00:00Z", "by": "user" },
+        { "lane": "in-progress", "at": "2026-03-12T10:00:00Z", "by": "worker-auth" },
+        { "lane": "code-review", "at": "2026-03-13T10:00:00Z", "by": "worker-auth" },
+        { "lane": "done", "at": "2026-03-14T10:00:00Z", "by": "user" },
+        { "lane": "ready", "at": "2026-03-16T10:00:00Z", "by": "user" },
+        { "lane": "in-progress", "at": "2026-03-17T10:00:00Z", "by": "worker-auth" },
+        { "lane": "code-review", "at": "2026-03-18T10:00:00Z", "by": "worker-auth" },
+        { "lane": "done", "at": "2026-03-19T10:00:00Z", "by": "user" }
+      ],
+      "gate_from": 6,
+      "notes": "Reopened twice — previous fixes didn't cover all edge cases",
+      "created_at": "2026-03-08T10:00:00Z",
+      "updated_at": "2026-03-22T14:00:00Z"
+    }
+  ]
+}
