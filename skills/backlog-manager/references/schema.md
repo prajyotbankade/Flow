@@ -35,7 +35,7 @@
 }
 ```
 
-- `requires`: Gate rules. If set, an item can only move into this lane if its `lane_history` contains ALL of the required lane IDs. Enforced by the server (HTTP 422 on violation) and the web board (blocked drop zones). Example: `"requires": ["code-review"]` on the `done` lane means nothing can be marked done without passing through code review first.
+- `requires`: Gate rules. If set, an item can only move into this lane if its `lane_history` (from the current `gate_from` watermark onward) contains all of the listed lane IDs. Enforced by the server (HTTP 422 on violation) and the web board (blocked drop zones). **Best practice: list only the immediate predecessor** — e.g. `"requires": ["code-review"]` on `done`, not `["refined", "ready", "in-progress", "code-review"]`. Listing only the immediate predecessor means items that moved backward and forward again still satisfy the gate without needing to re-earn every prior lane.
 
 ## ScoringConfig
 

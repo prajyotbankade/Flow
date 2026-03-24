@@ -1129,8 +1129,16 @@
     }
 
     let isSaving = false;
+    let pendingSave = false;
     async function saveBacklog() {
+      // If a save is already in-flight, mark pending and return — the in-flight
+      // save will re-fire with the latest state when it finishes, so no move is lost.
+      if (isSaving) {
+        pendingSave = true;
+        return;
+      }
       isSaving = true;
+      pendingSave = false;
       try {
         setSyncStatus('Saving...');
         const res = await fetch('/api/backlog', {
@@ -1146,17 +1154,31 @@
         if (res.status === 422) {
           const err = await res.json();
           showToast(err.error || 'Gate rule violation', true);
-          await loadBacklog(); // Reload to reset state
+          await loadBacklog();
           return;
         }
         const result = await res.json();
         if (result.version) backlog.version = result.version;
+        // Sync authoritative lane_history / gate_from back into memory so
+        // subsequent gate checks use correct data without waiting for auto-refresh.
+        if (result.updated_items && Array.isArray(result.updated_items)) {
+          result.updated_items.forEach(updated => {
+            const idx = backlog.items.findIndex(i => i.id === updated.id);
+            if (idx >= 0) backlog.items[idx] = updated;
+          });
+        }
         setSyncStatus('Synced');
       } catch (e) {
         console.error('Save failed:', e);
         setSyncStatus('Save failed');
       } finally {
         isSaving = false;
+        // Fire a follow-up save with the latest state if another move came in
+        // while we were in-flight.
+        if (pendingSave) {
+          pendingSave = false;
+          saveBacklog();
+        }
       }
     }
 

@@ -614,6 +614,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
             statuses = get_status_config(incoming)
             current_items = {i.get("id"): i for i in current.get("items", [])}
             first_status = statuses[0].get("id", "backlog") if statuses else "backlog"
+            changed_ids = set()
             for item in incoming.get("items", []):
                 old_item = current_items.get(item.get("id"))
                 if old_item and item.get("status") != old_item.get("status"):
@@ -623,6 +624,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
                         return
                     # Server-side enforcement: append lane_history + set watermark
                     enforce_lane_history(old_item, item, statuses)
+                    changed_ids.add(item.get("id"))
                 elif not old_item and item.get("status", first_status) != first_status:
                     # New item — validate it can enter the chosen lane
                     virtual_old = {"status": first_status, "lane_history": [], "gate_from": 0}
@@ -642,6 +644,12 @@ class BacklogHandler(BaseHTTPRequestHandler):
             atomic_write(self.backlog_file, incoming)
 
         response = {"status": "ok", "version": incoming["version"]}
+        # Return authoritative item data for items that had status changes so
+        # the client can sync lane_history / gate_from without a second round-trip
+        if changed_ids:
+            response["updated_items"] = [
+                i for i in incoming.get("items", []) if i.get("id") in changed_ids
+            ]
         if events:
             response["_events"] = events
         self._json_response(200, response)

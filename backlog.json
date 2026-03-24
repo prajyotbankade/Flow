@@ -1,5 +1,5 @@
 {
-  "version": 0,
+  "version": 15,
   "config": {
     "scope": "project",
     "project_name": "Flow",
@@ -27,7 +27,6 @@
         "label": "In Progress",
         "color": "#3b82f6",
         "requires": [
-          "refined",
           "ready"
         ]
       },
@@ -36,8 +35,6 @@
         "label": "Code Review",
         "color": "#ec4899",
         "requires": [
-          "refined",
-          "ready",
           "in-progress"
         ]
       },
@@ -46,9 +43,6 @@
         "label": "Done",
         "color": "#8b5cf6",
         "requires": [
-          "refined",
-          "ready",
-          "in-progress",
           "code-review"
         ]
       },
@@ -59,5 +53,127 @@
       }
     ]
   },
-  "items": []
+  "items": [
+    {
+      "id": "3mbqxhqc",
+      "title": "t2",
+      "description": "",
+      "status": "backlog",
+      "assigned_to": null,
+      "lane_history": [],
+      "gate_from": 0,
+      "threads": [],
+      "links": [],
+      "notes": "",
+      "complexity": null,
+      "category": "feature",
+      "priority_weight": null,
+      "tags": [],
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-03-24T03:40:24.930Z",
+      "updated_at": "2026-03-24T03:40:24.930Z"
+    },
+    {
+      "id": "hbrmsmay",
+      "title": "t3",
+      "description": "",
+      "status": "backlog",
+      "assigned_to": null,
+      "lane_history": [],
+      "gate_from": 0,
+      "threads": [],
+      "links": [],
+      "notes": "",
+      "complexity": null,
+      "category": "chore",
+      "priority_weight": null,
+      "tags": [],
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-03-24T03:40:40.566Z",
+      "updated_at": "2026-03-24T03:40:40.566Z"
+    },
+    {
+      "id": "tzxdm4o1",
+      "title": "t1",
+      "description": "",
+      "status": "ready",
+      "assigned_to": null,
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-03-24T03:40:43.331182+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-03-24T03:40:46.013333+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-03-24T03:40:49.229852+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-03-24T03:40:50.921116+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-03-24T03:40:57.999730+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-03-24T03:41:08.886793+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-03-24T03:41:10.766676+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "done",
+          "at": "2026-03-24T03:41:12.658508+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-03-24T03:41:21.378290+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-03-24T03:41:23.949526+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-03-24T03:41:26.305516+00:00",
+          "by": "Prajyot Bankade"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-03-24T03:41:31.863915+00:00",
+          "by": "Prajyot Bankade"
+        }
+      ],
+      "gate_from": 11,
+      "threads": [],
+      "links": [],
+      "notes": "",
+      "complexity": null,
+      "category": "bug",
+      "priority_weight": null,
+      "tags": [],
+      "reopen_count": 1,
+      "skip_count": 0,
+      "created_at": "2026-03-24T03:40:15.976Z",
+      "updated_at": "2026-03-24T03:41:31.860Z"
+    }
+  ]
 }

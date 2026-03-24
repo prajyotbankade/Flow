@@ -110,16 +110,17 @@ In this setup:
 - Every item has a `gate_from` integer (default `0`) — a watermark index into `lane_history`. The rule engine only checks entries from `gate_from` onward.
 - When you move an item **forward**, the current lane is appended to `lane_history`.
 - When you move an item **backward**, the current lane is appended to `lane_history` AND `gate_from` is set to the new length of `lane_history`. This means the rule engine ignores all prior history — the item must re-earn gates from its new position.
-- Example: item with history `[backlog, ready, in-progress, code-review]` moves back to Ready → history becomes `[backlog, ready, in-progress, code-review, done]`, `gate_from: 5`. Now to reach Done again, it must go through In Progress and Code Review — the old passes don't count.
+- Example: item with history entries for `[backlog, ready, in-progress, code-review]` moves back to Ready → the current lane is appended and `gate_from` is set to 5. Now to reach Done again, it must go through In Progress and Code Review — the old passes don't count.
+- **History entry format**: Always append as a full object — never a plain string. Use: `{"lane": "<old_status>", "at": "<ISO 8601 UTC timestamp>", "by": "<actor>"}`. Set `by` to `"user"` when the user asked you to move it, or `"backlog-manager"` when you are moving it autonomously (e.g., picking up work, auto-assigning, handling blockers).
 - Moving backward (to an earlier lane) is always allowed — gate rules only apply to forward movement.
 - The server enforces gates with HTTP 422 rejection — even if an agent tries to bypass the board.
 - The server also enforces the `gate_from` watermark on backward moves, so even direct API calls respect it.
 
-**As an agent, before moving any item:**
+**As an agent, when moving any item:**
 1. Read the item's current `lane_history` and `status`
 2. Check the target lane's `requires` in `config.statuses`
-3. If the item hasn't been through all required lanes, do NOT attempt the move
-4. Instead, tell the user what's missing (e.g., "Can't move to Done — needs Code Review first")
+3. If the item hasn't been through all required lanes, do NOT attempt the move — tell the user what's missing (e.g., "Can't move to Done — needs Code Review first")
+4. On success: append `{"lane": "<old_status>", "at": "<now as ISO 8601 UTC>", "by": "<actor>"}` to `lane_history` and update `status` to the new lane in the same write
 
 ## Referencing Items by Number
 
