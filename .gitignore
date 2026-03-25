@@ -8,3 +8,17 @@ __pycache__/
 
 # Eval workspace (dev artifacts)
 backlog-manager-workspace/
+
+# Eval / benchmark artifacts
+flow_env/
+.deepeval/
+*.csv
+benchmarks/
+run_benchmark.py
+simple_benchmark.py
+test.py
+test_flow.py
+test_flow_suite.py
+proof.csv
+pro_benchmark.csv
+benchmark_results.csv
