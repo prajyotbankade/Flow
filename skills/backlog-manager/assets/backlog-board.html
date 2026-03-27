@@ -993,6 +993,7 @@
     let selectedAssignees = new Set(); // empty = All
     let assigneeDdOpen = false;
     let scoreData = {};  // {item_id: {score, score_breakdown, recommended_agent, recommended_model}}
+    let recommendData = null;  // Tribunal recommendation result
     let sortByScore = false;
 
     // Settings working copy
@@ -1105,6 +1106,10 @@
         scoreData = {};
         (data.items || []).forEach(s => { scoreData[s.id] = s; });
       } catch(e) { /* scores are optional */ }
+      try {
+        const res = await fetch('/api/recommend');
+        if (res.ok) { recommendData = await res.json(); }
+      } catch(e) { /* recommend is optional */ }
     }
 
     async function loadBacklog() {
@@ -1736,6 +1741,72 @@
       if (sd.recommended_model) {
         recHtml += `<div class="intel-rec"><div class="intel-rec-label">Recommended Model</div><div class="intel-rec-value">${esc(sd.recommended_model)}</div></div>`;
       }
+
+      // Tribunal justification section
+      let tribunalHtml = '';
+      if (recommendData && recommendData.picked) {
+        const picked = recommendData.picked;
+        const isPicked = picked.item_id === item.id;
+        if (isPicked) {
+          const confColor = picked.confidence === 'high' ? '#166534' : picked.confidence === 'medium' ? '#854d0e' : '#dc2626';
+          let lensesHtml = (picked.supporting_lenses || []).map(l => {
+            const icons = { urgency: '\u23f1', leverage: '\u26a1', agent_fit: '\ud83c\udfaf', risk: '\u26a0\ufe0f', momentum: '\ud83d\ude80' };
+            return `<div style="display:flex;align-items:baseline;gap:6px;padding:4px 0;border-bottom:1px solid #f3f4f6;">
+              <span style="font-size:13px;">${icons[l.lens] || '\u25cf'}</span>
+              <span style="font-size:12px;font-weight:500;color:#374151;min-width:70px;">${esc(l.lens)}</span>
+              <span style="font-size:12px;color:#6b7280;flex:1;">${esc(l.argument)}</span>
+              <span style="font-size:11px;color:#9ca3af;font-variant-numeric:tabular-nums;">+${l.weight.toFixed(1)}</span>
+            </div>`;
+          }).join('');
+
+          let shadowHtml = (recommendData.shadow_ranking || []).slice(0, 3).map(s =>
+            `<div style="padding:4px 0;border-bottom:1px solid #f3f4f6;">
+              <div style="font-size:12px;font-weight:500;color:#374151;">${esc(s.title)} <span style="color:#9ca3af;">[${s.score}]</span></div>
+              <div style="font-size:11px;color:#9ca3af;margin-top:2px;">Why not: ${esc(s.lost_reason)}</div>
+            </div>`
+          ).join('');
+
+          tribunalHtml = `
+            <div style="margin-top:16px;padding-top:12px;border-top:2px solid #e5e7eb;">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+                <span style="font-size:13px;font-weight:600;color:#111827;">Tribunal Verdict</span>
+                <span style="font-size:11px;padding:2px 8px;border-radius:9999px;font-weight:500;color:${confColor};background:${confColor}15;">${picked.confidence} confidence</span>
+              </div>
+              <div style="font-size:12px;color:#374151;padding:8px 12px;background:#f0fdf4;border-radius:6px;border-left:3px solid #22c55e;margin-bottom:10px;">
+                <strong>Recommended pick.</strong> ${esc(picked.reasoning)}${picked.status_note ? '<br><span style="color:#d97706;font-size:11px;">Note: ' + esc(picked.status_note) + '</span>' : ''}
+              </div>
+              <div style="margin-bottom:6px;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Supporting Lenses</div>
+              ${lensesHtml || '<div style="font-size:12px;color:#9ca3af;">No active lens arguments</div>'}
+              ${shadowHtml ? '<div style="margin-top:12px;margin-bottom:6px;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Considered &amp; Passed</div>' + shadowHtml : ''}
+            </div>`;
+        } else {
+          // This item was NOT picked — show why not from shadow ranking
+          const shadow = (recommendData.shadow_ranking || []).find(s => s.item_id === item.id);
+          if (shadow) {
+            tribunalHtml = `
+              <div style="margin-top:16px;padding-top:12px;border-top:2px solid #e5e7eb;">
+                <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:8px;">Tribunal Verdict</div>
+                <div style="font-size:12px;color:#374151;padding:8px 12px;background:#fef3c7;border-radius:6px;border-left:3px solid #f59e0b;margin-bottom:6px;">
+                  <strong>Not recommended.</strong> ${esc(shadow.lost_reason)}
+                </div>
+                <div style="font-size:11px;color:#9ca3af;">
+                  Lost on: <strong>${esc(shadow.lost_on_lens)}</strong> lens &middot;
+                  Tribunal score: ${shadow.tribunal_score} &middot;
+                  Picked instead: <strong>${esc(picked.title)}</strong> [${picked.score}]
+                </div>
+              </div>`;
+          } else {
+            tribunalHtml = `
+              <div style="margin-top:16px;padding-top:12px;border-top:2px solid #e5e7eb;">
+                <div style="font-size:13px;font-weight:600;color:#111827;margin-bottom:8px;">Tribunal Verdict</div>
+                <div style="font-size:12px;color:#9ca3af;padding:8px 12px;background:#f9fafb;border-radius:6px;">
+                  Not in candidate pool (status: ${esc(item.status)})
+                </div>
+              </div>`;
+          }
+        }
+      }
+
       container.innerHTML = `
         <div class="intel-score-big" style="color:${colorClass};">${sc}</div>
         <dl class="intel-breakdown">${breakdownHtml}</dl>
@@ -1744,6 +1815,7 @@
           <div class="intel-meta-item"><div class="intel-meta-label">Reopen Count</div><div class="intel-meta-value">${item.reopen_count || 0}</div></div>
           <div class="intel-meta-item"><div class="intel-meta-label">Skip Count</div><div class="intel-meta-value">${item.skip_count || 0}</div></div>
         </div>
+        ${tribunalHtml}
       `;
     }
 

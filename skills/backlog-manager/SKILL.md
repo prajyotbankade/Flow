@@ -83,21 +83,30 @@ Defaults (all configurable via `config.scoring`):
 | skip_floor_per | +0.3 |
 | critical_bug_boost | +5.0 |
 
+### Justification Engine (Tribunal)
+
+Use `GET /api/recommend[?agent=name]` to get a justified recommendation. The tribunal evaluates all eligible items through 5 lenses (urgency, leverage, agent_fit, risk, momentum) and produces:
+- **Picked item** with reasoning, confidence, and supporting lenses
+- **Shadow ranking** of runners-up with "why not" explanations (counterfactuals)
+
+When committing to a pick, use `?commit=true` to store the decision for outcome tracking.
+
 ### Work Brief Format
 
 ```
-NEXT:  #N — Title  [score: X] | Blocks: #A,#B | Age: Xd in ready
-       Assign: agent-name (reason, load: X/3) | Model: sonnet
-       Why: one line
+NEXT:  #N — Title  [score: X | confidence: high]
+       Why: Primary reasoning from tribunal lenses
+       Assign: agent-name (skill match: auth, backend) | Model: sonnet
 
-THEN:  #M — Title  [score: X] | Quick win
-       ...
+       Considered but passed:
+       · #M — Title [score: Y] — Why not: not ready (status: backlog)
+       · #K — Title [score: Z] — Why not: blocked by incomplete dependency
 
 WATCH: stale items · skip-escalated items · 3+ reopens in same tag area
 UNASSIGNED CRITICAL: critical bugs unassigned > threshold hours
 ```
 
-Generate after: task completion, reprioritization trigger fires, user asks "what's next?".
+Generate after: task completion, reprioritization trigger fires, user asks "what's next?". Prefer `/api/recommend` over raw `/api/scores` — it provides justification, not just numbers.
 
 ### Reprioritization Triggers
 
@@ -137,6 +146,8 @@ Server rejects writes where client `version` < current (HTTP 409).
 ```
 GET  /api/backlog[?agent=name]   Full or agent-filtered backlog
 GET  /api/scores                 Ranked items with score_breakdown
+GET  /api/recommend[?agent=name&commit=true]  Tribunal-justified recommendation
+GET  /api/decisions              Stored decision history with outcomes
 GET  /api/agents                 Agent load info
 PUT  /api/backlog                Full write (version-checked)
 PUT  /api/items/<id>             Single item update

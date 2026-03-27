@@ -15,6 +15,8 @@ API:
     GET  /api/backlog              Full backlog (for leaders and web board)
     GET  /api/backlog?agent=name   Filtered view (assigned to agent + unassigned ready items)
     GET  /api/scores               Computed scores for all items (Work Intelligence Engine)
+    GET  /api/recommend            Tribunal-justified recommendation (optional ?agent=name&commit=true)
+    GET  /api/decisions            Stored decision history with outcomes
     GET  /api/agents               Agent profiles with current load
     PUT  /api/backlog              Full backlog write (version checked, atomic, returns _events)
     PUT  /api/items/<id>           Single item update (version checked, atomic, returns _events)
@@ -249,6 +251,402 @@ DEFAULT_THRESHOLDS = {
 }
 
 DEFAULT_MODEL_ROUTING = {"low": "haiku", "medium": "sonnet", "high": "opus"}
+
+
+# ── Justification Engine (Tribunal) ──────────────────────────────────────────
+
+# Statuses eligible for recommendation (available for pick-up)
+RECOMMEND_ELIGIBLE = {"backlog", "refined", "ready"}
+
+# Lens weights — how much each lens influences the final verdict
+LENS_WEIGHTS = {
+    "urgency": 1.0,
+    "leverage": 1.2,
+    "agent_fit": 0.8,
+    "risk": 1.0,
+    "momentum": 0.6,
+}
+
+
+def compute_unblock_cascade(start_id, blocks_map):
+    """Compute all items transitively unblocked if start_id completes."""
+    visited = set()
+    queue = list(blocks_map.get(start_id, []))
+    while queue:
+        nid = queue.pop(0)
+        if nid in visited:
+            continue
+        visited.add(nid)
+        queue.extend(blocks_map.get(nid, []))
+    return visited
+
+
+def evaluate_lens_urgency(item, breakdown, scoring_cfg):
+    """Urgency: time-sensitivity, criticality, priority weight."""
+    score = 0.0
+    reasons = []
+
+    if breakdown.get("critical_bug", 0) > 0:
+        score += 10.0
+        pw = item.get("priority_weight") or 0
+        reasons.append(f"Critical bug (priority {pw}/10)")
+
+    pw = item.get("priority_weight")
+    if pw is not None:
+        if pw >= 8:
+            score += pw
+            reasons.append(f"High priority ({pw}/10)")
+        elif pw >= 5:
+            score += pw * 0.5
+
+    freshness = breakdown.get("freshness", 0)
+    if freshness < -0.2:
+        score += abs(freshness) * 3
+        decay_days = scoring_cfg.get("freshness_decay_days", 14)
+        days_approx = int(abs(freshness) / 0.5 * decay_days)
+        reasons.append(f"Going stale (~{days_approx}d without activity)")
+
+    return {
+        "lens": "urgency",
+        "item_id": item.get("id"),
+        "score": round(score, 2),
+        "argument": "; ".join(reasons) if reasons else None,
+    }
+
+
+def evaluate_lens_leverage(item, breakdown, blocks_map):
+    """Leverage: how much downstream work completing this unblocks."""
+    iid = item.get("id")
+    direct_blocks = blocks_map.get(iid, [])
+    score = 0.0
+    reasons = []
+
+    if direct_blocks:
+        cascade = compute_unblock_cascade(iid, blocks_map)
+        score += len(direct_blocks) * 3.0
+        reasons.append(f"Directly unblocks {len(direct_blocks)} item(s)")
+        if len(cascade) > len(direct_blocks):
+            score += (len(cascade) - len(direct_blocks)) * 1.5
+            reasons.append(f"{len(cascade)} items in full unblock cascade")
+
+    return {
+        "lens": "leverage",
+        "item_id": item.get("id"),
+        "score": round(score, 2),
+        "argument": "; ".join(reasons) if reasons else None,
+    }
+
+
+def evaluate_lens_agent_fit(item, agent_name, agents_cfg, all_items):
+    """Agent fit: how well matched to the best available agent."""
+    score = 0.0
+    reasons = []
+    best_agent = None
+
+    if agent_name:
+        profile = agents_cfg.get(agent_name, {})
+        affinity = compute_agent_affinity(item, agent_name, profile, all_items)
+        if affinity > 0:
+            score += affinity * 1.5
+            item_tags = set(item.get("tags", []))
+            agent_skills = set(profile.get("skills", []))
+            overlap = item_tags & agent_skills
+            if overlap:
+                reasons.append(f"Skill match: {', '.join(sorted(overlap))}")
+            complexity = item.get("complexity")
+            if complexity in profile.get("preferred_complexity", []):
+                reasons.append(f"Preferred complexity ({complexity})")
+            best_agent = agent_name
+        elif affinity <= -5:
+            reasons.append(f"{agent_name} at max capacity")
+        else:
+            reasons.append(f"Low affinity for {agent_name}")
+    else:
+        best_affinity = -float("inf")
+        for aname, aprofile in agents_cfg.items():
+            aff = compute_agent_affinity(item, aname, aprofile, all_items)
+            if aff > best_affinity:
+                best_affinity = aff
+                best_agent = aname
+        if best_affinity > 0:
+            score += best_affinity * 1.5
+            profile = agents_cfg.get(best_agent, {})
+            item_tags = set(item.get("tags", []))
+            agent_skills = set(profile.get("skills", []))
+            overlap = item_tags & agent_skills
+            if overlap:
+                reasons.append(f"Best agent: {best_agent} (skills: {', '.join(sorted(overlap))})")
+            else:
+                reasons.append(f"Best agent: {best_agent}")
+        else:
+            reasons.append("No agent with positive affinity")
+            best_agent = None
+
+    return {
+        "lens": "agent_fit",
+        "item_id": item.get("id"),
+        "score": round(score, 2),
+        "argument": "; ".join(reasons) if reasons else None,
+        "recommended_agent": best_agent,
+    }
+
+
+def evaluate_lens_risk(item, breakdown, blocks_map, items_by_id):
+    """Risk: what happens if this item is delayed further."""
+    iid = item.get("id")
+    score = 0.0
+    reasons = []
+
+    direct_blocks = blocks_map.get(iid, [])
+    if direct_blocks:
+        score += len(direct_blocks) * 2.5
+        blocked_titles = [items_by_id.get(bid, {}).get("title", bid) for bid in direct_blocks[:3]]
+        reasons.append(f"Blocking: {', '.join(blocked_titles)}")
+
+    reopens = item.get("reopen_count", 0)
+    if reopens >= 2:
+        score += reopens * 2.0
+        reasons.append(f"Reopened {reopens}x — unstable area, needs focused attention")
+
+    skips = item.get("skip_count", 0)
+    if skips >= 3:
+        score += skips * 1.0
+        reasons.append(f"Skipped {skips}x — risk of permanent neglect")
+
+    return {
+        "lens": "risk",
+        "item_id": item.get("id"),
+        "score": round(score, 2),
+        "argument": "; ".join(reasons) if reasons else None,
+    }
+
+
+def evaluate_lens_momentum(item, breakdown):
+    """Momentum: items already in motion or with recent activity."""
+    score = 0.0
+    reasons = []
+
+    status = item.get("status", "backlog")
+    progression = {"backlog": 0, "refined": 1, "ready": 2}
+    progress = progression.get(status, 0)
+
+    if progress >= 2:
+        score += 4.0
+        reasons.append("In ready — cleared for work")
+    elif progress == 1:
+        score += 2.0
+        reasons.append("Refined — one step from ready")
+
+    freshness = breakdown.get("freshness", 0)
+    if freshness > 0.3:
+        score += freshness * 2.0
+        reasons.append("Recently active")
+
+    history_len = len(item.get("lane_history", []))
+    if history_len >= 3:
+        score += min(history_len * 0.5, 3.0)
+        reasons.append(f"Work invested ({history_len} lane transitions)")
+
+    return {
+        "lens": "momentum",
+        "item_id": item.get("id"),
+        "score": round(score, 2),
+        "argument": "; ".join(reasons) if reasons else None,
+    }
+
+
+def evaluate_tribunal(data, agent=None):
+    """Run the tribunal: every lens evaluates every candidate, then aggregate.
+
+    Returns structured verdict with justification and counterfactuals.
+    """
+    config = data.get("config", {})
+    scoring_cfg = {**DEFAULT_SCORING, **config.get("scoring", {})}
+    agents_cfg = config.get("agents", {})
+    items = data.get("items", [])
+
+    score_results = compute_scores(data)
+    breakdowns_by_id = {r["id"]: r["score_breakdown"] for r in score_results}
+    scores_by_id = {r["id"]: r["score"] for r in score_results}
+
+    candidates = [i for i in items if i.get("status") in RECOMMEND_ELIGIBLE]
+    if not candidates:
+        return {"picked": None, "shadow_ranking": [], "lenses": [], "candidates_evaluated": 0}
+
+    blocks_map, blocked_by = resolve_blocks(items)
+    items_by_id = {i.get("id"): i for i in items}
+
+    # Evaluate every lens for every candidate
+    evaluations = {}
+    for item in candidates:
+        iid = item.get("id")
+        breakdown = breakdowns_by_id.get(iid, {})
+        evaluations[iid] = {
+            "urgency": evaluate_lens_urgency(item, breakdown, scoring_cfg),
+            "leverage": evaluate_lens_leverage(item, breakdown, blocks_map),
+            "agent_fit": evaluate_lens_agent_fit(item, agent, agents_cfg, items),
+            "risk": evaluate_lens_risk(item, breakdown, blocks_map, items_by_id),
+            "momentum": evaluate_lens_momentum(item, breakdown),
+        }
+
+    # Compute weighted tribunal score per candidate
+    tribunal_scores = {}
+    for iid, evals in evaluations.items():
+        total = sum(e["score"] * LENS_WEIGHTS.get(name, 1.0) for name, e in evals.items())
+        tribunal_scores[iid] = round(total, 2)
+
+    ranked = sorted(tribunal_scores.items(), key=lambda x: x[1], reverse=True)
+    winner_id = ranked[0][0]
+    winner_item = items_by_id[winner_id]
+    winner_evals = evaluations[winner_id]
+
+    # Confidence from margin to runner-up
+    if len(ranked) >= 2:
+        margin = ranked[0][1] - ranked[1][1]
+        confidence = "high" if margin > 5 else ("medium" if margin > 2 else "low")
+    else:
+        confidence = "high"
+
+    # Supporting lenses (non-zero, with arguments)
+    supporting = [
+        {"lens": name, "argument": e["argument"],
+         "weight": round(e["score"] * LENS_WEIGHTS.get(name, 1.0), 2)}
+        for name, e in winner_evals.items()
+        if e["score"] > 0 and e["argument"]
+    ]
+    supporting.sort(key=lambda x: x["weight"], reverse=True)
+
+    reasoning = ". ".join(s["argument"] for s in supporting[:3]) if supporting else "Highest overall score"
+
+    agent_fit_result = winner_evals.get("agent_fit", {})
+    model_routing = {**DEFAULT_MODEL_ROUTING, **config.get("model_routing", {})}
+    rec_model = model_routing.get(winner_item.get("complexity") or "medium", "sonnet")
+
+    status_note = None
+    ws = winner_item.get("status", "backlog")
+    if ws == "backlog":
+        status_note = "Needs refinement before starting"
+    elif ws == "refined":
+        status_note = "Refined — move to ready before starting"
+
+    picked = {
+        "item_id": winner_id,
+        "title": winner_item.get("title", ""),
+        "status": ws,
+        "score": scores_by_id.get(winner_id, 0),
+        "tribunal_score": ranked[0][1],
+        "reasoning": reasoning,
+        "confidence": confidence,
+        "recommended_agent": agent_fit_result.get("recommended_agent"),
+        "recommended_model": rec_model,
+        "supporting_lenses": supporting,
+        "status_note": status_note,
+    }
+
+    # Shadow ranking — runners-up with "why not" explanations
+    shadow = []
+    for rid, rscore in ranked[1:5]:
+        runner = items_by_id[rid]
+        runner_evals = evaluations[rid]
+
+        biggest_gap_lens = max(
+            LENS_WEIGHTS,
+            key=lambda ln: (winner_evals[ln]["score"] - runner_evals[ln]["score"]) * LENS_WEIGHTS[ln]
+        )
+
+        lost_reasons = []
+        winner_arg = winner_evals[biggest_gap_lens].get("argument")
+        if winner_arg:
+            lost_reasons.append(f"Winner stronger on {biggest_gap_lens}: {winner_arg}")
+
+        if breakdowns_by_id.get(rid, {}).get("blocked_penalty", 0) < 0:
+            lost_reasons.append("Blocked by incomplete dependency")
+
+        if runner.get("status") != "ready":
+            lost_reasons.append(f"Not ready (status: {runner.get('status')})")
+
+        shadow.append({
+            "item_id": rid,
+            "title": runner.get("title", ""),
+            "score": scores_by_id.get(rid, 0),
+            "tribunal_score": rscore,
+            "lost_on_lens": biggest_gap_lens,
+            "lost_reason": "; ".join(lost_reasons) if lost_reasons else "Lower weighted tribunal score",
+        })
+
+    # Lens detail for the winner
+    lenses = [
+        {"lens": name, "argued_for": e["item_id"], "argument": e["argument"],
+         "score": e["score"],
+         "weighted_score": round(e["score"] * LENS_WEIGHTS.get(name, 1.0), 2)}
+        for name, e in winner_evals.items()
+    ]
+
+    return {
+        "picked": picked,
+        "shadow_ranking": shadow,
+        "lenses": lenses,
+        "candidates_evaluated": len(candidates),
+    }
+
+
+# ── Decision storage ─────────────────────────────────────────────────────────
+
+def generate_decision_id():
+    """Generate an 8-char alphanumeric ID for decisions."""
+    import random
+    import string
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+
+def get_decisions_path(backlog_path):
+    """Decisions file lives alongside backlog.json."""
+    return os.path.join(os.path.dirname(os.path.abspath(backlog_path)), "decisions.json")
+
+
+def read_decisions(filepath):
+    """Read decisions log."""
+    try:
+        with open(filepath, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"decisions": []}
+
+
+def store_decision(filepath, tribunal_result, agent=None):
+    """Store a decision from a tribunal evaluation. Returns decision ID."""
+    decisions = read_decisions(filepath)
+    decision_id = generate_decision_id()
+    decision = {
+        "id": decision_id,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "agent": agent,
+        "picked": tribunal_result["picked"],
+        "shadow_ranking": tribunal_result["shadow_ranking"],
+        "lenses": tribunal_result["lenses"],
+        "candidates_evaluated": tribunal_result["candidates_evaluated"],
+        "outcome": None,
+    }
+    decisions["decisions"].append(decision)
+    # Cap at 100 decisions
+    if len(decisions["decisions"]) > 100:
+        decisions["decisions"] = decisions["decisions"][-100:]
+    atomic_write(filepath, decisions)
+    return decision_id
+
+
+def record_decision_outcome(filepath, item_id):
+    """When an item completes, record the outcome on its most recent decision."""
+    decisions = read_decisions(filepath)
+    for d in reversed(decisions["decisions"]):
+        if d.get("picked") and d["picked"].get("item_id") == item_id and d.get("outcome") is None:
+            d["outcome"] = {
+                "completed_at": datetime.now(timezone.utc).isoformat(),
+                "result": "completed",
+            }
+            atomic_write(filepath, decisions)
+            return True
+    return False
 
 
 # ── Scoring engine ────────────────────────────────────────────────────────────
@@ -516,6 +914,13 @@ class BacklogHandler(BaseHTTPRequestHandler):
             self._serve_backlog(agent)
         elif parsed.path == "/api/scores":
             self._serve_scores()
+        elif parsed.path == "/api/recommend":
+            params = parse_qs(parsed.query)
+            agent = params.get("agent", [None])[0]
+            commit = params.get("commit", ["false"])[0].lower() == "true"
+            self._serve_recommend(agent, commit)
+        elif parsed.path == "/api/decisions":
+            self._serve_decisions()
         elif parsed.path == "/api/agents":
             self._serve_agents()
         elif parsed.path == "/api/user":
@@ -582,6 +987,27 @@ class BacklogHandler(BaseHTTPRequestHandler):
         loads = get_agent_loads(data)
         self._json_response(200, {"agents": loads})
 
+    def _serve_recommend(self, agent=None, commit=False):
+        """Tribunal evaluation — returns justified recommendation.
+        With ?commit=true, stores the decision for outcome tracking."""
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError as e:
+            self._json_error(500, str(e))
+            return
+        result = evaluate_tribunal(data, agent=agent)
+        if commit and result.get("picked"):
+            decisions_file = get_decisions_path(self.backlog_file)
+            decision_id = store_decision(decisions_file, result, agent)
+            result["decision_id"] = decision_id
+        self._json_response(200, result)
+
+    def _serve_decisions(self):
+        """Return stored decisions for review."""
+        decisions_file = get_decisions_path(self.backlog_file)
+        decisions = read_decisions(decisions_file)
+        self._json_response(200, decisions)
+
     def _save_backlog(self):
         content_length = int(self.headers.get("Content-Length", 0))
         if content_length > MAX_BODY_SIZE:
@@ -642,6 +1068,15 @@ class BacklogHandler(BaseHTTPRequestHandler):
             # Bump version and write atomically
             incoming["version"] = current_version + 1
             atomic_write(self.backlog_file, incoming)
+
+            # Record outcomes for items that just moved to done
+            decisions_file = get_decisions_path(self.backlog_file)
+            current_items_map = {i.get("id"): i for i in current.get("items", [])}
+            for item in incoming.get("items", []):
+                iid = item.get("id")
+                old = current_items_map.get(iid)
+                if old and old.get("status") != "done" and item.get("status") == "done":
+                    record_decision_outcome(decisions_file, iid)
 
         response = {"status": "ok", "version": incoming["version"]}
         # Return authoritative item data for items that had status changes so
@@ -716,6 +1151,11 @@ class BacklogHandler(BaseHTTPRequestHandler):
 
             data["version"] = current_version + 1
             atomic_write(self.backlog_file, data)
+
+            # Record outcome if item just moved to done
+            if old_snapshot.get("status") != "done" and data["items"][found_idx].get("status") == "done":
+                decisions_file = get_decisions_path(self.backlog_file)
+                record_decision_outcome(decisions_file, item_id)
 
         response = {"status": "ok", "version": data["version"]}
         if events:

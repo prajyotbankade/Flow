@@ -219,3 +219,97 @@ A record of an item moving through a lane. Appended to `lane_history` every time
 - `complexity`, `priority_weight`, `category`, and `tags` are optional on all items. The scoring engine uses sensible defaults when they are absent (null complexity = medium, null priority_weight = position-derived, null category = no boost, empty tags = no skill matching).
 - All `config.scoring`, `config.agents`, `config.thresholds`, and `config.model_routing` sections are optional. When absent, hardcoded defaults apply. Existing backlogs work without any migration.
 - Scoring is computed at evaluation time, never persisted as a field on items. The `GET /api/scores` endpoint computes fresh scores on every request.
+- Tribunal recommendations are computed via `GET /api/recommend` — never persisted on items. Decisions are stored separately in `decisions.json`.
+
+## Tribunal Recommendation (`GET /api/recommend`)
+
+Returns a justified recommendation with counterfactuals. Optional query params: `?agent=name` (agent-specific fit), `?commit=true` (store decision).
+
+```json
+{
+  "picked": {
+    "item_id": "string — ID of the recommended item",
+    "title": "string",
+    "status": "string — current status of the item",
+    "score": "number — score from the scoring engine",
+    "tribunal_score": "number — weighted aggregate across all lenses",
+    "reasoning": "string — human-readable justification composed from top lenses",
+    "confidence": "high | medium | low — based on margin to runner-up",
+    "recommended_agent": "string | null — best-fit agent from agent_fit lens",
+    "recommended_model": "string — model routing recommendation",
+    "supporting_lenses": [
+      {
+        "lens": "string — urgency | leverage | agent_fit | risk | momentum",
+        "argument": "string — why this lens supports the pick",
+        "weight": "number — weighted contribution to tribunal score"
+      }
+    ],
+    "status_note": "string | null — e.g. 'Needs refinement before starting'"
+  },
+  "shadow_ranking": [
+    {
+      "item_id": "string — runner-up item ID",
+      "title": "string",
+      "score": "number — scoring engine score",
+      "tribunal_score": "number — weighted tribunal score",
+      "lost_on_lens": "string — lens with biggest gap vs winner",
+      "lost_reason": "string — why this item was not picked"
+    }
+  ],
+  "lenses": [
+    {
+      "lens": "string — lens name",
+      "argued_for": "string — item_id this lens evaluated",
+      "argument": "string | null — lens reasoning (null if no signal)",
+      "score": "number — raw lens score",
+      "weighted_score": "number — score × lens weight"
+    }
+  ],
+  "candidates_evaluated": "integer — number of eligible items considered",
+  "decision_id": "string (optional) — only present when ?commit=true"
+}
+```
+
+### Tribunal Lenses
+
+| Lens | Weight | Evaluates |
+|------|--------|-----------|
+| `urgency` | 1.0 | Priority weight, critical bugs, staleness |
+| `leverage` | 1.2 | Items blocked by this one, cascade depth |
+| `agent_fit` | 0.8 | Skill match, complexity preference, load |
+| `risk` | 1.0 | Blocking impact, reopen instability, skip neglect |
+| `momentum` | 0.6 | Status progression, recent activity, work invested |
+
+### Confidence Levels
+
+- **high**: Margin to runner-up > 5 tribunal points
+- **medium**: Margin 2–5 points
+- **low**: Margin < 2 points — consider reviewing alternatives
+
+## Decision (`decisions.json`)
+
+Stored when `/api/recommend?commit=true` is called. Outcomes recorded automatically when picked items move to `done`.
+
+```json
+{
+  "decisions": [
+    {
+      "id": "string (8-char alphanumeric)",
+      "timestamp": "ISO 8601",
+      "agent": "string | null — agent the recommendation was for",
+      "picked": "TribunalPicked — same as recommend response",
+      "shadow_ranking": "TribunalShadow[] — same as recommend response",
+      "lenses": "TribunalLens[] — same as recommend response",
+      "candidates_evaluated": "integer",
+      "outcome": {
+        "completed_at": "ISO 8601 | null",
+        "result": "completed"
+      }
+    }
+  ]
+}
+```
+
+- Capped at 100 decisions (oldest pruned on write)
+- `outcome` is `null` until the picked item moves to `done`, at which point the server auto-populates it
+- Use `GET /api/decisions` to review decision history and outcome tracking

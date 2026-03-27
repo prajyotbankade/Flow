@@ -131,6 +131,46 @@
         "Claude recommends a decision: kill it, bump it, or reprioritize",
         "Intelligence scoring context is provided for the recommendations"
       ]
+    },
+    {
+      "id": 11,
+      "prompt": "What should I work on next? I want to understand WHY you're recommending it over the other options.",
+      "expected_output": "Uses the tribunal (/api/recommend) to generate a justified recommendation — picks #1 (auth token crash) and explains through lens arguments: urgency (critical bug), leverage (unblocks 2 items), and risk (blocking). Explains why #2 (retry logic) and #4 (session refactor) were not picked with counterfactual reasoning.",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude uses /api/recommend (not just /api/scores) to get tribunal justification",
+        "The auth token crash (#1) is recommended as the top pick",
+        "Claude cites specific tribunal lenses — urgency (critical bug), leverage (unblocks items), or risk",
+        "Claude provides counterfactuals — why #2 or #4 were NOT picked (e.g., no leverage, blocked)",
+        "Confidence level is mentioned (high, medium, or low)",
+        "The response reads as a justified recommendation, not just a sorted list"
+      ]
+    },
+    {
+      "id": 12,
+      "prompt": "Why not the retry logic webhook task instead? It seems like a quick win.",
+      "expected_output": "Explains via counterfactual reasoning from the tribunal shadow ranking — the retry logic (#2) has a decent score and is a quick win, but it lost to #1 on urgency (not a critical bug) and leverage (doesn't unblock anything). The tribunal considered it but the auth crash's urgency and unblocking power outweigh the quick-win bonus.",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude explains why the retry logic item was not the top pick",
+        "The explanation references specific lens comparisons (urgency, leverage)",
+        "Claude acknowledges it IS a quick win but explains what outweighed that",
+        "The response uses counterfactual reasoning, not just 'it has a lower score'",
+        "Claude references the tribunal shadow ranking or lost_reason if available"
+      ]
+    },
+    {
+      "id": 13,
+      "prompt": "I want worker-auth to pick up the next task. What does the tribunal recommend for that agent specifically?",
+      "expected_output": "Uses /api/recommend?agent=worker-auth to get an agent-specific recommendation. The auth token crash (#1) should still be top pick with enhanced agent_fit lens arguments — worker-auth has skills matching auth, backend, security tags. The recommendation includes the specific agent fit reasoning.",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude calls /api/recommend with agent=worker-auth parameter",
+        "The recommendation accounts for worker-auth's skill profile",
+        "Agent fit lens arguments are cited (skill match: auth, backend, security)",
+        "The work brief format includes agent assignment reasoning",
+        "If the agent is at capacity, Claude mentions the load constraint"
+      ]
     }
   ]
 }
