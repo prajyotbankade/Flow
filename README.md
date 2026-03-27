@@ -165,6 +165,8 @@ Flow/
 │       └── evals/
 │           ├── evals.json        # Test cases and assertions
 │           └── files/            # Fixture data for evals
+├── flow_skill.py             # deepeval skill harness (calls live API + Ollama)
+├── test_flow_live.py         # deepeval benchmark suite (AnswerRelevancy + GEval)
 └── backlog.json              # Your backlog (zero items, ready to use)
 ```
 
