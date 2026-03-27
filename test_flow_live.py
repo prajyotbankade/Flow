@@ -5,7 +5,7 @@ from deepeval.metrics import AnswerRelevancyMetric, GEval
 from deepeval.models import OllamaModel
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-from flow_skill import run_flow, run_flow_tribunal
+from flow_skill import run_flow, run_flow_tribunal, run_flow_graph
 
 BACKLOG_URL = "http://localhost:8089/api/backlog"
 
@@ -458,6 +458,306 @@ def test_tribunal_justification(scenario):
 
     correctness = GEval(
         name="Tribunal Justification Quality",
+        criteria=scenario["criteria"],
+        evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
+        threshold=0.6,
+        model=local_qwen,
+    )
+
+    assert_test(test_case, [relevancy_metric, correctness])
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: Multi-Agent Coordination — Direct API Tests
+# These test /api/graph and /api/pulse response structure directly (no LLM).
+# ---------------------------------------------------------------------------
+
+GRAPH_URL  = "http://localhost:8089/api/graph"
+PULSE_URL  = "http://localhost:8089/api/pulse"
+
+
+def _seed_items(items):
+    """Seed the backlog with the given items and return the new version."""
+    resp = requests.get(BACKLOG_URL)
+    resp.raise_for_status()
+    version = resp.json().get("version", 0)
+    requests.put(BACKLOG_URL, json={"version": version, "items": items}).raise_for_status()
+    return version + 1
+
+
+def test_graph_cascade_correctness():
+    """A→B→C chain: cascade_count for A must be 2, B must be 1, C must be 0."""
+    items = [
+        {
+            "id": "CA", "title": "Root blocker", "status": "ready",
+            "links": [{"type": "blocks", "item_id": "CB", "reason": "blocks B"}],
+            "lane_history": [{"lane": "backlog", "at": "2026-03-01T00:00:00Z", "by": "u"},
+                             {"lane": "refined", "at": "2026-03-02T00:00:00Z", "by": "u"}],
+            "gate_from": 0, "threads": [], "priority_weight": 5, "tags": [],
+            "reopen_count": 0, "skip_count": 0,
+            "created_at": "2026-03-01T00:00:00Z", "updated_at": "2026-03-01T00:00:00Z",
+        },
+        {
+            "id": "CB", "title": "Middle item", "status": "backlog",
+            "links": [{"type": "blocks", "item_id": "CC", "reason": "blocks C"}],
+            "lane_history": [], "gate_from": 0, "threads": [], "priority_weight": 4, "tags": [],
+            "reopen_count": 0, "skip_count": 0,
+            "created_at": "2026-03-01T00:00:00Z", "updated_at": "2026-03-01T00:00:00Z",
+        },
+        {
+            "id": "CC", "title": "Leaf item", "status": "backlog",
+            "links": [], "lane_history": [], "gate_from": 0, "threads": [],
+            "priority_weight": 3, "tags": [], "reopen_count": 0, "skip_count": 0,
+            "created_at": "2026-03-01T00:00:00Z", "updated_at": "2026-03-01T00:00:00Z",
+        },
+    ]
+    _seed_items(items)
+
+    resp = requests.get(GRAPH_URL)
+    assert resp.status_code == 200
+    graph = resp.json()
+
+    nodes_by_id = {n["id"]: n for n in graph["nodes"]}
+    assert nodes_by_id["CA"]["cascade_count"] == 2, "Root must cascade to 2 items"
+    assert nodes_by_id["CB"]["cascade_count"] == 1, "Middle must cascade to 1 item"
+    assert nodes_by_id["CC"]["cascade_count"] == 0, "Leaf must cascade to 0 items"
+    assert "CA" in graph["critical_path"], "Root blocker must be on critical path"
+    assert nodes_by_id["CA"]["is_critical_path"] is True
+
+
+def test_graph_conflict_detection():
+    """Two in-progress items with the same tag on different agents → one conflict."""
+    items = [
+        {
+            "id": "CF1", "title": "Auth refactor", "status": "in-progress",
+            "assigned_to": "agent-alpha", "tags": ["auth", "backend"],
+            "links": [], "lane_history": [], "gate_from": 0, "threads": [],
+            "priority_weight": 7, "reopen_count": 0, "skip_count": 0,
+            "created_at": "2026-03-01T00:00:00Z", "updated_at": "2026-03-01T00:00:00Z",
+        },
+        {
+            "id": "CF2", "title": "Auth middleware", "status": "in-progress",
+            "assigned_to": "agent-beta", "tags": ["auth", "security"],
+            "links": [], "lane_history": [], "gate_from": 0, "threads": [],
+            "priority_weight": 6, "reopen_count": 0, "skip_count": 0,
+            "created_at": "2026-03-01T00:00:00Z", "updated_at": "2026-03-01T00:00:00Z",
+        },
+    ]
+    _seed_items(items)
+
+    resp = requests.get(GRAPH_URL)
+    assert resp.status_code == 200
+    graph = resp.json()
+
+    assert len(graph["conflicts"]) >= 1, "Expected at least one conflict for shared 'auth' tag"
+    conflict = graph["conflicts"][0]
+    assert conflict["type"] == "tag_overlap"
+    assert "auth" in conflict["shared_tags"]
+    assert set(conflict["items"]) == {"CF1", "CF2"}
+
+
+def test_graph_no_conflict_same_agent():
+    """Two in-progress items with the same tag on the SAME agent → no conflict."""
+    items = [
+        {
+            "id": "NC1", "title": "Task A", "status": "in-progress",
+            "assigned_to": "agent-alpha", "tags": ["auth"],
+            "links": [], "lane_history": [], "gate_from": 0, "threads": [],
+            "priority_weight": 5, "reopen_count": 0, "skip_count": 0,
+            "created_at": "2026-03-01T00:00:00Z", "updated_at": "2026-03-01T00:00:00Z",
+        },
+        {
+            "id": "NC2", "title": "Task B", "status": "in-progress",
+            "assigned_to": "agent-alpha", "tags": ["auth"],
+            "links": [], "lane_history": [], "gate_from": 0, "threads": [],
+            "priority_weight": 4, "reopen_count": 0, "skip_count": 0,
+            "created_at": "2026-03-01T00:00:00Z", "updated_at": "2026-03-01T00:00:00Z",
+        },
+    ]
+    _seed_items(items)
+
+    resp = requests.get(GRAPH_URL)
+    assert resp.status_code == 200
+    graph = resp.json()
+
+    assert graph["conflicts"] == [], "Same-agent items must not produce conflicts"
+
+
+def test_pulse_payload_completeness():
+    """GET /api/pulse must return all required keys."""
+    resp = requests.get(PULSE_URL)
+    assert resp.status_code == 200
+    pulse = resp.json()
+
+    for key in ("agent", "recommendation", "startable_items", "conflicts",
+                "rebalancing", "active_agents", "generated_at"):
+        assert key in pulse, f"Pulse missing key: {key}"
+
+    assert isinstance(pulse["startable_items"], list)
+    assert isinstance(pulse["active_agents"], list)
+    assert isinstance(pulse["conflicts"], list)
+
+
+def test_pulse_agent_filter():
+    """GET /api/pulse?agent=X must return agent field set to X."""
+    resp = requests.get(PULSE_URL + "?agent=test-agent")
+    assert resp.status_code == 200
+    pulse = resp.json()
+    assert pulse["agent"] == "test-agent"
+
+
+# ---------------------------------------------------------------------------
+# Phase 3: LLM-based Graph Coordination Scenarios
+# ---------------------------------------------------------------------------
+
+GRAPH_SCENARIOS = [
+    {
+        "name": "Critical_Path_Identification",
+        "input": (
+            "Which item is on the critical path and why? "
+            "How many items would be unblocked if it completes?"
+        ),
+        "items": [
+            {
+                "id": "CP1", "title": "Fix DB schema", "status": "ready",
+                "priority_weight": 5, "tags": ["database"],
+                "links": [
+                    {"type": "blocks", "item_id": "CP2", "reason": "needs schema"},
+                    {"type": "blocks", "item_id": "CP3", "reason": "needs schema"},
+                ],
+                "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0, "complexity": "high", "reopen_count": 0, "skip_count": 0,
+                "threads": [], "updated_at": "2026-03-26T10:00:00Z",
+                "created_at": "2026-03-20T10:00:00Z",
+            },
+            {
+                "id": "CP2", "title": "Build user API", "status": "backlog",
+                "priority_weight": 4, "tags": ["api"],
+                "links": [], "lane_history": [], "gate_from": 0, "complexity": "medium",
+                "reopen_count": 0, "skip_count": 0, "threads": [],
+                "updated_at": "2026-03-25T10:00:00Z", "created_at": "2026-03-20T10:00:00Z",
+            },
+            {
+                "id": "CP3", "title": "Build admin dashboard", "status": "backlog",
+                "priority_weight": 3, "tags": ["frontend"],
+                "links": [], "lane_history": [], "gate_from": 0, "complexity": "medium",
+                "reopen_count": 0, "skip_count": 0, "threads": [],
+                "updated_at": "2026-03-25T10:00:00Z", "created_at": "2026-03-20T10:00:00Z",
+            },
+        ],
+        "expected": (
+            "The critical path item is 'Fix DB schema' with a cascade_count of 2. "
+            "Completing it would unblock both 'Build user API' and 'Build admin dashboard'."
+        ),
+        "criteria": (
+            "The response identifies 'Fix DB schema' as the critical path item. "
+            "It mentions that completing it unblocks 2 items (or names both downstream items). "
+            "It must NOT identify CP2 or CP3 as critical path — they have cascade_count=0. "
+            "It must cite a cascade count or unblock count from the graph data."
+        ),
+    },
+    {
+        "name": "Conflict_Detection_Response",
+        "input": (
+            "Are there any coordination conflicts between agents right now? "
+            "Which items are involved and what is the risk?"
+        ),
+        "items": [
+            {
+                "id": "CON1", "title": "Refactor auth module", "status": "in-progress",
+                "assigned_to": "agent-alpha", "tags": ["auth", "backend"],
+                "priority_weight": 7,
+                "links": [], "lane_history": [], "gate_from": 0, "complexity": "high",
+                "reopen_count": 0, "skip_count": 0, "threads": [],
+                "updated_at": "2026-03-26T10:00:00Z", "created_at": "2026-03-20T10:00:00Z",
+            },
+            {
+                "id": "CON2", "title": "Add auth rate limiting", "status": "in-progress",
+                "assigned_to": "agent-beta", "tags": ["auth", "security"],
+                "priority_weight": 6,
+                "links": [], "lane_history": [], "gate_from": 0, "complexity": "medium",
+                "reopen_count": 0, "skip_count": 0, "threads": [],
+                "updated_at": "2026-03-26T10:00:00Z", "created_at": "2026-03-20T10:00:00Z",
+            },
+        ],
+        "expected": (
+            "Yes, there is a conflict: 'Refactor auth module' (agent-alpha) and "
+            "'Add auth rate limiting' (agent-beta) both touch the 'auth' tag, "
+            "creating a risk of merge conflicts or redundant changes to the auth layer."
+        ),
+        "criteria": (
+            "The response confirms that a conflict exists. "
+            "It names both items or both agents (agent-alpha, agent-beta). "
+            "It identifies 'auth' as the shared tag or area. "
+            "It must NOT say there are no conflicts."
+        ),
+    },
+    {
+        "name": "Pulse_Coordination_Context",
+        "input": (
+            "What should I work on next? Also tell me if any other agents are active "
+            "and whether there are any coordination risks I should know about."
+        ),
+        "items": [
+            {
+                "id": "PUL1", "title": "Write API tests", "status": "ready",
+                "priority_weight": 8, "tags": ["testing", "api"],
+                "links": [], "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0, "complexity": "low",
+                "reopen_count": 0, "skip_count": 0, "threads": [],
+                "updated_at": "2026-03-26T10:00:00Z", "created_at": "2026-03-20T10:00:00Z",
+            },
+        ],
+        "expected": (
+            "Recommended work: 'Write API tests'. "
+            "The pulse provides full coordination context including active agent loads "
+            "and conflict status."
+        ),
+        "criteria": (
+            "The response recommends a specific item to work on next. "
+            "It references coordination context — either active agents, "
+            "conflict status, or startable items from the pulse. "
+            "It must NOT simply give a task recommendation "
+            "while ignoring the coordination context parts of the question."
+        ),
+    },
+]
+
+
+@pytest.mark.parametrize(
+    "scenario", GRAPH_SCENARIOS, ids=[s["name"] for s in GRAPH_SCENARIOS]
+)
+def test_graph_coordination(scenario):
+    """Phase 3: LLM interprets graph + pulse data for coordination questions."""
+    # 1. SETUP
+    resp = requests.get(BACKLOG_URL)
+    resp.raise_for_status()
+    version = resp.json().get("version", 0)
+
+    # 2. SEED
+    requests.put(
+        BACKLOG_URL,
+        json={"version": version, "items": scenario["items"]},
+    ).raise_for_status()
+
+    # 3. EXECUTE
+    actual = run_flow_graph(scenario["input"])
+
+    # 4. EVALUATE
+    test_case = LLMTestCase(
+        input=scenario["input"],
+        actual_output=actual,
+        expected_output=scenario["expected"],
+    )
+
+    correctness = GEval(
+        name="Graph Coordination Quality",
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,

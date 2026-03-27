@@ -421,3 +421,97 @@ Stored when `/api/recommend?commit=true` is called. Outcomes recorded automatica
 - Capped at 100 decisions (oldest pruned on write)
 - `outcome` is `null` until the picked item moves to `done`, at which point the server auto-populates it
 - Use `GET /api/decisions` to review decision history and outcome tracking
+
+## Dependency Graph (`GET /api/graph`)
+
+Returns the live dependency graph with readiness, critical path, conflicts, and rebalancing suggestions. Computed fresh on every request.
+
+```json
+{
+  "nodes": [
+    {
+      "id": "string",
+      "title": "string",
+      "status": "string",
+      "readiness": "number (0.0–1.0)",
+      "readiness_level": "not_ready | startable | ready",
+      "assigned_to": "string | null",
+      "complexity": "low | medium | high | null",
+      "category": "bug | feature | chore | tech-debt | null",
+      "tags": ["string"],
+      "is_critical_path": "boolean — true if this item is in the top-5 by cascade impact",
+      "cascade_count": "integer — number of items transitively unblocked if this completes"
+    }
+  ],
+  "edges": [
+    {
+      "source": "string — item ID with the link",
+      "target": "string — linked item ID",
+      "type": "blocks | follow-up | discovered-during | related",
+      "reason": "string"
+    }
+  ],
+  "critical_path": ["string — item IDs ordered by cascade impact, highest first (top 10)"],
+  "conflicts": [
+    {
+      "type": "tag_overlap",
+      "items": ["string — item IDs in conflict"],
+      "item_titles": ["string"],
+      "shared_tags": ["string — tags both items share"],
+      "description": "string — human-readable conflict explanation"
+    }
+  ],
+  "rebalancing": [
+    {
+      "type": "rebalance | idle_agent",
+      "from_agent": "string (rebalance only)",
+      "to_agent": "string (rebalance only)",
+      "agent": "string (idle_agent only)",
+      "description": "string",
+      "transferable_items": ["string — item IDs that could transfer (rebalance only)"]
+    }
+  ]
+}
+```
+
+**Critical path**: Items with `is_critical_path: true` have the highest downstream cascade — completing them unblocks the most work. Delay on these items has compounding impact.
+
+**Conflicts**: Detected when two or more in-progress items share tags and are assigned to different agents. Indicates potential merge conflicts or coordination gaps.
+
+**Rebalancing**: Surfaces when an agent is at `max_active` capacity while another agent with matching skills is idle. Suggests transferable items.
+
+## Pulse (`GET /api/pulse[?agent=name]`)
+
+Returns a proactive coordination payload for an agent — bundles recommendation, startable items, conflicts, rebalancing, and active agent activity in a single call. Designed to replace polling: agents call this instead of separately calling `/api/recommend`, `/api/scores`, and `/api/agents`.
+
+```json
+{
+  "agent": "string | null",
+  "recommendation": "TribunalResponse — same as GET /api/recommend",
+  "startable_items": [
+    {
+      "id": "string",
+      "title": "string",
+      "status": "string",
+      "readiness": "number",
+      "readiness_level": "ready | startable"
+    }
+  ],
+  "conflicts": ["Conflict — same as GET /api/graph conflicts"],
+  "rebalancing": ["Rebalancing — same as GET /api/graph rebalancing"],
+  "active_agents": [
+    {
+      "name": "string",
+      "items_in_progress": [{"id": "string", "title": "string"}],
+      "current_load": "integer",
+      "max_active": "integer",
+      "load_pct": "integer (0–100)"
+    }
+  ],
+  "generated_at": "ISO 8601"
+}
+```
+
+- `startable_items`: Items at ≥70% readiness not yet in-progress. If `?agent=name` is provided, filtered to items where the agent is not overloaded.
+- `active_agents`: Full agent activity snapshot — who is working on what and at what load.
+- `conflicts`: Proactively surfaced so the agent can avoid or coordinate around contested areas before starting work.

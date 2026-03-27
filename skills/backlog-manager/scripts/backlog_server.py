@@ -18,6 +18,8 @@ API:
     GET  /api/recommend            Tribunal-justified recommendation (optional ?agent=name&commit=true)
     GET  /api/decisions            Stored decision history with outcomes
     GET  /api/agents               Agent profiles with current load
+    GET  /api/graph                Live dependency graph with readiness, critical path, conflicts
+    GET  /api/pulse                Proactive push payload (optional ?agent=name)
     PUT  /api/backlog              Full backlog write (version checked, atomic, returns _events)
     PUT  /api/items/<id>           Single item update (version checked, atomic, returns _events)
     POST /api/items/<id>/signal    Append a readiness signal to an item
@@ -350,6 +352,260 @@ def compute_unblock_cascade(start_id, blocks_map):
         visited.add(nid)
         queue.extend(blocks_map.get(nid, []))
     return visited
+
+
+# ── Phase 3: Multi-Agent Coordination ─────────────────────────────────────────
+
+def compute_critical_path(blocks_map, items_by_id, done_or_discarded):
+    """Identify items on the critical path — those whose delay cascades to the most downstream work.
+
+    Returns (critical_items_sorted, cascade_counts).
+    critical_items_sorted: active item IDs ordered by cascade count, highest first.
+    cascade_counts: {item_id: int} for all items.
+    """
+    cascade_counts = {iid: len(compute_unblock_cascade(iid, blocks_map)) for iid in items_by_id}
+    active_with_cascade = [
+        iid for iid, item in items_by_id.items()
+        if item.get("status") not in done_or_discarded and cascade_counts.get(iid, 0) > 0
+    ]
+    critical_sorted = sorted(active_with_cascade, key=lambda iid: cascade_counts[iid], reverse=True)
+    return critical_sorted, cascade_counts
+
+
+def detect_conflicts(items):
+    """Detect intent conflicts between in-progress items.
+
+    Flags tag/area overlap between items worked on by different agents simultaneously.
+    Returns list of {type, items, item_titles, shared_tags, description}.
+    """
+    conflicts = []
+    in_progress = [i for i in items if i.get("status") == "in-progress"]
+    if len(in_progress) < 2:
+        return conflicts
+
+    tag_to_items = {}
+    for item in in_progress:
+        for tag in item.get("tags", []):
+            tag_to_items.setdefault(tag, []).append(item)
+
+    reported_pairs = set()
+    for tag_items in tag_to_items.values():
+        if len(tag_items) < 2:
+            continue
+        for i in range(len(tag_items)):
+            for j in range(i + 1, len(tag_items)):
+                a, b = tag_items[i], tag_items[j]
+                # Same agent on related items is expected, not a conflict
+                if a.get("assigned_to") and a.get("assigned_to") == b.get("assigned_to"):
+                    continue
+                pair = tuple(sorted([a.get("id", ""), b.get("id", "")]))
+                if pair in reported_pairs:
+                    continue
+                reported_pairs.add(pair)
+                shared = sorted(set(a.get("tags", [])) & set(b.get("tags", [])))
+                a_agent = a.get("assigned_to") or "unassigned"
+                b_agent = b.get("assigned_to") or "unassigned"
+                conflicts.append({
+                    "type": "tag_overlap",
+                    "items": [a.get("id"), b.get("id")],
+                    "item_titles": [a.get("title", ""), b.get("title", "")],
+                    "shared_tags": shared,
+                    "description": (
+                        f'"{a.get("title","")}" ({a_agent}) and '
+                        f'"{b.get("title","")}" ({b_agent}) '
+                        f'both touch [{", ".join(shared)}]'
+                    ),
+                })
+    return conflicts
+
+
+def compute_workload_rebalancing(items, agents_cfg):
+    """Generate rebalancing suggestions when agents have uneven load.
+
+    Returns list of {type, from_agent|agent, to_agent, description, transferable_items?}.
+    """
+    if not agents_cfg:
+        return []
+
+    in_progress_by_agent = {}
+    for item in items:
+        if item.get("status") == "in-progress" and item.get("assigned_to"):
+            in_progress_by_agent.setdefault(item["assigned_to"], []).append(item)
+
+    overloaded, underloaded = [], []
+    for aname, aprofile in agents_cfg.items():
+        max_active = aprofile.get("max_active", 3)
+        current = in_progress_by_agent.get(aname, [])
+        if len(current) >= max_active:
+            overloaded.append({"agent": aname, "current": len(current),
+                                "max": max_active, "items": current})
+        elif len(current) == 0:
+            underloaded.append({"agent": aname, "max": max_active,
+                                 "skills": set(aprofile.get("skills", []))})
+
+    suggestions = []
+    mentioned_idle = set()
+    for over in overloaded:
+        matched = False
+        for under in underloaded:
+            transferable = [
+                i.get("id") for i in over["items"]
+                if set(i.get("tags", [])) & under["skills"]
+            ]
+            if transferable:
+                suggestions.append({
+                    "type": "rebalance",
+                    "from_agent": over["agent"],
+                    "to_agent": under["agent"],
+                    "description": (
+                        f'{over["agent"]} at capacity ({over["current"]}/{over["max"]}). '
+                        f'{under["agent"]} is idle with matching skills.'
+                    ),
+                    "transferable_items": transferable[:2],
+                })
+                matched = True
+        if not matched:
+            for under in underloaded:
+                if under["agent"] not in mentioned_idle:
+                    mentioned_idle.add(under["agent"])
+                    suggestions.append({
+                        "type": "idle_agent",
+                        "agent": under["agent"],
+                        "description": f'{under["agent"]} is idle and available for new work.',
+                    })
+    return suggestions
+
+
+def compute_dependency_graph(data):
+    """Compute the full dependency graph with readiness, critical path, conflicts, and rebalancing.
+
+    Returns {nodes, edges, critical_path, conflicts, rebalancing}.
+    nodes: [{id, title, status, readiness, readiness_level, assigned_to, complexity, category,
+             tags, is_critical_path, cascade_count}]
+    edges: [{source, target, type, reason}]
+    critical_path: [item_id, ...] — top 10 by cascade impact
+    conflicts: [{type, items, item_titles, shared_tags, description}]
+    rebalancing: [{type, ...}]
+    """
+    config = data.get("config", {})
+    items = data.get("items", [])
+    agents_cfg = config.get("agents", {})
+    done_or_discarded = {"done", "discarded"}
+    items_by_id = {i.get("id", ""): i for i in items}
+    blocks_map, _ = resolve_blocks(items)
+
+    critical_items, cascade_counts = compute_critical_path(blocks_map, items_by_id, done_or_discarded)
+    critical_set = set(critical_items[:5])
+    conflicts = detect_conflicts(items)
+    rebalancing = compute_workload_rebalancing(items, agents_cfg)
+
+    nodes = []
+    for item in items:
+        iid = item.get("id", "")
+        rd = compute_item_readiness(item, done_or_discarded)
+        rs = rd["score"]
+        nodes.append({
+            "id": iid,
+            "title": item.get("title", ""),
+            "status": item.get("status", "backlog"),
+            "readiness": round(rs, 2),
+            "readiness_level": "ready" if rs >= 0.9 else "startable" if rs >= 0.7 else "not_ready",
+            "assigned_to": item.get("assigned_to"),
+            "complexity": item.get("complexity"),
+            "category": item.get("category"),
+            "tags": item.get("tags", []),
+            "is_critical_path": iid in critical_set,
+            "cascade_count": cascade_counts.get(iid, 0),
+        })
+
+    edges = []
+    seen_edges = set()
+    for item in items:
+        iid = item.get("id", "")
+        for link in item.get("links", []):
+            target = link.get("item_id")
+            ltype = link.get("type")
+            if not target or not ltype:
+                continue
+            key = (iid, target, ltype)
+            if key in seen_edges:
+                continue
+            seen_edges.add(key)
+            edges.append({
+                "source": iid,
+                "target": target,
+                "type": ltype,
+                "reason": link.get("reason", ""),
+            })
+
+    return {
+        "nodes": nodes,
+        "edges": edges,
+        "critical_path": critical_items[:10],
+        "conflicts": conflicts,
+        "rebalancing": rebalancing,
+    }
+
+
+def compute_pulse(data, agent_name=None):
+    """Compute a proactive push pulse for an agent.
+
+    Bundles: tribunal recommendation + startable items + conflicts + rebalancing + active agents view.
+    Returns {agent, recommendation, startable_items, conflicts, rebalancing, active_agents, generated_at}.
+    """
+    items = data.get("items", [])
+    config = data.get("config", {})
+    agents_cfg = config.get("agents", {})
+    done_or_discarded = {"done", "discarded"}
+
+    recommendation = evaluate_tribunal(data, agent=agent_name)
+    conflicts = detect_conflicts(items)
+    rebalancing = compute_workload_rebalancing(items, agents_cfg)
+
+    active_agents = []
+    for aname, aprofile in agents_cfg.items():
+        max_active = aprofile.get("max_active", 3)
+        in_prog = [
+            {"id": i.get("id"), "title": i.get("title", "")}
+            for i in items
+            if i.get("assigned_to") == aname and i.get("status") == "in-progress"
+        ]
+        active_agents.append({
+            "name": aname,
+            "items_in_progress": in_prog,
+            "current_load": len(in_prog),
+            "max_active": max_active,
+            "load_pct": round(len(in_prog) / max(max_active, 1) * 100),
+        })
+
+    startable = []
+    for item in items:
+        if item.get("status") in done_or_discarded or item.get("status") == "in-progress":
+            continue
+        rd = compute_item_readiness(item, done_or_discarded)
+        if rd["score"] < 0.70:
+            continue
+        if agent_name:
+            profile = agents_cfg.get(agent_name, {})
+            if compute_agent_affinity(item, agent_name, profile, items) < 0:
+                continue
+        startable.append({
+            "id": item.get("id"),
+            "title": item.get("title", ""),
+            "status": item.get("status"),
+            "readiness": round(rd["score"], 2),
+            "readiness_level": "ready" if rd["score"] >= 0.90 else "startable",
+        })
+
+    return {
+        "agent": agent_name,
+        "recommendation": recommendation,
+        "startable_items": startable[:5],
+        "conflicts": conflicts,
+        "rebalancing": rebalancing,
+        "active_agents": active_agents,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+    }
 
 
 def evaluate_lens_urgency(item, breakdown, scoring_cfg):
@@ -1062,6 +1318,12 @@ class BacklogHandler(BaseHTTPRequestHandler):
             self._serve_decisions()
         elif parsed.path == "/api/agents":
             self._serve_agents()
+        elif parsed.path == "/api/graph":
+            self._serve_graph()
+        elif parsed.path == "/api/pulse":
+            params = parse_qs(parsed.query)
+            agent = params.get("agent", [None])[0]
+            self._serve_pulse(agent)
         elif parsed.path == "/api/user":
             self._serve_user()
         else:
@@ -1137,6 +1399,26 @@ class BacklogHandler(BaseHTTPRequestHandler):
             return
         loads = get_agent_loads(data)
         self._json_response(200, {"agents": loads})
+
+    def _serve_graph(self):
+        """Dependency graph with readiness, critical path, conflicts, and rebalancing."""
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError as e:
+            self._json_error(500, str(e))
+            return
+        graph = compute_dependency_graph(data)
+        self._json_response(200, graph)
+
+    def _serve_pulse(self, agent=None):
+        """Proactive push pulse — recommendation + readiness + conflicts + coordination context."""
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError as e:
+            self._json_error(500, str(e))
+            return
+        pulse = compute_pulse(data, agent_name=agent)
+        self._json_response(200, pulse)
 
     def _serve_recommend(self, agent=None, commit=False):
         """Tribunal evaluation — returns justified recommendation.

@@ -1,11 +1,13 @@
 import json
 import requests
 
-BASE_URL     = "http://localhost:8089"
-SCORES_URL   = f"{BASE_URL}/api/scores"
+BASE_URL      = "http://localhost:8089"
+SCORES_URL    = f"{BASE_URL}/api/scores"
 RECOMMEND_URL = f"{BASE_URL}/api/recommend"
-OLLAMA_URL   = "http://localhost:11434/api/generate"
-OLLAMA_MODEL = "qwen2.5-coder:14b"
+GRAPH_URL     = f"{BASE_URL}/api/graph"
+PULSE_URL     = f"{BASE_URL}/api/pulse"
+OLLAMA_URL    = "http://localhost:11434/api/generate"
+OLLAMA_MODEL  = "qwen2.5-coder:14b"
 
 
 def run_flow(query: str) -> str:
@@ -103,6 +105,62 @@ Instructions:
 - Cite specific lens arguments (urgency, leverage, etc.) and their weights.
 - If asked about a specific alternative, cite its shadow ranking entry and lost_reason.
 - Mention the confidence level and what drove it."""
+
+        ollama_resp = requests.post(
+            OLLAMA_URL,
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+            timeout=60,
+        )
+        ollama_resp.raise_for_status()
+        return ollama_resp.json().get("response", "").strip()
+
+    except Exception as e:
+        return f"Flow Error: {str(e)}"
+
+
+def run_flow_graph(query: str, agent: str = None) -> str:
+    """
+    Ask the local Ollama LLM to answer using the dependency graph and pulse data.
+    The LLM receives the graph (nodes, edges, critical_path, conflicts, rebalancing)
+    and the pulse (active agents, startable items) for a full coordination picture.
+    """
+    try:
+        graph_resp = requests.get(GRAPH_URL, timeout=5)
+        graph_resp.raise_for_status()
+        graph = graph_resp.json()
+
+        pulse_url = PULSE_URL + (f"?agent={agent}" if agent else "")
+        pulse_resp = requests.get(pulse_url, timeout=5)
+        pulse_resp.raise_for_status()
+        pulse = pulse_resp.json()
+
+        context_block = json.dumps({"graph": graph, "pulse": pulse}, indent=2)
+
+        prompt = f"""You are the Flow Work Intelligence Engine — a precise, senior engineering advisor.
+
+You have access to the full dependency graph and coordination pulse. Key data:
+- nodes[].is_critical_path: true for items whose delay cascades to the most downstream work
+- nodes[].cascade_count: how many items are transitively unblocked when this completes
+- critical_path: ordered list of item IDs by cascade impact (highest first)
+- conflicts: in-progress items sharing tags across different agents — potential coordination gaps
+- rebalancing: suggestions when one agent is overloaded and another is idle with matching skills
+- pulse.active_agents: who is working on what right now and their load percentage
+- pulse.startable_items: items at ≥70% readiness that are not yet in-progress
+
+Trust the graph data — cite specific cascade counts, conflict descriptions, and agent loads.
+
+GRAPH + PULSE DATA:
+{context_block}
+
+QUESTION:
+{query}
+
+Instructions:
+- Respond in 3-5 sentences.
+- Cite specific cascade_count values, conflict descriptions, or agent loads from the data.
+- If conflicts exist, surface them proactively.
+- If items are on the critical path, explain the downstream impact.
+- If rebalancing is needed, name the agents and describe the suggested transfer."""
 
         ollama_resp = requests.post(
             OLLAMA_URL,

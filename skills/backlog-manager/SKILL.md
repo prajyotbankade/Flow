@@ -183,9 +183,28 @@ GET  /api/scores                            Ranked items with score_breakdown + 
 GET  /api/recommend[?agent=name&commit=true]  Tribunal-justified recommendation
 GET  /api/decisions                         Stored decision history with outcomes
 GET  /api/agents                            Agent load info
+GET  /api/graph                             Dependency graph with critical path, conflicts, rebalancing
+GET  /api/pulse[?agent=name]               Proactive push — recommendation + coordination context in one call
 PUT  /api/backlog                           Full write (version-checked)
 PUT  /api/items/<id>                        Single item update
 POST /api/items/<id>/signal                 Append a readiness signal to an item
 ```
+
+### Using `/api/pulse` (preferred for agent coordination)
+
+Call `GET /api/pulse?agent=<your-name>` instead of separate calls to `/api/recommend`, `/api/scores`, and `/api/agents`. Returns everything in one payload:
+- **recommendation**: Tribunal pick with justification
+- **startable_items**: Items at ≥70% readiness available now
+- **conflicts**: In-progress items in your area (tag overlap with other agents) — check these before starting
+- **rebalancing**: Suggestions if load is uneven across agents
+- **active_agents**: Who is working on what right now
+
+### Using `/api/graph`
+
+Returns the full dependency graph. Key fields:
+- **critical_path**: Item IDs ordered by cascade impact — completing these unblocks the most downstream work
+- **conflicts**: Concurrent in-progress items sharing tags across different agents
+- **nodes[].is_critical_path**: `true` if this item is in the top-5 by cascade count
+- **nodes[].cascade_count**: Number of items transitively unblocked when this completes
 
 Start server: `python <skill-path>/scripts/backlog_server.py [--port 8089] [--file backlog.json]`

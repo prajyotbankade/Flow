@@ -750,6 +750,95 @@
     .alert-msg a:hover { text-decoration: underline; }
     .alert-dismiss { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 15px; padding: 0; flex-shrink: 0; line-height: 1; }
     .alert-dismiss:hover { color: #374151; }
+
+    /* ── Phase 3: Multi-Agent Coordination ── */
+    .view-toggle-group { display: flex; gap: 0; border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden; }
+    .view-toggle-btn {
+      padding: 5px 12px; font-size: 12px; font-family: inherit; background: #f9fafb;
+      border: none; cursor: pointer; color: #6b7280; font-weight: 500; transition: all 0.12s;
+    }
+    .view-toggle-btn:hover { background: #f3f4f6; }
+    .view-toggle-btn.active { background: #3b82f6; color: #fff; }
+    .view-toggle-btn:first-child { border-right: 1px solid #e5e7eb; }
+
+    .conflict-badge-btn {
+      display: none; align-items: center; gap: 5px; padding: 4px 10px;
+      background: #fef3c7; border: 1px solid #f59e0b; border-radius: 8px;
+      font-size: 12px; color: #92400e; font-weight: 500; cursor: pointer;
+      font-family: inherit; transition: all 0.12s;
+    }
+    .conflict-badge-btn:hover { background: #fde68a; }
+    .conflict-badge-btn.has-conflicts { display: flex; }
+
+    .card.has-conflict { border-left: 3px solid #f59e0b; }
+    .badge-conflict { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; font-size: 10px; }
+
+    /* Graph view */
+    .graph-view {
+      display: none; padding: 20px; gap: 20px;
+      min-height: calc(100vh - 96px);
+    }
+    .graph-view.active { display: flex; }
+    .graph-sidebar {
+      width: 280px; flex-shrink: 0; display: flex; flex-direction: column; gap: 12px;
+    }
+    .graph-panel {
+      background: #fff; border-radius: 12px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+      overflow: hidden;
+    }
+    .graph-panel-header {
+      padding: 10px 14px; border-bottom: 1px solid #f3f4f6;
+      font-size: 12px; font-weight: 600; color: #374151;
+      text-transform: uppercase; letter-spacing: 0.5px;
+      display: flex; align-items: center; justify-content: space-between;
+    }
+    .graph-panel-body { padding: 12px 14px; }
+    .agent-row {
+      display: flex; align-items: center; gap: 8px;
+      padding: 6px 0; border-bottom: 1px solid #f9fafb; font-size: 12px;
+    }
+    .agent-row:last-child { border-bottom: none; }
+    .agent-dot {
+      width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0;
+    }
+    .agent-dot.idle { background: #d1d5db; }
+    .agent-dot.active { background: #22c55e; }
+    .agent-dot.overloaded { background: #ef4444; }
+    .agent-name { font-weight: 500; color: #374151; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .agent-load-bar-wrap { width: 60px; height: 4px; background: #f3f4f6; border-radius: 2px; overflow: hidden; }
+    .agent-load-bar { height: 100%; border-radius: 2px; transition: width 0.3s; }
+    .agent-load-label { font-size: 10px; color: #9ca3af; min-width: 28px; text-align: right; }
+    .conflict-item {
+      padding: 7px 10px; background: #fef3c7; border: 1px solid #fde68a;
+      border-radius: 6px; font-size: 11px; color: #78350f; line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .conflict-item:last-child { margin-bottom: 0; }
+    .conflict-item strong { font-weight: 600; }
+    .rebalance-item {
+      padding: 7px 10px; background: #eff6ff; border: 1px solid #bfdbfe;
+      border-radius: 6px; font-size: 11px; color: #1e40af; line-height: 1.5;
+      margin-bottom: 6px;
+    }
+    .rebalance-item:last-child { margin-bottom: 0; }
+    .graph-content {
+      flex: 1; min-width: 0; background: #fff; border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: auto; padding: 20px;
+    }
+    .graph-empty {
+      color: #9ca3af; text-align: center; padding: 48px 24px; font-size: 13px;
+    }
+    .graph-legend {
+      display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+      font-size: 11px; color: #6b7280;
+    }
+    .legend-item { display: flex; align-items: center; gap: 5px; }
+    .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .startable-item {
+      padding: 6px 10px; background: #f0fdf4; border: 1px solid #bbf7d0;
+      border-radius: 6px; font-size: 11px; color: #166534; margin-bottom: 5px;
+    }
+    .startable-item:last-child { margin-bottom: 0; }
   </style>
 </head>
 <body>
@@ -789,9 +878,22 @@
       <div class="assignee-dd-trigger" id="assignee-dd-trigger" onclick="toggleAssigneeDd()" title="Filter by assignee">Assignee</div>
       <div class="assignee-dd-menu" id="assignee-dd-menu"></div>
     </div>
+    <div class="view-toggle-group" style="margin-left:auto;">
+      <button class="view-toggle-btn active" id="view-btn-kanban" onclick="setViewMode('kanban')" title="Kanban Board">Board</button>
+      <button class="view-toggle-btn" id="view-btn-graph" onclick="setViewMode('graph')" title="Dependency Graph">Graph</button>
+    </div>
+    <button class="conflict-badge-btn" id="conflict-badge-btn" onclick="setViewMode('graph')" title="View conflicts in Graph view">
+      ⚡ <span id="conflict-count-badge">0</span> conflict<span id="conflict-plural"></span>
+    </button>
   </div>
 
   <div class="board" id="board"></div>
+  <div class="graph-view" id="graph-view">
+    <div class="graph-sidebar" id="graph-sidebar"></div>
+    <div class="graph-content" id="graph-content">
+      <div class="graph-empty">Loading graph…</div>
+    </div>
+  </div>
 
   <!-- Toast -->
   <div class="toast" id="toast"></div>
@@ -994,7 +1096,9 @@
     let assigneeDdOpen = false;
     let scoreData = {};  // {item_id: {score, score_breakdown, recommended_agent, recommended_model}}
     let recommendData = null;  // Tribunal recommendation result
+    let graphData = null;   // Phase 3: dependency graph + conflicts + rebalancing
     let sortByScore = false;
+    let viewMode = 'kanban'; // 'kanban' | 'graph'
 
     // Settings working copy
     let settingsLanes = [];
@@ -1112,6 +1216,17 @@
       } catch(e) { /* recommend is optional */ }
     }
 
+    async function loadGraphData() {
+      try {
+        const res = await fetch('/api/graph');
+        if (res.ok) {
+          graphData = await res.json();
+          updateConflictBadge();
+          if (viewMode === 'graph') renderGraphView();
+        }
+      } catch(e) { /* graph is optional */ }
+    }
+
     async function loadBacklog() {
       try {
         const res = await fetch('/api/backlog');
@@ -1122,6 +1237,7 @@
         document.getElementById('project-title').textContent =
           name ? `${name} — Flow Board` : 'Flow Board';
         await loadScores();
+        await loadGraphData();
         renderBoard();
         populateAssigneeDropdown();
         setSyncStatus('Synced');
@@ -1318,6 +1434,12 @@
         const sc = sd.score;
         const cls = sc > 7 ? 'badge-score-high' : sc > 4 ? 'badge-score-mid' : 'badge-score-low';
         meta += `<span class="badge badge-score ${cls}" title="Intelligence Score">${sc}</span>`;
+      }
+      // Conflict indicator (Phase 3)
+      const conflictInfo = graphData && (graphData.conflicts || []).find(c => c.items.includes(item.id));
+      if (conflictInfo) {
+        card.classList.add('has-conflict');
+        meta += `<span class="badge badge-conflict" title="${esc(conflictInfo.description)}">⚡ conflict</span>`;
       }
       const dateFmt = { month: '2-digit', day: '2-digit', year: '2-digit', hour: 'numeric', minute: '2-digit' };
       const created = new Date(item.created_at).toLocaleString('en-US', dateFmt);
@@ -2676,6 +2798,334 @@
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
     function escJs(str) { return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
     function refreshBoard() { loadBacklog(); }
+
+    // ── Phase 3: View mode toggle ──────────────────────────────────────────────
+
+    function setViewMode(mode) {
+      viewMode = mode;
+      const board = document.getElementById('board');
+      const graphView = document.getElementById('graph-view');
+      const btnKanban = document.getElementById('view-btn-kanban');
+      const btnGraph = document.getElementById('view-btn-graph');
+      if (mode === 'graph') {
+        board.style.display = 'none';
+        graphView.classList.add('active');
+        btnKanban.classList.remove('active');
+        btnGraph.classList.add('active');
+        renderGraphView();
+      } else {
+        board.style.display = '';
+        graphView.classList.remove('active');
+        btnKanban.classList.add('active');
+        btnGraph.classList.remove('active');
+      }
+    }
+
+    function updateConflictBadge() {
+      const btn = document.getElementById('conflict-badge-btn');
+      const count = document.getElementById('conflict-count-badge');
+      const plural = document.getElementById('conflict-plural');
+      if (!graphData) { btn.classList.remove('has-conflicts'); return; }
+      const n = (graphData.conflicts || []).length;
+      if (n > 0) {
+        count.textContent = n;
+        plural.textContent = n === 1 ? '' : 's';
+        btn.classList.add('has-conflicts');
+      } else {
+        btn.classList.remove('has-conflicts');
+      }
+    }
+
+    // Open an item modal from the graph view by item ID
+    function openItemById(itemId) {
+      openEditModal(itemId);
+    }
+
+    // Escape text for SVG content
+    function escSvg(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
+    // ── Phase 3: Graph rendering ───────────────────────────────────────────────
+
+    function renderGraphView() {
+      if (!graphData) return;
+      renderGraphSidebar();
+      renderGraphDiagram();
+    }
+
+    function renderGraphSidebar() {
+      const sidebar = document.getElementById('graph-sidebar');
+      const agents = graphData ? (graphData.rebalancing || []) : [];
+      const conflicts = graphData ? (graphData.conflicts || []) : [];
+      const rebalancing = graphData ? (graphData.rebalancing || []) : [];
+
+      // Agent activity panel — pull from backlog.config.agents
+      const agentsCfg = (backlog.config && backlog.config.agents) || {};
+      const agentNames = Object.keys(agentsCfg);
+      let agentHtml = '<div class="graph-panel-body">';
+      if (!agentNames.length) {
+        agentHtml += '<div style="color:#9ca3af;font-size:12px;">No agents configured. Add agents in Settings.</div>';
+      } else {
+        agentNames.forEach(aname => {
+          const profile = agentsCfg[aname];
+          const maxActive = profile.max_active || 3;
+          const inProgressCount = backlog.items.filter(i => i.assigned_to === aname && i.status === 'in-progress').length;
+          const loadPct = Math.round(inProgressCount / Math.max(maxActive, 1) * 100);
+          const dotClass = inProgressCount === 0 ? 'idle' : inProgressCount >= maxActive ? 'overloaded' : 'active';
+          const barColor = dotClass === 'overloaded' ? '#ef4444' : dotClass === 'active' ? '#22c55e' : '#d1d5db';
+          const inProgItems = backlog.items.filter(i => i.assigned_to === aname && i.status === 'in-progress');
+          const itemsList = inProgItems.length
+            ? `<div style="font-size:10px;color:#9ca3af;padding-top:3px;padding-left:16px;">${inProgItems.map(i => esc(i.title)).join(', ')}</div>`
+            : '';
+          agentHtml += `
+            <div class="agent-row" style="flex-wrap:wrap;">
+              <span class="agent-dot ${dotClass}"></span>
+              <span class="agent-name">${esc(aname)}</span>
+              <div class="agent-load-bar-wrap"><div class="agent-load-bar" style="width:${Math.min(loadPct,100)}%;background:${barColor};"></div></div>
+              <span class="agent-load-label">${inProgressCount}/${maxActive}</span>
+              ${itemsList ? `<div style="width:100%;">${itemsList}</div>` : ''}
+            </div>`;
+        });
+      }
+      agentHtml += '</div>';
+
+      // Conflict panel
+      let conflictHtml = '<div class="graph-panel-body">';
+      if (!conflicts.length) {
+        conflictHtml += '<div style="color:#9ca3af;font-size:12px;">No conflicts detected.</div>';
+      } else {
+        conflicts.forEach(c => {
+          conflictHtml += `<div class="conflict-item"><strong>⚡ Tag overlap:</strong> ${esc(c.description)}<br><span style="color:#a16207;">Tags: ${esc((c.shared_tags||[]).join(', '))}</span></div>`;
+        });
+      }
+      conflictHtml += '</div>';
+
+      // Rebalancing panel
+      let rebalHtml = '<div class="graph-panel-body">';
+      const rebalItems = (graphData.rebalancing || []);
+      if (!rebalItems.length) {
+        rebalHtml += '<div style="color:#9ca3af;font-size:12px;">Load is balanced.</div>';
+      } else {
+        rebalItems.forEach(r => {
+          rebalHtml += `<div class="rebalance-item">↔ ${esc(r.description)}</div>`;
+        });
+      }
+      rebalHtml += '</div>';
+
+      // Startable items panel — items at ≥70% readiness not yet started
+      const startable = (graphData.nodes || []).filter(n =>
+        n.readiness >= 0.70 && n.status !== 'done' && n.status !== 'discarded' && n.status !== 'in-progress'
+      ).slice(0, 5);
+      let startableHtml = '<div class="graph-panel-body">';
+      if (!startable.length) {
+        startableHtml += '<div style="color:#9ca3af;font-size:12px;">No items are currently startable.</div>';
+      } else {
+        startable.forEach(n => {
+          const pct = Math.round(n.readiness * 100);
+          const lbl = n.readiness_level === 'ready' ? 'ready' : 'startable with risk';
+          startableHtml += `<div class="startable-item" style="cursor:pointer;" onclick="openItemById('${escJs(n.id)}')">
+            <strong>${esc(n.title)}</strong>
+            <span style="float:right;opacity:0.7;">${pct}% ${lbl}</span>
+          </div>`;
+        });
+      }
+      startableHtml += '</div>';
+
+      sidebar.innerHTML = `
+        <div class="graph-panel">
+          <div class="graph-panel-header">Agent Activity</div>
+          ${agentHtml}
+        </div>
+        <div class="graph-panel">
+          <div class="graph-panel-header" style="${conflicts.length ? 'color:#92400e;' : ''}">
+            Conflicts ${conflicts.length ? `<span style="background:#f59e0b;color:#fff;border-radius:9999px;padding:1px 7px;font-size:10px;">${conflicts.length}</span>` : ''}
+          </div>
+          ${conflictHtml}
+        </div>
+        <div class="graph-panel">
+          <div class="graph-panel-header">Workload</div>
+          ${rebalHtml}
+        </div>
+        <div class="graph-panel">
+          <div class="graph-panel-header">Startable Now</div>
+          ${startableHtml}
+        </div>`;
+    }
+
+    function renderGraphDiagram() {
+      const content = document.getElementById('graph-content');
+      const nodes = (graphData && graphData.nodes) || [];
+      const edges = (graphData && graphData.edges) || [];
+      const criticalPath = new Set((graphData && graphData.critical_path) || []);
+      const conflictItems = new Set((graphData && graphData.conflicts || []).flatMap(c => c.items));
+
+      // Only show items with links (plus critical path items)
+      const linkedIds = new Set(edges.flatMap(e => [e.source, e.target]));
+      const relevant = nodes.filter(n => linkedIds.has(n.id) || criticalPath.has(n.id));
+
+      if (!relevant.length) {
+        content.innerHTML = `<div class="graph-empty">
+          <div style="font-size:24px;margin-bottom:8px;">🔗</div>
+          <div style="font-weight:500;color:#374151;margin-bottom:4px;">No dependency links yet</div>
+          <div>Add "blocks" links between items to see the dependency graph here.</div>
+        </div>`;
+        return;
+      }
+
+      // Build adjacency for topological layering (blockers → top, blocked → bottom)
+      const blockEdges = edges.filter(e => e.type === 'blocks');
+      const blockerOf = {};   // id → [ids it blocks]
+      const blockedByCount = {};
+      relevant.forEach(n => { blockedByCount[n.id] = 0; blockerOf[n.id] = []; });
+      blockEdges.forEach(e => {
+        if (blockerOf[e.source] !== undefined) blockerOf[e.source].push(e.target);
+        if (blockedByCount[e.target] !== undefined) blockedByCount[e.target]++;
+      });
+
+      // Kahn's algorithm for layer assignment
+      const layers = {};
+      const queue = relevant.filter(n => blockedByCount[n.id] === 0).map(n => n.id);
+      const inDeg = { ...blockedByCount };
+      let layer = 0;
+      const processed = new Set();
+      while (queue.length) {
+        const batch = [...queue]; queue.length = 0;
+        batch.forEach(id => {
+          if (processed.has(id)) return;
+          processed.add(id);
+          layers[id] = layer;
+          (blockerOf[id] || []).forEach(nid => {
+            if (inDeg[nid] !== undefined) {
+              inDeg[nid]--;
+              if (inDeg[nid] === 0) queue.push(nid);
+            }
+          });
+        });
+        layer++;
+      }
+      // Any unprocessed (cycles) go to last layer
+      relevant.forEach(n => { if (layers[n.id] === undefined) layers[n.id] = layer; });
+
+      // Group by layer
+      const byLayer = {};
+      relevant.forEach(n => {
+        const l = layers[n.id] || 0;
+        (byLayer[l] = byLayer[l] || []).push(n);
+      });
+
+      const NW = 180, NH = 60, HGAP = 16, VGAP = 48, PAD = 24;
+      const positions = {};
+      Object.entries(byLayer).forEach(([l, layerNodes]) => {
+        const totalW = layerNodes.length * (NW + HGAP) - HGAP;
+        layerNodes.forEach((n, i) => {
+          positions[n.id] = { x: i * (NW + HGAP), y: parseInt(l) * (NH + VGAP), layerW: totalW };
+        });
+      });
+
+      // Offset each layer to center it within max width
+      const maxLayerW = Math.max(...Object.values(byLayer).map(ln => ln.length * (NW + HGAP) - HGAP));
+      Object.entries(byLayer).forEach(([l, layerNodes]) => {
+        const layerW = layerNodes.length * (NW + HGAP) - HGAP;
+        const offset = (maxLayerW - layerW) / 2;
+        layerNodes.forEach(n => { positions[n.id].x += offset; });
+      });
+
+      const totalW = maxLayerW + PAD * 2;
+      const totalH = (layer) * (NH + VGAP) + PAD * 2;
+
+      const statusColors = {
+        'done': '#8b5cf6', 'in-progress': '#3b82f6', 'code-review': '#ec4899',
+        'ready': '#10b981', 'refined': '#f59e0b', 'backlog': '#94a3b8', 'discarded': '#cbd5e1'
+      };
+
+      let svgEdges = '';
+      let svgNodes = '';
+
+      // Draw block edges
+      blockEdges.forEach(e => {
+        const from = positions[e.source], to = positions[e.target];
+        if (!from || !to) return;
+        const x1 = from.x + NW / 2 + PAD, y1 = from.y + NH + PAD;
+        const x2 = to.x + NW / 2 + PAD, y2 = to.y + PAD;
+        const cy = (y1 + y2) / 2;
+        const isCPEdge = criticalPath.has(e.source) && criticalPath.has(e.target);
+        svgEdges += `<path d="M${x1},${y1} C${x1},${cy} ${x2},${cy} ${x2},${y2}"
+          fill="none" stroke="${isCPEdge ? '#ef4444' : '#d1d5db'}" stroke-width="${isCPEdge ? 2 : 1.5}"
+          marker-end="url(#arrow${isCPEdge ? 'Red' : ''})" opacity="${isCPEdge ? 1 : 0.7}"/>`;
+      });
+
+      // Draw other edges (dashed)
+      edges.filter(e => e.type !== 'blocks').forEach(e => {
+        const from = positions[e.source], to = positions[e.target];
+        if (!from || !to) return;
+        const x1 = from.x + NW / 2 + PAD, y1 = from.y + NH / 2 + PAD;
+        const x2 = to.x + NW / 2 + PAD, y2 = to.y + NH / 2 + PAD;
+        svgEdges += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
+          stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,3"/>`;
+      });
+
+      // Draw nodes
+      relevant.forEach(n => {
+        const pos = positions[n.id];
+        if (!pos) return;
+        const px = pos.x + PAD, py = pos.y + PAD;
+        const isCP = criticalPath.has(n.id);
+        const isConflict = conflictItems.has(n.id);
+        const nodeColor = statusColors[n.status] || '#94a3b8';
+        const bgColor = isCP ? '#fef2f2' : isConflict ? '#fffbeb' : '#fff';
+        const borderColor = isCP ? '#ef4444' : isConflict ? '#f59e0b' : nodeColor;
+        const borderW = (isCP || isConflict) ? 2 : 1.5;
+        const readinessBarColor = n.readiness >= 0.9 ? '#22c55e' : n.readiness >= 0.7 ? '#f59e0b' : '#d1d5db';
+        const barW = Math.round((NW - 20) * n.readiness);
+        const titleShort = n.title.length > 20 ? n.title.slice(0, 20) + '…' : n.title;
+        const assignedShort = n.assigned_to ? n.assigned_to.slice(0, 14) : '';
+        const cascadeLabel = n.cascade_count > 0 ? ` · ↓${n.cascade_count}` : '';
+        const cpIndicator = isCP ? `<rect x="${px}" y="${py}" width="4" height="${NH}" rx="2" fill="#ef4444"/>` : '';
+        const conflictIndicator = isConflict && !isCP ? `<rect x="${px}" y="${py}" width="4" height="${NH}" rx="2" fill="#f59e0b"/>` : '';
+
+        svgNodes += `
+          <g onclick="openItemById('${escJs(n.id)}')" style="cursor:pointer;" title="${escSvg(n.title)}">
+            <rect x="${px}" y="${py}" width="${NW}" height="${NH}" rx="8"
+              fill="${bgColor}" stroke="${borderColor}" stroke-width="${borderW}"/>
+            ${cpIndicator}${conflictIndicator}
+            <circle cx="${px + NW - 10}" cy="${py + 10}" r="5" fill="${nodeColor}" opacity="0.8"/>
+            <text x="${px + 10}" y="${py + 19}" font-family="-apple-system,sans-serif" font-size="11.5" fill="#111827" font-weight="500">${escSvg(titleShort)}</text>
+            <text x="${px + 10}" y="${py + 34}" font-family="-apple-system,sans-serif" font-size="10" fill="#9ca3af">${escSvg(n.status)}${assignedShort ? ' · ' + escSvg(assignedShort) : ''}${cascadeLabel}</text>
+            <rect x="${px + 10}" y="${py + 46}" width="${NW - 20}" height="3" rx="1.5" fill="#f3f4f6"/>
+            <rect x="${px + 10}" y="${py + 46}" width="${barW}" height="3" rx="1.5" fill="${readinessBarColor}"/>
+          </g>`;
+      });
+
+      const svgW = Math.max(totalW, 400);
+      const svgH = Math.max(totalH, 200);
+
+      const legend = `
+        <div class="graph-legend">
+          <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fef2f2;border:2px solid #ef4444;"></span>Critical path</div>
+          <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fffbeb;border:2px solid #f59e0b;"></span>Conflict</div>
+          <div class="legend-item"><div style="width:24px;height:2px;background:#ef4444;display:inline-block;vertical-align:middle;"></div> Blocks (critical)</div>
+          <div class="legend-item"><div style="width:24px;height:2px;background:#d1d5db;display:inline-block;vertical-align:middle;"></div> Blocks</div>
+          <div class="legend-item"><div style="width:24px;height:1px;border-top:1px dashed #cbd5e1;display:inline-block;vertical-align:middle;"></div> Related</div>
+        </div>`;
+
+      content.innerHTML = legend + `
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}"
+             style="width:100%;min-height:${svgH}px;font-family:-apple-system,sans-serif;">
+          <defs>
+            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#d1d5db"/>
+            </marker>
+            <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+              <path d="M0,0 L0,6 L8,3 z" fill="#ef4444"/>
+            </marker>
+          </defs>
+          ${svgEdges}
+          ${svgNodes}
+        </svg>`;
+    }
 
     // ── Alerts ──
     let dismissedAlerts = new Set();

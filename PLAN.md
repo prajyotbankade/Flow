@@ -136,17 +136,16 @@ Decision {
 - New critical item would invalidate work already in progress → alert
 
 ### Tasks
-- [ ] Design the pulse mechanism — push vs. webhook vs. polling with change detection
-- [ ] Build dependency cascade computation — full graph traversal, not just direct links
-- [ ] New endpoint: `GET /api/graph` — returns the live dependency graph with readiness scores
-- [ ] Build conflict detection — tag/area overlap analysis across in-progress items
-- [ ] Assignment pulse endpoint or WebSocket: `GET /api/pulse?agent=name`
-- [ ] Pulse payload: item + justification + readiness context + conflict warnings
-- [ ] Update agent profiles: add subscription preferences, notification settings
-- [ ] Critical path visualization — which items, if delayed, delay the most downstream work
-- [ ] Workload rebalancing suggestions — when one agent is overloaded and another is idle
-- [ ] Update web board: show live graph view, agent activity indicators, conflict warnings
-- [ ] Add evals: dependency cascade correctness, conflict detection, pulse payload content, critical path identification
+- [x] Design the pulse mechanism — polling with bundled coordination context (`GET /api/pulse`)
+- [x] Build dependency cascade computation — full graph traversal, not just direct links (`compute_critical_path`)
+- [x] New endpoint: `GET /api/graph` — returns the live dependency graph with readiness scores
+- [x] Build conflict detection — tag/area overlap analysis across in-progress items (`detect_conflicts`)
+- [x] Assignment pulse endpoint: `GET /api/pulse?agent=name`
+- [x] Pulse payload: item + justification + readiness context + conflict warnings + active agents
+- [x] Critical path visualization — which items, if delayed, delay the most downstream work (`is_critical_path`, `cascade_count`)
+- [x] Workload rebalancing suggestions — when one agent is overloaded and another is idle (`compute_workload_rebalancing`)
+- [x] Update web board: graph view with SVG DAG, agent activity panel, conflict badges on cards, view toggle
+- [x] Add evals: dependency cascade correctness, conflict detection, pulse payload content, critical path identification
 
 ---
 
