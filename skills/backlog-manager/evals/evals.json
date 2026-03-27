@@ -171,6 +171,20 @@
         "The work brief format includes agent assignment reasoning",
         "If the agent is at capacity, Claude mentions the load constraint"
       ]
+    },
+    {
+      "id": 14,
+      "prompt": "The session management refactor (#4) is blocked by the auth token crash fix (#1). I just merged the PR for #1 — can we start on #4 now even though it's not fully done?",
+      "expected_output": "Records a pr_merged signal on item #1 via POST /api/items/<id>/signal, then re-evaluates readiness. #1 is now at ~75% readiness (in-progress or ready status + pr_merged signal), which exceeds the 70% startable threshold. Announces #4 as startable with known risk.",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude records a pr_merged readiness signal on the auth token crash item (#1)",
+        "Claude re-evaluates or explains that #1's readiness has increased (in-progress/ready + pr_merged ≈ 75%)",
+        "Claude notes the 70% startable threshold and that #4 is now above it",
+        "The work brief or response describes #4 as 'startable with risk' or equivalent phrasing",
+        "Claude does NOT say #4 is fully unblocked — it acknowledges the remaining risk",
+        "Claude explains what the remaining risk is (tests not yet confirmed, review pending, etc.)"
+      ]
     }
   ]
 }

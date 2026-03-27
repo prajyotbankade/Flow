@@ -1742,6 +1742,45 @@
         recHtml += `<div class="intel-rec"><div class="intel-rec-label">Recommended Model</div><div class="intel-rec-value">${esc(sd.recommended_model)}</div></div>`;
       }
 
+      // Readiness section
+      let readinessHtml = '';
+      const rd = sd.readiness;
+      if (rd) {
+        const pct = Math.round(rd.score * 100);
+        const levelColors = { ready: '#166534', startable: '#854d0e', not_ready: '#64748b' };
+        const levelColor = levelColors[rd.level] || '#64748b';
+        const barColor = rd.score >= 0.9 ? '#22c55e' : rd.score >= 0.7 ? '#f59e0b' : '#94a3b8';
+        let signalsHtml = '';
+        if (rd.signals && rd.signals.length > 0) {
+          signalsHtml = rd.signals.map(s =>
+            `<div style="font-size:11px;color:#6b7280;padding:2px 0;">\u2713 ${esc(s.type.replace(/_/g,' '))}${s.source ? ' <span style="color:#9ca3af;">by ' + esc(s.source) + '</span>' : ''}</div>`
+          ).join('');
+        }
+        let blockersHtml = '';
+        if (rd.blockers && rd.blockers.length > 0) {
+          blockersHtml = '<div style="margin-top:6px;font-size:11px;font-weight:600;color:#6b7280;text-transform:uppercase;letter-spacing:0.5px;">Blockers</div>';
+          blockersHtml += rd.blockers.map(b =>
+            `<div style="font-size:11px;color:#6b7280;padding:2px 0;">\u26a0 ${esc(b.blocker_id)} — ${Math.round(b.readiness * 100)}% ready</div>`
+          ).join('');
+        }
+        readinessHtml = `
+          <div style="margin-top:12px;padding:10px 12px;background:#f8fafc;border-radius:6px;border:1px solid #e2e8f0;">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px;">
+              <span style="font-size:12px;font-weight:600;color:#374151;">Readiness</span>
+              <span style="font-size:11px;padding:2px 7px;border-radius:9999px;font-weight:500;color:${levelColor};background:${levelColor}15;">${rd.level.replace('_',' ')}</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+              <div style="flex:1;height:6px;background:#e2e8f0;border-radius:3px;overflow:hidden;">
+                <div style="width:${pct}%;height:100%;background:${barColor};border-radius:3px;"></div>
+              </div>
+              <span style="font-size:12px;font-weight:600;color:${barColor};min-width:32px;text-align:right;">${pct}%</span>
+            </div>
+            <div style="font-size:11px;color:#9ca3af;">Status: +${Math.round(rd.status_contribution*100)}%${rd.signal_contribution > 0 ? ' &middot; Signals: +' + Math.round(rd.signal_contribution*100) + '%' : ''}</div>
+            ${signalsHtml ? '<div style="margin-top:6px;">' + signalsHtml + '</div>' : ''}
+            ${blockersHtml}
+          </div>`;
+      }
+
       // Tribunal justification section
       let tribunalHtml = '';
       if (recommendData && recommendData.picked) {
@@ -1811,6 +1850,7 @@
         <div class="intel-score-big" style="color:${colorClass};">${sc}</div>
         <dl class="intel-breakdown">${breakdownHtml}</dl>
         ${recHtml}
+        ${readinessHtml}
         <div class="intel-meta">
           <div class="intel-meta-item"><div class="intel-meta-label">Reopen Count</div><div class="intel-meta-value">${item.reopen_count || 0}</div></div>
           <div class="intel-meta-item"><div class="intel-meta-label">Skip Count</div><div class="intel-meta-value">${item.skip_count || 0}</div></div>

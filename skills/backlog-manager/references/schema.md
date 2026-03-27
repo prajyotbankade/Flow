@@ -10,6 +10,7 @@
     "project_name": "string",
     "statuses": [Status, ...],
     "scoring": "ScoringConfig (optional)",
+    "readiness": "ReadinessConfig (optional)",
     "agents": "AgentProfiles (optional)",
     "thresholds": "Thresholds (optional)",
     "model_routing": "ModelRouting (optional)"
@@ -49,12 +50,23 @@ Weights and thresholds for the Work Intelligence Engine scoring formula. All fie
   "freshness_decay_days": "integer (default 14) — items not updated for this many days get a staleness penalty",
   "freshness_decay_factor": "number (default 0.5) — multiplier for the staleness penalty",
   "complexity_bonus": "object (default {low: 1.5, medium: 0.0, high: -1.0}) — score adjustment by complexity",
-  "blocked_penalty": "number (default -3.0) — score penalty when item is blocked by incomplete items",
-  "quick_win_bonus": "number (default 1.0) — bonus for unblocked low-complexity items",
+  "blocked_penalty": "number (default -3.0) — maximum penalty when blocked at 0% blocker readiness; scales linearly with readiness",
+  "quick_win_bonus": "number (default 1.0) — bonus for low-complexity items whose blockers are ≥ ready_threshold",
   "reopen_penalty_per": "number (default -0.5) — score penalty per reopen",
   "skip_floor_per": "number (default 0.3) — score boost per skip (prevents permanent neglect)",
   "position_weight": "number (default 0.5) — weight of position-derived priority when priority_weight is null",
   "critical_bug_boost": "number (default 5.0) — score bonus for critical bugs (category=bug, priority_weight>=9)"
+}
+```
+
+## ReadinessConfig
+
+Thresholds for the readiness signal engine. Optional — hardcoded defaults apply when absent.
+
+```json
+{
+  "startable_threshold": "number (default 0.70) — readiness ≥ this value → item is startable with known risk",
+  "ready_threshold":     "number (default 0.90) — readiness ≥ this value → item is treated as fully unblocked"
 }
 ```
 
@@ -117,6 +129,7 @@ Maps item complexity to recommended AI model. Advisory — appears in work brief
   "tags": ["string — free-form tags for categorization and agent skill matching (e.g., 'auth', 'frontend')"],
   "reopen_count": "integer — auto-incremented when item moves backward from done (default 0)",
   "skip_count": "integer — incremented when item is evaluated for assignment but passed over (default 0)",
+  "readiness_signals": [ReadinessSignal, ...],
   "threads": [Thread, ...],
   "links": [Link, ...],
   "lane_history": [LaneMove, ...],
@@ -133,6 +146,32 @@ Maps item complexity to recommended AI model. Advisory — appears in work brief
 - `tags`: Free-form string array for categorization. Used by the assignment engine to match items to agents with relevant skills. Example: `["auth", "backend", "database"]`.
 - `reopen_count`: Automatically incremented by the server when an item moves backward from `done` to any other lane. Feeds into the scoring formula as a penalty — repeated reopens signal the complexity estimate was wrong.
 - `skip_count`: Incremented by the agent when generating work briefs and passing over an item. Creates a rising score floor that eventually forces attention ("kill it or bump it").
+
+## ReadinessSignal
+
+An observed artifact or gate event that increases confidence a blocker is progressing toward completion. Appended via `POST /api/items/<id>/signal`; never manually removed.
+
+```json
+{
+  "type": "pr_merged | test_passed | review_approved | file_created | spec_written | design_approved",
+  "source": "string — agent name, 'user', or 'auto'",
+  "timestamp": "ISO 8601 — set automatically by the server",
+  "description": "string (optional) — additional context"
+}
+```
+
+Signal trust weights used in readiness computation:
+
+| Type | Weight | Trust Level |
+|------|--------|-------------|
+| `spec_written` | +10% | Medium — intent artifact |
+| `file_created` | +10% | Medium — code artifact |
+| `design_approved` | +15% | Medium — design gate |
+| `test_passed` | +20% | High — downstream gate |
+| `pr_merged` | +25% | High — integration artifact |
+| `review_approved` | +25% | High — peer review gate |
+
+Status baseline (before signals): `backlog`=5%, `refined`=20%, `ready`=35%, `in-progress`=50%, `code-review`=70%, `done`/`discarded`=100%. Score is capped at 95% until the item is actually done.
 
 ## Thread
 
@@ -217,9 +256,70 @@ A record of an item moving through a lane. Appended to `lane_history` every time
 - `reopen_count` is automatically incremented by the server when an item's status changes backward from `done`. Never manually set or decrement.
 - `skip_count` is incremented by the agent during work brief generation for items that are evaluated but not recommended. Reset to 0 when an item is picked up.
 - `complexity`, `priority_weight`, `category`, and `tags` are optional on all items. The scoring engine uses sensible defaults when they are absent (null complexity = medium, null priority_weight = position-derived, null category = no boost, empty tags = no skill matching).
-- All `config.scoring`, `config.agents`, `config.thresholds`, and `config.model_routing` sections are optional. When absent, hardcoded defaults apply. Existing backlogs work without any migration.
+- `readiness_signals` is optional on items. When absent, readiness is derived from status alone. Append signals via `POST /api/items/<id>/signal` — never write them directly unless migrating data.
+- All `config.scoring`, `config.readiness`, `config.agents`, `config.thresholds`, and `config.model_routing` sections are optional. When absent, hardcoded defaults apply. Existing backlogs work without any migration.
 - Scoring is computed at evaluation time, never persisted as a field on items. The `GET /api/scores` endpoint computes fresh scores on every request.
 - Tribunal recommendations are computed via `GET /api/recommend` — never persisted on items. Decisions are stored separately in `decisions.json`.
+
+## Scores Response (`GET /api/scores`)
+
+Returns all items with computed scores and readiness context.
+
+```json
+{
+  "items": [
+    {
+      "id": "string",
+      "title": "string",
+      "status": "string",
+      "score": "number",
+      "score_breakdown": {
+        "base_priority": "number",
+        "unblock": "number",
+        "freshness": "number",
+        "complexity": "number",
+        "blocked_penalty": "number — dynamic, scaled by blocker readiness",
+        "quick_win": "number",
+        "reopen": "number",
+        "skip_floor": "number",
+        "critical_bug": "number"
+      },
+      "readiness": {
+        "score": "number (0.0–1.0) — this item's own readiness",
+        "level": "not_ready | startable | ready",
+        "status_contribution": "number — baseline from status lane",
+        "signal_contribution": "number — contribution from observed signals",
+        "signals": [ReadinessSignal, ...],
+        "blockers": [{"blocker_id": "string", "readiness": "number"}, ...]
+      },
+      "recommended_agent": "string | null",
+      "recommended_model": "string"
+    }
+  ]
+}
+```
+
+## Signal Endpoint (`POST /api/items/<id>/signal`)
+
+Append a readiness signal to an item — call this when you observe an artifact or gate event on a blocker item.
+
+**Request body:**
+```json
+{
+  "type": "pr_merged | test_passed | review_approved | file_created | spec_written | design_approved",
+  "source": "string — your agent name or 'user'",
+  "description": "string (optional)"
+}
+```
+
+**Response (201):**
+```json
+{
+  "status": "ok",
+  "signal": {"type": "...", "source": "...", "timestamp": "..."},
+  "version": "integer"
+}
+```
 
 ## Tribunal Recommendation (`GET /api/recommend`)
 
@@ -244,7 +344,15 @@ Returns a justified recommendation with counterfactuals. Optional query params: 
         "weight": "number — weighted contribution to tribunal score"
       }
     ],
-    "status_note": "string | null — e.g. 'Needs refinement before starting'"
+    "status_note": "string | null — e.g. 'Needs refinement before starting' or 'Startable with risk — weakest blocker at 74% readiness'",
+    "readiness": {
+      "score": "number — readiness of this item itself (0.0–1.0)",
+      "level": "not_ready | startable | ready",
+      "status_contribution": "number — baseline from status lane",
+      "signal_contribution": "number — additional contribution from observed signals",
+      "signals": [ReadinessSignal, ...],
+      "blockers": [{"blocker_id": "string", "readiness": "number"}, ...]
+    }
   },
   "shadow_ranking": [
     {
@@ -253,7 +361,7 @@ Returns a justified recommendation with counterfactuals. Optional query params: 
       "score": "number — scoring engine score",
       "tribunal_score": "number — weighted tribunal score",
       "lost_on_lens": "string — lens with biggest gap vs winner",
-      "lost_reason": "string — why this item was not picked"
+      "lost_reason": "string — why this item was not picked (includes readiness % for blocked items)"
     }
   ],
   "lenses": [

@@ -80,6 +80,7 @@ Decision {
 - [x] Update SKILL.md work brief format to use justification narratives
 - [x] Update web board Intelligence tab to show tribunal verdict, lenses, and counterfactuals
 - [x] Update schema.md with Decision object, recommend response, lens docs
+- [x] Add evals: tribunal lens citation, counterfactual reasoning, low-confidence detection, agent-specific recommendation
 
 ---
 
@@ -104,15 +105,16 @@ Decision {
 **Partial readiness as first-class:** An item at 70% readiness surfaces in work briefs as "startable with risk." Agent can begin exploratory work early and switch to committed work when readiness hits 90%+.
 
 ### Tasks
-- [ ] Define readiness score computation model (signal weights, thresholds)
-- [ ] Extend item schema: `readiness_signals[]` — array of observed signals with type, source, timestamp
-- [ ] Replace flat `blocked_penalty` with dynamic penalty based on blocker's readiness score
-- [ ] Define artifact signal types (PR merged, file created, test passed, spec written)
-- [ ] Build signal detection hooks — how does Flow learn about artifacts?
-- [ ] Update `/api/scores` to include readiness scores per item
-- [ ] Integrate with justification engine — readiness context in pick explanations
-- [ ] Update work brief format: show readiness % and risk level for partially-ready items
-- [ ] Define readiness thresholds in config (e.g., 70% = startable, 90% = fully ready)
+- [x] Define readiness score computation model (signal weights, thresholds)
+- [x] Extend item schema: `readiness_signals[]` — array of observed signals with type, source, timestamp
+- [x] Replace flat `blocked_penalty` with dynamic penalty based on blocker's readiness score
+- [x] Define artifact signal types (PR merged, file created, test passed, spec written)
+- [x] Build signal detection hooks — `POST /api/items/<id>/signal` for agents to record observed artifacts
+- [x] Update `/api/scores` to include readiness scores per item
+- [x] Integrate with justification engine — readiness context in pick explanations
+- [x] Update work brief format: show readiness % and risk level for partially-ready items
+- [x] Define readiness thresholds in config (e.g., 70% = startable, 90% = fully ready)
+- [x] Add evals: readiness-scaled blocked_penalty, partial unblock startability, signal recording workflow
 
 ---
 
@@ -144,6 +146,7 @@ Decision {
 - [ ] Critical path visualization — which items, if delayed, delay the most downstream work
 - [ ] Workload rebalancing suggestions — when one agent is overloaded and another is idle
 - [ ] Update web board: show live graph view, agent activity indicators, conflict warnings
+- [ ] Add evals: dependency cascade correctness, conflict detection, pulse payload content, critical path identification
 
 ---
 
@@ -181,6 +184,7 @@ Decision {
 - [ ] Rule effectiveness tracking — fire count, outcome impact, staleness detection
 - [ ] Rule suggestion engine — based on patterns Flow observes, suggest new rules
 - [ ] Update justification engine — include which rules influenced a decision
+- [ ] Add evals: natural language rule firing, conflict resolution, rule authoring via conversation, action execution correctness
 
 ---
 

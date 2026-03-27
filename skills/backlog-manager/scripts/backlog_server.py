@@ -20,6 +20,7 @@ API:
     GET  /api/agents               Agent profiles with current load
     PUT  /api/backlog              Full backlog write (version checked, atomic, returns _events)
     PUT  /api/items/<id>           Single item update (version checked, atomic, returns _events)
+    POST /api/items/<id>/signal    Append a readiness signal to an item
 """
 
 import argparse
@@ -253,6 +254,76 @@ DEFAULT_THRESHOLDS = {
 DEFAULT_MODEL_ROUTING = {"low": "haiku", "medium": "sonnet", "high": "opus"}
 
 
+# ── Readiness Signal Engine ────────────────────────────────────────────────────
+
+# Trust weights for each artifact/gate signal type
+SIGNAL_TRUST = {
+    "spec_written":    0.10,  # medium: intent artifact
+    "file_created":    0.10,  # medium: code artifact exists
+    "design_approved": 0.15,  # medium: design gate
+    "pr_merged":       0.25,  # high: integration artifact
+    "test_passed":     0.20,  # high: downstream gate passed
+    "review_approved": 0.25,  # high: peer-review gate passed
+}
+
+VALID_SIGNAL_TYPES = set(SIGNAL_TRUST.keys())
+
+# Status-based readiness baseline — how far along is an item in its lifecycle?
+STATUS_READINESS = {
+    "backlog":     0.05,
+    "refined":     0.20,
+    "ready":       0.35,
+    "in-progress": 0.50,
+    "code-review": 0.70,
+    # "done" and "discarded" → 1.0, handled separately
+}
+
+# Readiness thresholds (configurable via config.readiness)
+DEFAULT_READINESS_CONFIG = {
+    "startable_threshold": 0.70,  # ≥70% → startable with known risk
+    "ready_threshold":     0.90,  # ≥90% → fully ready, no risk flag
+}
+
+
+def compute_item_readiness(item, done_or_discarded=None):
+    """Compute readiness score (0.0–1.0) for a single item.
+
+    Combines a status-based baseline with observed artifact/gate signals.
+    - done/discarded: 1.0 (complete — no longer a blocker)
+    - other statuses: baseline + signal contributions, capped at 0.95
+    Returns a dict: {score, status_contribution, signal_contribution, signals}.
+    """
+    if done_or_discarded is None:
+        done_or_discarded = {"done", "discarded"}
+
+    status = item.get("status", "backlog")
+    signals = item.get("readiness_signals", [])
+
+    if status in done_or_discarded:
+        return {
+            "score": 1.0,
+            "status_contribution": 1.0,
+            "signal_contribution": 0.0,
+            "signals": signals,
+        }
+
+    status_contribution = STATUS_READINESS.get(status, 0.05)
+    signal_contribution = sum(
+        SIGNAL_TRUST.get(s.get("type", ""), 0.0) for s in signals
+    )
+    # Cap: an item can reach at most 0.95 readiness without being done
+    headroom = max(0.0, 0.95 - status_contribution)
+    capped_signal = min(signal_contribution, headroom)
+    score = round(status_contribution + capped_signal, 2)
+
+    return {
+        "score": score,
+        "status_contribution": round(status_contribution, 2),
+        "signal_contribution": round(capped_signal, 2),
+        "signals": signals,
+    }
+
+
 # ── Justification Engine (Tribunal) ──────────────────────────────────────────
 
 # Statuses eligible for recommendation (available for pick-up)
@@ -468,6 +539,7 @@ def evaluate_tribunal(data, agent=None):
     score_results = compute_scores(data)
     breakdowns_by_id = {r["id"]: r["score_breakdown"] for r in score_results}
     scores_by_id = {r["id"]: r["score"] for r in score_results}
+    readiness_by_id = {r["id"]: r.get("readiness", {}) for r in score_results}
 
     candidates = [i for i in items if i.get("status") in RECOMMEND_ELIGIBLE]
     if not candidates:
@@ -529,6 +601,19 @@ def evaluate_tribunal(data, agent=None):
     elif ws == "refined":
         status_note = "Refined — move to ready before starting"
 
+    winner_readiness = readiness_by_id.get(winner_id, {})
+    # If winner has partially-ready blockers, surface as a status note
+    winner_blockers = winner_readiness.get("blockers") or []
+    if winner_blockers:
+        min_r = min(b["readiness"] for b in winner_blockers)
+        readiness_cfg = {**DEFAULT_READINESS_CONFIG, **config.get("readiness", {})}
+        startable_threshold = readiness_cfg.get("startable_threshold", 0.70)
+        ready_threshold = readiness_cfg.get("ready_threshold", 0.90)
+        if min_r >= startable_threshold:
+            status_note = f"Startable with risk — weakest blocker at {int(min_r * 100)}% readiness"
+        else:
+            status_note = f"Blocked — weakest blocker at {int(min_r * 100)}% readiness"
+
     picked = {
         "item_id": winner_id,
         "title": winner_item.get("title", ""),
@@ -541,6 +626,7 @@ def evaluate_tribunal(data, agent=None):
         "recommended_model": rec_model,
         "supporting_lenses": supporting,
         "status_note": status_note,
+        "readiness": winner_readiness,
     }
 
     # Shadow ranking — runners-up with "why not" explanations
@@ -560,7 +646,15 @@ def evaluate_tribunal(data, agent=None):
             lost_reasons.append(f"Winner stronger on {biggest_gap_lens}: {winner_arg}")
 
         if breakdowns_by_id.get(rid, {}).get("blocked_penalty", 0) < 0:
-            lost_reasons.append("Blocked by incomplete dependency")
+            r_ctx = readiness_by_id.get(rid, {})
+            blocker_list = r_ctx.get("blockers") or []
+            if blocker_list:
+                min_r = min(b["readiness"] for b in blocker_list)
+                lost_reasons.append(
+                    f"Blocked — weakest blocker at {int(min_r * 100)}% readiness"
+                )
+            else:
+                lost_reasons.append("Blocked by incomplete dependency")
 
         if runner.get("status") != "ready":
             lost_reasons.append(f"Not ready (status: {runner.get('status')})")
@@ -735,10 +829,12 @@ def compute_agent_affinity(item, agent_name, agent_profile, all_items):
 def compute_scores(data):
     """Compute scores for all items using the Work Intelligence Engine formula.
 
-    Returns list of {id, title, status, score, score_breakdown, recommended_agent, recommended_model}.
+    Returns list of {id, title, status, score, score_breakdown, readiness,
+    recommended_agent, recommended_model}.
     """
     config = data.get("config", {})
     scoring = {**DEFAULT_SCORING, **config.get("scoring", {})}
+    readiness_cfg = {**DEFAULT_READINESS_CONFIG, **config.get("readiness", {})}
     agents_cfg = config.get("agents", {})
     model_routing = {**DEFAULT_MODEL_ROUTING, **config.get("model_routing", {})}
     items = data.get("items", [])
@@ -749,6 +845,8 @@ def compute_scores(data):
     blocks_map, blocked_by = resolve_blocks(items)
     done_or_discarded = {"done", "discarded"}
     items_by_id = {i.get("id"): i for i in items}
+    startable_threshold = readiness_cfg.get("startable_threshold", 0.70)
+    ready_threshold = readiness_cfg.get("ready_threshold", 0.90)
 
     results = []
     for idx, item in enumerate(items):
@@ -774,16 +872,28 @@ def compute_scores(data):
         cb = scoring.get("complexity_bonus", {})
         breakdown["complexity"] = cb.get(complexity, cb.get("medium", 0.0)) if complexity else 0.0
 
-        # 5. Blocked penalty
+        # 5. Blocked penalty — dynamic based on blocker readiness (replaces binary -3.0)
         blockers = blocked_by.get(iid, [])
-        is_blocked = any(
-            items_by_id.get(b, {}).get("status") not in done_or_discarded
-            for b in blockers
-        )
-        breakdown["blocked_penalty"] = scoring["blocked_penalty"] if is_blocked else 0.0
+        active_blockers = [
+            b for b in blockers
+            if items_by_id.get(b, {}).get("status") not in done_or_discarded
+        ]
+        if active_blockers:
+            blocker_readiness_scores = [
+                compute_item_readiness(items_by_id[b], done_or_discarded)["score"]
+                for b in active_blockers if b in items_by_id
+            ]
+            min_readiness = min(blocker_readiness_scores) if blocker_readiness_scores else 0.0
+            # Penalty scales from full (blocker at 0%) to zero (blocker fully ready)
+            breakdown["blocked_penalty"] = round(
+                scoring["blocked_penalty"] * (1.0 - min_readiness), 2
+            )
+        else:
+            min_readiness = 1.0
+            breakdown["blocked_penalty"] = 0.0
 
-        # 6. Quick win bonus
-        is_quick = complexity == "low" and not is_blocked
+        # 6. Quick win bonus — only if fully unblocked (no active blockers or all blockers near done)
+        is_quick = complexity == "low" and min_readiness >= ready_threshold
         breakdown["quick_win"] = scoring["quick_win_bonus"] if is_quick else 0.0
 
         # 7. Reopen penalty
@@ -802,6 +912,27 @@ def compute_scores(data):
         breakdown["critical_bug"] = scoring["critical_bug_boost"] if is_critical_bug else 0.0
 
         score = round(sum(breakdown.values()), 1)
+
+        # Compute this item's own readiness (for reporting on its own completeness)
+        item_readiness = compute_item_readiness(item, done_or_discarded)
+        rs = item_readiness["score"]
+        readiness_level = (
+            "ready" if rs >= ready_threshold
+            else ("startable" if rs >= startable_threshold else "not_ready")
+        )
+
+        # Blocker readiness context (for blocked items)
+        blocker_details = None
+        if active_blockers:
+            blocker_details = [
+                {
+                    "blocker_id": b,
+                    "readiness": compute_item_readiness(
+                        items_by_id[b], done_or_discarded
+                    )["score"] if b in items_by_id else 0.0,
+                }
+                for b in active_blockers
+            ]
 
         # Recommended agent
         best_agent = None
@@ -824,6 +955,14 @@ def compute_scores(data):
             "status": item.get("status", "backlog"),
             "score": score,
             "score_breakdown": {k: round(v, 2) for k, v in breakdown.items()},
+            "readiness": {
+                "score": item_readiness["score"],
+                "level": readiness_level,
+                "status_contribution": item_readiness["status_contribution"],
+                "signal_contribution": item_readiness["signal_contribution"],
+                "signals": item_readiness["signals"],
+                "blockers": blocker_details,
+            },
             "recommended_agent": best_agent,
             "recommended_model": rec_model,
         })
@@ -937,6 +1076,18 @@ class BacklogHandler(BaseHTTPRequestHandler):
             self._update_item(item_id)
         else:
             self.send_error(404)
+
+    def do_POST(self):
+        parsed = urlparse(self.path)
+        # POST /api/items/<id>/signal
+        if parsed.path.startswith("/api/items/") and parsed.path.endswith("/signal"):
+            parts = parsed.path.split("/")
+            # path: ['', 'api', 'items', '<id>', 'signal']
+            if len(parts) == 5:
+                item_id = parts[3]
+                self._add_signal(item_id)
+                return
+        self.send_error(404)
 
     def _serve_html(self):
         html_path = ASSETS_DIR / "backlog-board.html"
@@ -1161,6 +1312,63 @@ class BacklogHandler(BaseHTTPRequestHandler):
         if events:
             response["_events"] = events
         self._json_response(200, response)
+
+    def _add_signal(self, item_id):
+        """Append a readiness signal to an item's readiness_signals array.
+
+        Body: {"type": "pr_merged", "source": "agent-a", "description": "optional"}
+        Valid types: pr_merged, test_passed, review_approved, file_created, spec_written, design_approved
+        """
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_BODY_SIZE:
+            self._json_error(413, "Request body too large")
+            return
+        body = self.rfile.read(content_length)
+        try:
+            signal_data = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._json_error(400, f"Invalid JSON: {e}")
+            return
+
+        signal_type = signal_data.get("type", "")
+        if signal_type not in VALID_SIGNAL_TYPES:
+            self._json_error(400, f"Invalid signal type '{signal_type}'. "
+                                  f"Valid types: {', '.join(sorted(VALID_SIGNAL_TYPES))}")
+            return
+
+        signal = {
+            "type": signal_type,
+            "source": signal_data.get("source", "unknown"),
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+        if signal_data.get("description"):
+            signal["description"] = signal_data["description"]
+
+        with write_lock:
+            try:
+                data = read_backlog(self.backlog_file)
+            except ValueError as e:
+                self._json_error(500, str(e))
+                return
+
+            found = False
+            for item in data.get("items", []):
+                if item.get("id") == item_id:
+                    if "readiness_signals" not in item:
+                        item["readiness_signals"] = []
+                    item["readiness_signals"].append(signal)
+                    item["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    found = True
+                    break
+
+            if not found:
+                self._json_error(404, f"Item {item_id} not found")
+                return
+
+            data["version"] = data.get("version", 0) + 1
+            atomic_write(self.backlog_file, data)
+
+        self._json_response(201, {"status": "ok", "signal": signal, "version": data["version"]})
 
     def _json_response(self, status, obj):
         self.send_response(status)

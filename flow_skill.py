@@ -34,6 +34,11 @@ The backlog has been scored and ranked. Each item includes a full score_breakdow
 showing exactly which factors contributed to the final score. Non-zero fields are
 the active scoring signals. Trust the data — do not invent factors.
 
+Each item also includes a readiness section: its own readiness score (0.0–1.0) plus
+blocker readiness scores. blocked_penalty is now proportional to blocker readiness —
+full penalty (-3.0) at 0% readiness, zero penalty at 100% readiness. A blocker at
+75% readiness produces a blocked_penalty of only -0.75.
+
 SCORED BACKLOG (rank 1 = highest priority):
 {context_block}
 
@@ -44,7 +49,7 @@ Instructions:
 - Respond in 2-3 sentences only.
 - Lead with the recommended task title (rank 1).
 - Cite the single most important non-zero score_breakdown field and its value.
-- If a competitor task scored significantly lower, briefly note why (e.g. blocked_penalty)."""
+- If a competitor task scored significantly lower, briefly note why (e.g. blocked_penalty or low readiness)."""
 
         ollama_resp = requests.post(
             OLLAMA_URL,

@@ -80,12 +80,78 @@ SCENARIOS = [
         ],
         "expected": (
             "Recommend 'Root Task': its unblock score of +2.0 lifts its total to 4.0, "
-            "while 'Blocked Task' is suppressed to -2.0 by a blocked_penalty of -3.0."
+            "while 'Blocked Task' is suppressed to -1.85 by a readiness-scaled blocked_penalty "
+            "of -2.85 (Root Task is at 5% readiness — backlog status, no artifact signals, "
+            "so 95% of the max -3.0 penalty applies)."
         ),
         "criteria": (
             "The response recommends 'Root Task' and references the unblock score_breakdown field "
             "or unblocking multiplier as the reason it outranks 'Blocked Task'. "
-            "Bonus if it notes the blocked_penalty applied to 'Blocked Task'."
+            "Bonus if it notes the blocked_penalty applied to 'Blocked Task' and that it is "
+            "proportional to the blocker's readiness rather than a flat -3.0."
+        ),
+    },
+    {
+        "name": "Readiness_Partial_Block",
+        "input": (
+            "'Feature Work' (priority 5, ready) is blocked by 'Auth Integration' (priority 3, "
+            "in-progress, PR already merged). How does Auth Integration's readiness affect "
+            "Feature Work's blocked_penalty and score? Is Feature Work startable now?"
+        ),
+        "items": [
+            {
+                "id": "AUTH",
+                "title": "Auth Integration",
+                "priority_weight": 3,
+                "status": "in-progress",
+                "complexity": "medium",
+                "links": [{"type": "blocks", "item_id": "FEAT", "reason": "auth must land first"}],
+                "readiness_signals": [
+                    {"type": "pr_merged", "source": "worker-a", "timestamp": "2026-03-26T10:00:00Z"}
+                ],
+                "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+                    {"lane": "ready", "at": "2026-03-22T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0,
+                "reopen_count": 0,
+                "skip_count": 0,
+                "threads": [],
+                "updated_at": "2026-03-26T10:00:00Z",
+                "created_at": "2026-03-20T10:00:00Z",
+            },
+            {
+                "id": "FEAT",
+                "title": "Feature Work",
+                "priority_weight": 5,
+                "status": "ready",
+                "complexity": "medium",
+                "links": [],
+                "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-18T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-19T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0,
+                "reopen_count": 0,
+                "skip_count": 0,
+                "threads": [],
+                "updated_at": "2026-03-20T10:00:00Z",
+                "created_at": "2026-03-18T10:00:00Z",
+            },
+        ],
+        "expected": (
+            "Auth Integration is at 75% readiness (50% in-progress baseline + 25% from PR merged). "
+            "Feature Work's blocked_penalty is -0.75 — only 25% of the max -3.0, because its "
+            "blocker is 75% ready. Feature Work is startable with known risk (blocker above 70% "
+            "readiness threshold)."
+        ),
+        "criteria": (
+            "The response identifies Auth Integration's readiness as approximately 75% "
+            "(in-progress + pr_merged signal). Feature Work's blocked_penalty must be described "
+            "as partial or reduced (around -0.75), not the full -3.0. "
+            "The response must indicate Feature Work is startable or above the 70% threshold, "
+            "not fully blocked."
         ),
     },
 ]
