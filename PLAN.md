@@ -173,17 +173,17 @@ Decision {
 - "This rule hasn't fired in 3 weeks — still relevant?"
 
 ### Tasks
-- [ ] Design policy schema — name, description (natural language), priority, active/inactive, created_at
-- [ ] Policy storage in config (extend `backlog.json` config or separate `policies.json`)
-- [ ] Build evaluation pipeline — on graph state change, feed snapshot + policies to LLM
-- [ ] Define structured action types and their execution logic
-- [ ] Build rule conflict resolution — detect contradictions, LLM adjudicates, log reasoning
-- [ ] Migrate existing gate rules — express current `requires` rules as natural language policies
-- [ ] Rule authoring UX — in SKILL.md conversation and/or web board settings
-- [ ] Rule effectiveness tracking — fire count, outcome impact, staleness detection
-- [ ] Rule suggestion engine — based on patterns Flow observes, suggest new rules
-- [ ] Update justification engine — include which rules influenced a decision
-- [ ] Add evals: natural language rule firing, conflict resolution, rule authoring via conversation, action execution correctness
+- [x] Design policy schema — name, description (natural language), priority, active/inactive, created_at
+- [x] Policy storage in config (extend `backlog.json` config or separate `policies.json`)
+- [x] Build evaluation pipeline — on graph state change, feed snapshot + policies to LLM
+- [x] Define structured action types and their execution logic
+- [x] Build rule conflict resolution — detect contradictions, LLM adjudicates, log reasoning
+- [x] Migrate existing gate rules — express current `requires` rules as natural language policies
+- [x] Rule authoring UX — in SKILL.md conversation and/or web board settings
+- [x] Rule effectiveness tracking — fire count, outcome impact, staleness detection
+- [x] Rule suggestion engine — based on patterns Flow observes, suggest new rules
+- [x] Update justification engine — include which rules influenced a decision
+- [x] Add evals: natural language rule firing, conflict resolution, rule authoring via conversation, action execution correctness
 
 ---
 

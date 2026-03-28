@@ -185,6 +185,76 @@
         "Claude does NOT say #4 is fully unblocked — it acknowledges the remaining risk",
         "Claude explains what the remaining risk is (tests not yet confirmed, review pending, etc.)"
       ]
+    },
+    {
+      "id": 15,
+      "prompt": "Add a rule: if a bug is blocking more than 2 active items and has been in the backlog for more than 4 hours without being assigned, escalate it to the top.",
+      "expected_output": "Creates a new policy via POST /api/policies with a clear name and the natural language description. Confirms the policy was added and explains when it will fire.",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude calls POST /api/policies with name and description fields",
+        "The description faithfully captures the user's intent in natural language",
+        "Claude confirms the policy was added with its name",
+        "Claude explains that the policy will be evaluated after every state change",
+        "Claude mentions that ANTHROPIC_API_KEY is required for evaluation",
+        "Claude does NOT try to hard-code the logic — it stores the rule as a natural language description"
+      ]
+    },
+    {
+      "id": 16,
+      "prompt": "Show me all my rules and let me know if any are stale or firing constantly.",
+      "expected_output": "Fetches GET /api/policies and presents each policy with name, active status, fire count, last fired date, and any staleness warnings. Flags policies that have staleness_warnings populated.",
+      "files": [],
+      "expectations": [
+        "Claude calls GET /api/policies",
+        "Each policy is listed with name, active status, fire count, and last_fired date",
+        "Policies with staleness_warnings are clearly flagged",
+        "Claude explains what the staleness warning means (e.g. never fired in 18 days)",
+        "Claude offers to disable or delete stale policies",
+        "If no policies exist, Claude offers to add some or suggest rules"
+      ]
+    },
+    {
+      "id": 17,
+      "prompt": "Can you suggest some rules based on what you see in the backlog?",
+      "expected_output": "Calls GET /api/policies/suggestions which analyses backlog patterns (high skip counts, unassigned critical bugs, overloaded agents) and returns 2-4 LLM-generated policy suggestions. Claude presents each suggestion and offers to add them.",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude calls GET /api/policies/suggestions",
+        "Claude presents 2-4 suggested policies with name and description",
+        "Each suggestion is grounded in observable patterns from the backlog (e.g. skip counts, unassigned bugs)",
+        "Claude offers to add one or more suggestions as active policies",
+        "Claude does NOT invent policies with no grounding in the actual backlog state",
+        "If the API key is missing, Claude explains the requirement gracefully"
+      ]
+    },
+    {
+      "id": 18,
+      "prompt": "Run the rules now and tell me what happened.",
+      "expected_output": "Calls GET /api/policies/evaluate which triggers immediate policy evaluation. Returns how many policies fired, what actions were executed, and any notifications. Claude summarises the results in plain language.",
+      "files": ["evals/files/backlog_with_scores.json"],
+      "expectations": [
+        "Claude calls GET /api/policies/evaluate",
+        "Claude reports how many policies fired (could be 0)",
+        "If actions were executed, Claude describes what changed (e.g. 'auth token bug escalated to priority 9')",
+        "If notifications fired, Claude surfaces the messages",
+        "If 0 policies fired, Claude explains why (e.g. no conditions currently met) rather than saying nothing happened",
+        "Claude does NOT re-run evaluation repeatedly — one call is sufficient"
+      ]
+    },
+    {
+      "id": 19,
+      "prompt": "Two of my rules are conflicting — one escalates the auth bug and another blocks it. Which one should win?",
+      "expected_output": "Explains the conflict resolution mechanism: when two policies produce contradictory actions (escalate vs block) on the same item, a second LLM call adjudicates. Claude explains the _CONTRADICTORY_PAIRS logic and that the resolution reasoning is logged to policy_log.json. Optionally shows recent policy log via GET /api/policies/log.",
+      "files": [],
+      "expectations": [
+        "Claude explains that Flow auto-detects the escalate/block conflict (contradictory pair)",
+        "Claude explains a second LLM call adjudicates and picks the winning action",
+        "Claude mentions the reasoning is logged with resolution_reasoning in policy_log.json",
+        "Claude offers to show the recent policy log via GET /api/policies/log",
+        "Claude recommends adjusting policy priorities to give one clear precedence over the other",
+        "Claude does NOT say both actions will be applied — only one wins"
+      ]
     }
   ]
 }

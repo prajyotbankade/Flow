@@ -563,6 +563,60 @@
     .add-lane-row input { flex: 1; padding: 7px 10px; border: 1px solid #d1d5db; border-radius: 8px; font-size: 13px; font-family: inherit; }
     .settings-section-label { font-size: 11px; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 10px; }
     .settings-help { font-size: 11px; color: #9ca3af; margin-top: 4px; line-height: 1.4; }
+
+    /* ── Policy Engine styles ── */
+    .policy-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 12px; }
+    .policy-item {
+      border: 1px solid #e5e7eb; border-radius: 8px; padding: 10px 12px;
+      background: #fff; position: relative;
+    }
+    .policy-item.inactive { opacity: 0.55; }
+    .policy-item.stale { border-color: #fbbf24; background: #fffbeb; }
+    .policy-item-header { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .policy-toggle {
+      width: 32px; height: 18px; background: #d1d5db; border: none; border-radius: 9px;
+      cursor: pointer; position: relative; flex-shrink: 0; transition: background 0.15s;
+    }
+    .policy-toggle.on { background: #10b981; }
+    .policy-toggle::after {
+      content: ''; position: absolute; width: 14px; height: 14px; border-radius: 50%;
+      background: #fff; top: 2px; left: 2px; transition: left 0.15s;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+    .policy-toggle.on::after { left: 16px; }
+    .policy-name { font-size: 13px; font-weight: 600; color: #111827; flex: 1; }
+    .policy-priority { font-size: 10px; color: #9ca3af; background: #f3f4f6; padding: 2px 6px; border-radius: 4px; }
+    .policy-fire-badge {
+      font-size: 10px; color: #6b7280; background: #f3f4f6;
+      padding: 2px 6px; border-radius: 4px; white-space: nowrap;
+    }
+    .policy-fire-badge.has-fires { color: #10b981; background: #d1fae5; }
+    .policy-description { font-size: 12px; color: #6b7280; line-height: 1.5; }
+    .policy-stale-warning { font-size: 11px; color: #d97706; margin-top: 4px; }
+    .policy-actions-row { display: flex; gap: 6px; margin-top: 8px; }
+    .policy-btn { font-size: 11px; padding: 3px 8px; border-radius: 5px; border: 1px solid #e5e7eb; background: #f9fafb; cursor: pointer; color: #374151; }
+    .policy-btn:hover { background: #f3f4f6; }
+    .policy-btn.danger { color: #ef4444; border-color: #fecaca; background: #fff5f5; }
+    .policy-btn.danger:hover { background: #fee2e2; }
+    .policy-log-section { margin-top: 10px; }
+    .policy-log-entry {
+      font-size: 11px; color: #6b7280; padding: 6px 8px; background: #f9fafb;
+      border-radius: 6px; margin-bottom: 4px; border-left: 3px solid #e5e7eb;
+    }
+    .policy-log-entry.fired { border-left-color: #10b981; }
+    .policy-log-entry.conflict { border-left-color: #f59e0b; }
+    .policy-add-form { background: #f9fafb; border-radius: 8px; padding: 12px; border: 1px solid #e5e7eb; margin-top: 8px; }
+    .policy-add-form input, .policy-add-form textarea { width: 100%; margin-bottom: 8px; }
+    .policy-add-form textarea { height: 72px; resize: vertical; }
+    .policy-suggestions { margin-top: 10px; }
+    .suggestion-item {
+      border: 1px dashed #93c5fd; border-radius: 6px; padding: 8px 10px;
+      background: #eff6ff; margin-bottom: 6px; cursor: pointer;
+    }
+    .suggestion-item:hover { background: #dbeafe; }
+    .suggestion-name { font-size: 12px; font-weight: 600; color: #1d4ed8; margin-bottom: 2px; }
+    .suggestion-desc { font-size: 11px; color: #3b82f6; line-height: 1.4; }
+    .suggestion-add-btn { font-size: 10px; color: #2563eb; border: 1px solid #93c5fd; background: #fff; border-radius: 4px; padding: 2px 6px; float: right; cursor: pointer; }
     .settings-project-input {
       width: 100%; padding: 8px 10px; border: 1px solid #d1d5db; border-radius: 8px;
       font-size: 14px; font-family: inherit; margin-bottom: 18px;
@@ -1055,12 +1109,60 @@
           Adjust how the intelligence engine scores and ranks work items.
         </p>
         <div id="settings-scoring-weights" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+
+        <hr class="settings-divider">
+
+        <div class="settings-section-label">Natural Language Policies</div>
+        <p class="settings-help" style="margin-bottom:12px;">
+          Write rules in plain English. Flow evaluates them after every state change using LLM reasoning
+          and applies structured actions (reprioritize, reassign, escalate, notify, block, skip).
+          Requires <code>ANTHROPIC_API_KEY</code>.
+        </p>
+        <div class="policy-list" id="settings-policy-list"></div>
+        <div style="display:flex;gap:6px;margin-bottom:8px;">
+          <button class="btn btn-primary btn-sm" onclick="showPolicyAddForm()">+ Add Policy</button>
+          <button class="btn btn-ghost btn-sm" onclick="loadPolicySuggestions()">✦ Suggest Rules</button>
+          <button class="btn btn-ghost btn-sm" onclick="openPolicyLog()">History</button>
+        </div>
+        <div id="policy-add-form" style="display:none;" class="policy-add-form">
+          <div class="settings-section-label" style="margin-bottom:6px;">New Policy</div>
+          <input type="text" id="new-policy-name" class="settings-project-input" placeholder="Short name (e.g. Jump critical bugs)">
+          <textarea id="new-policy-desc" class="settings-project-input" style="height:72px;resize:vertical;"
+            placeholder="Natural language rule (e.g. If a bug is blocking more than 2 active items and was filed in the last 6 hours, jump it to the top.)"></textarea>
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <label style="font-size:12px;color:#374151;">Priority:</label>
+            <input type="number" id="new-policy-priority" value="5" min="1" max="10"
+                   style="width:60px;" class="settings-project-input">
+            <span style="font-size:11px;color:#9ca3af;">1 = lowest, 10 = highest</span>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button class="btn btn-primary btn-sm" onclick="createPolicy()">Add Policy</button>
+            <button class="btn btn-ghost btn-sm" onclick="hidePolicyAddForm()">Cancel</button>
+          </div>
+        </div>
+        <div class="policy-suggestions" id="policy-suggestions" style="display:none;">
+          <div class="settings-section-label" style="margin-bottom:6px;">Suggested Policies</div>
+          <div id="policy-suggestions-list"></div>
+        </div>
       </div>
       <div class="modal-footer">
         <div style="display:flex;gap:8px;margin-left:auto;">
           <button class="btn btn-ghost" onclick="closeSettings()">Cancel</button>
           <button class="btn btn-primary" onclick="saveSettings()">Save Changes</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Policy Log Modal -->
+  <div class="modal-overlay" id="policy-log-overlay" onclick="closePolicyLog(event)">
+    <div class="modal" onclick="event.stopPropagation()" style="width:560px;max-height:80vh;overflow-y:auto;">
+      <div class="modal-header">
+        <h2>Policy Fire History</h2>
+        <button class="close-btn" onclick="closePolicyLog()">&times;</button>
+      </div>
+      <div class="modal-body" id="policy-log-body">
+        <p style="color:#9ca3af;font-size:13px;">Loading…</p>
       </div>
     </div>
   </div>
@@ -2338,6 +2440,7 @@
       settingsScoring = JSON.parse(JSON.stringify(backlog.config.scoring || {}));
       renderSettingsAgents();
       renderSettingsScoring();
+      loadPolicies();
       document.getElementById('settings-overlay').classList.add('active');
     }
 
@@ -2640,6 +2743,208 @@
           <input type="number" step="0.1" value="${val}" onchange="settingsScoring['${key}'] = parseFloat(this.value)" style="font-size:12px;padding:4px 6px;">
         </div>`;
       }).join('');
+    }
+
+    // ── Phase 4: Policy Engine UI ──
+    // ═══════════════════════════════════════════════
+
+    let policiesData = { policies: [] };
+
+    async function loadPolicies() {
+      try {
+        const r = await fetch('/api/policies');
+        if (r.ok) policiesData = await r.json();
+        renderSettingsPolicies();
+      } catch (_) {}
+    }
+
+    function renderSettingsPolicies() {
+      const container = document.getElementById('settings-policy-list');
+      if (!container) return;
+      const policies = policiesData.policies || [];
+      if (!policies.length) {
+        container.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:4px 0 8px;">No policies yet — add one below or click "Suggest Rules".</div>';
+        return;
+      }
+      container.innerHTML = policies.map(p => {
+        const isOn = p.active !== false;
+        const stale = (p.staleness_warnings || []).length > 0;
+        const hasFires = (p.fire_count || 0) > 0;
+        const lastFired = p.last_fired ? new Date(p.last_fired).toLocaleDateString() : 'Never';
+        const staleHtml = stale
+          ? `<div class="policy-stale-warning">⚠ ${p.staleness_warnings.join(' · ')}</div>`
+          : '';
+        return `
+          <div class="policy-item${isOn ? '' : ' inactive'}${stale ? ' stale' : ''}" data-policy-id="${esc(p.id)}">
+            <div class="policy-item-header">
+              <button class="policy-toggle${isOn ? ' on' : ''}" title="${isOn ? 'Disable' : 'Enable'}"
+                onclick="togglePolicy('${escJs(p.id)}', ${!isOn})"></button>
+              <span class="policy-name">${esc(p.name)}</span>
+              <span class="policy-priority">p${p.priority || 5}</span>
+              <span class="policy-fire-badge${hasFires ? ' has-fires' : ''}">
+                ${hasFires ? '⚡ ' + p.fire_count + ' fire' + (p.fire_count !== 1 ? 's' : '') : '0 fires'} · ${lastFired}
+              </span>
+            </div>
+            <div class="policy-description">${esc(p.description)}</div>
+            ${staleHtml}
+            <div class="policy-actions-row">
+              <button class="policy-btn danger" onclick="deletePolicy('${escJs(p.id)}')">Delete</button>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    async function togglePolicy(policyId, newActive) {
+      try {
+        await fetch(`/api/policies/${policyId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ active: newActive })
+        });
+        await loadPolicies();
+      } catch (_) {}
+    }
+
+    async function deletePolicy(policyId) {
+      if (!confirm('Delete this policy?')) return;
+      try {
+        await fetch(`/api/policies/${policyId}`, { method: 'DELETE' });
+        await loadPolicies();
+      } catch (_) {}
+    }
+
+    function showPolicyAddForm() {
+      document.getElementById('policy-add-form').style.display = 'block';
+      document.getElementById('new-policy-name').focus();
+    }
+
+    function hidePolicyAddForm() {
+      document.getElementById('policy-add-form').style.display = 'none';
+      document.getElementById('new-policy-name').value = '';
+      document.getElementById('new-policy-desc').value = '';
+      document.getElementById('new-policy-priority').value = '5';
+    }
+
+    async function createPolicy() {
+      const name = document.getElementById('new-policy-name').value.trim();
+      const description = document.getElementById('new-policy-desc').value.trim();
+      const priority = parseInt(document.getElementById('new-policy-priority').value) || 5;
+      if (!name || !description) { alert('Name and description are required.'); return; }
+      try {
+        const r = await fetch('/api/policies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name, description, priority, active: true })
+        });
+        if (r.ok) {
+          hidePolicyAddForm();
+          await loadPolicies();
+        } else {
+          const err = await r.json();
+          alert('Error: ' + (err.error || 'Unknown'));
+        }
+      } catch (_) {}
+    }
+
+    async function loadPolicySuggestions() {
+      const btn = document.querySelector('button[onclick="loadPolicySuggestions()"]');
+      if (btn) { btn.disabled = true; btn.textContent = '⏳ Thinking…'; }
+      const suggestionsDiv = document.getElementById('policy-suggestions');
+      const listDiv = document.getElementById('policy-suggestions-list');
+      suggestionsDiv.style.display = 'none';
+      try {
+        const r = await fetch('/api/policies/suggestions');
+        if (r.ok) {
+          const data = await r.json();
+          const suggestions = data.suggestions || [];
+          if (!suggestions.length) {
+            listDiv.innerHTML = '<p style="font-size:12px;color:#9ca3af;">No new suggestions — existing policies look comprehensive.</p>';
+          } else {
+            listDiv.innerHTML = suggestions.map((s, i) => `
+              <div class="suggestion-item" data-idx="${i}">
+                <button class="suggestion-add-btn" onclick="addSuggestion(${i})">+ Add</button>
+                <div class="suggestion-name">${esc(s.name)}</div>
+                <div class="suggestion-desc">${esc(s.description)}</div>
+              </div>
+            `).join('');
+            listDiv._suggestions = suggestions;
+          }
+          suggestionsDiv.style.display = 'block';
+        }
+      } catch (_) {
+        listDiv.innerHTML = '<p style="font-size:12px;color:#ef4444;">Suggestions require ANTHROPIC_API_KEY.</p>';
+        suggestionsDiv.style.display = 'block';
+      }
+      if (btn) { btn.disabled = false; btn.textContent = '✦ Suggest Rules'; }
+    }
+
+    async function addSuggestion(idx) {
+      const listDiv = document.getElementById('policy-suggestions-list');
+      const suggestions = listDiv._suggestions || [];
+      const s = suggestions[idx];
+      if (!s) return;
+      try {
+        await fetch('/api/policies', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: s.name, description: s.description, priority: s.priority || 5, active: true })
+        });
+        await loadPolicies();
+        // Remove the suggestion from the list
+        suggestions.splice(idx, 1);
+        listDiv._suggestions = suggestions;
+        if (!suggestions.length) {
+          document.getElementById('policy-suggestions').style.display = 'none';
+        } else {
+          listDiv.querySelectorAll('.suggestion-item')[idx]?.remove();
+        }
+      } catch (_) {}
+    }
+
+    async function openPolicyLog() {
+      document.getElementById('policy-log-overlay').classList.add('active');
+      const body = document.getElementById('policy-log-body');
+      body.innerHTML = '<p style="color:#9ca3af;font-size:13px;">Loading…</p>';
+      try {
+        const r = await fetch('/api/policies/log?limit=50');
+        if (r.ok) {
+          const data = await r.json();
+          const entries = data.entries || [];
+          if (!entries.length) {
+            body.innerHTML = '<p style="color:#9ca3af;font-size:13px;">No policy fires recorded yet.</p>';
+          } else {
+            body.innerHTML = entries.map(e => {
+              const ts = new Date(e.timestamp).toLocaleString();
+              const firedClass = e.fired ? 'fired' : '';
+              const conflictClass = e.conflict_with ? 'conflict' : '';
+              const actionsHtml = (e.actions_executed || []).length
+                ? `<div style="margin-top:3px;color:#374151;">Actions: ${e.actions_executed.map(a => `${a.action.type} ${a.action.item_id || ''}`).join(', ')}</div>`
+                : '';
+              const notifHtml = (e.notifications || []).length
+                ? `<div style="margin-top:3px;color:#6b7280;">Notify: ${e.notifications.join('; ')}</div>`
+                : '';
+              const conflictNote = e.conflict_with
+                ? `<div style="color:#d97706;font-size:10px;margin-top:2px;">Conflict with: ${e.conflict_with.join(', ')} — ${e.resolution_reasoning || ''}</div>`
+                : '';
+              return `<div class="policy-log-entry ${firedClass} ${conflictClass}">
+                <div style="display:flex;justify-content:space-between;align-items:center;">
+                  <strong style="font-size:12px;">${esc(e.policy_name)}</strong>
+                  <span style="font-size:10px;color:#9ca3af;">${ts}</span>
+                </div>
+                <div style="color:${e.fired ? '#059669' : '#9ca3af'};font-size:11px;">${e.fired ? '⚡ Fired' : '○ Did not fire'} — ${esc(e.reasoning || '')}</div>
+                ${actionsHtml}${notifHtml}${conflictNote}
+              </div>`;
+            }).join('');
+          }
+        }
+      } catch (_) {
+        body.innerHTML = '<p style="color:#ef4444;font-size:13px;">Error loading policy log.</p>';
+      }
+    }
+
+    function closePolicyLog(e) {
+      if (e && e.target !== document.getElementById('policy-log-overlay')) return;
+      document.getElementById('policy-log-overlay').classList.remove('active');
     }
 
     // ── Search & Filters ──

@@ -23,6 +23,13 @@ API:
     PUT  /api/backlog              Full backlog write (version checked, atomic, returns _events)
     PUT  /api/items/<id>           Single item update (version checked, atomic, returns _events)
     POST /api/items/<id>/signal    Append a readiness signal to an item
+    GET  /api/policies             List all policies with staleness analysis
+    POST /api/policies             Create a new policy
+    PUT  /api/policies/<id>        Update a policy (name, description, priority, active)
+    DELETE /api/policies/<id>      Delete a policy
+    GET  /api/policies/log         Recent policy fire history (optional ?limit=N)
+    GET  /api/policies/evaluate    Manually trigger policy evaluation
+    GET  /api/policies/suggestions LLM-generated rule suggestions based on patterns
 """
 
 import argparse
@@ -1296,6 +1303,628 @@ def detect_events(old_data, new_data):
     return events
 
 
+# ── Phase 4: Natural Language Rule Engine ─────────────────────────────────────
+
+# Structured action types the LLM may return for a firing policy
+VALID_POLICY_ACTION_TYPES = {"reprioritize", "reassign", "escalate", "block", "notify", "skip_force"}
+
+# Pairs of action types that are mutually contradictory on the same item
+_CONTRADICTORY_PAIRS = {
+    tuple(sorted(["escalate", "skip_force"])),
+    tuple(sorted(["escalate", "block"])),
+    tuple(sorted(["reprioritize", "skip_force"])),
+}
+
+# Default policies seeded on first use — express common best-practice rules
+DEFAULT_POLICIES = [
+    {
+        "name": "Jump critical unassigned bugs",
+        "description": (
+            "If a bug has priority_weight >= 9 and is not assigned to any agent and "
+            "has been in backlog or ready for more than 4 hours, escalate it to the top."
+        ),
+        "priority": 10,
+    },
+    {
+        "name": "Force neglected items",
+        "description": (
+            "If an item has been skipped 5 or more times without being picked up, "
+            "reprioritize it to priority_weight 8 to force a decision: kill it or start it."
+        ),
+        "priority": 8,
+    },
+    {
+        "name": "Flag concurrent high-complexity work",
+        "description": (
+            "If two high-complexity items are both in-progress and assigned to the same agent, "
+            "notify with a warning that the agent may be overloaded."
+        ),
+        "priority": 6,
+    },
+    {
+        "name": "Surface stale ready items",
+        "description": (
+            "If an item has been in 'ready' status for more than 7 days without being picked up, "
+            "notify with a warning that it may need to be re-evaluated or discarded."
+        ),
+        "priority": 5,
+    },
+]
+
+
+def get_policies_path(backlog_path):
+    """Policies file lives alongside backlog.json."""
+    return os.path.join(os.path.dirname(os.path.abspath(backlog_path)), "policies.json")
+
+
+def get_policy_log_path(backlog_path):
+    """Policy audit log lives alongside backlog.json."""
+    return os.path.join(os.path.dirname(os.path.abspath(backlog_path)), "policy_log.json")
+
+
+def generate_policy_id():
+    """Generate an 8-char alphanumeric ID for policies and log entries."""
+    import random
+    import string
+    return ''.join(random.choices(string.ascii_lowercase + string.digits, k=8))
+
+
+def read_policies(filepath):
+    """Read policies.json. Seeds default policies if file does not exist."""
+    try:
+        with open(filepath, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        now = datetime.now(timezone.utc).isoformat()
+        policies = []
+        for tmpl in DEFAULT_POLICIES:
+            policies.append({
+                "id": generate_policy_id(),
+                "name": tmpl["name"],
+                "description": tmpl["description"],
+                "priority": tmpl["priority"],
+                "active": True,
+                "created_at": now,
+                "fire_count": 0,
+                "last_fired": None,
+            })
+        return {"policies": policies}
+    except json.JSONDecodeError:
+        return {"policies": []}
+
+
+def save_policies(filepath, data):
+    """Atomic write to policies.json."""
+    atomic_write(filepath, data)
+
+
+def read_policy_log(filepath):
+    """Read policy_log.json."""
+    try:
+        with open(filepath, "r") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {"entries": []}
+
+
+def append_policy_log_entry(filepath, entry):
+    """Append an entry to policy_log.json, capped at 200 entries."""
+    log = read_policy_log(filepath)
+    log["entries"].append(entry)
+    if len(log["entries"]) > 200:
+        log["entries"] = log["entries"][-200:]
+    atomic_write(filepath, log)
+
+
+def build_policy_context(data):
+    """Build a compact context snapshot for LLM policy evaluation."""
+    score_results = compute_scores(data)
+    scores_by_id = {r["id"]: r["score"] for r in score_results}
+    readiness_by_id = {r["id"]: r.get("readiness", {}) for r in score_results}
+    blocks_map, blocked_by = resolve_blocks(data.get("items", []))
+
+    config = data.get("config", {})
+    agents_cfg = config.get("agents", {})
+    thresholds = {**DEFAULT_THRESHOLDS, **config.get("thresholds", {})}
+
+    items_ctx = []
+    for item in data.get("items", []):
+        iid = item.get("id")
+        r = readiness_by_id.get(iid, {})
+        items_ctx.append({
+            "id": iid,
+            "title": item.get("title", ""),
+            "status": item.get("status", "backlog"),
+            "category": item.get("category"),
+            "complexity": item.get("complexity"),
+            "priority_weight": item.get("priority_weight"),
+            "assigned_to": item.get("assigned_to"),
+            "tags": item.get("tags", []),
+            "score": round(scores_by_id.get(iid, 0), 2),
+            "readiness": round(r.get("score", 0), 2),
+            "readiness_level": r.get("level", "not_ready"),
+            "blocks_count": len(blocks_map.get(iid, [])),
+            "blocked_by_count": len(blocked_by.get(iid, [])),
+            "skip_count": item.get("skip_count", 0),
+            "reopen_count": item.get("reopen_count", 0),
+            "created_at": item.get("created_at", ""),
+            "updated_at": item.get("updated_at", ""),
+        })
+
+    agents_ctx = {}
+    for aname, aprofile in agents_cfg.items():
+        in_progress_count = sum(
+            1 for i in data.get("items", [])
+            if i.get("assigned_to") == aname and i.get("status") == "in-progress"
+        )
+        agents_ctx[aname] = {
+            "current_load": in_progress_count,
+            "max_active": aprofile.get("max_active", thresholds.get("max_active_per_agent", 3)),
+            "skills": aprofile.get("skills", []),
+        }
+
+    return {
+        "items": items_ctx,
+        "agents": agents_ctx,
+        "current_time": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _call_llm(model, messages, max_tokens=512):
+    """Low-level Claude API call. Returns response text or raises."""
+    try:
+        import anthropic
+    except ImportError:
+        raise RuntimeError("anthropic SDK not installed")
+    api_key = os.environ.get("ANTHROPIC_API_KEY")
+    if not api_key:
+        raise RuntimeError("ANTHROPIC_API_KEY not set")
+    client = anthropic.Anthropic(api_key=api_key)
+    response = client.messages.create(model=model, max_tokens=max_tokens, messages=messages)
+    return response.content[0].text.strip()
+
+
+def _extract_json(text):
+    """Extract JSON from an LLM response that may be wrapped in code fences."""
+    if "```json" in text:
+        text = text.split("```json")[1].split("```")[0].strip()
+    elif "```" in text:
+        text = text.split("```")[1].split("```")[0].strip()
+    return json.loads(text)
+
+
+def evaluate_policy_with_llm(policy, context):
+    """Evaluate a single policy against the current backlog context using Claude.
+
+    Returns: {"fires": bool, "reasoning": str, "actions": [ActionObject]}
+    Falls back to fires=False with an explanation if the SDK is unavailable.
+    """
+    items_lines = "\n".join(
+        f"  - [{i['status']}] {i['title']} (id={i['id']}, score={i['score']}, "
+        f"category={i['category']}, priority={i['priority_weight']}, "
+        f"assigned={i['assigned_to']}, blocks={i['blocks_count']}, "
+        f"skip={i['skip_count']}, reopen={i['reopen_count']}, "
+        f"readiness={i['readiness']}, created={i['created_at'][:10] if i['created_at'] else 'unknown'})"
+        for i in context["items"]
+    )
+    agents_lines = "\n".join(
+        f"  - {name}: load={info['current_load']}/{info['max_active']}, skills={info['skills']}"
+        for name, info in context["agents"].items()
+    ) if context["agents"] else "  (no configured agents)"
+
+    prompt = (
+        "You are the Flow Work Intelligence rule engine. Evaluate if a policy fires.\n\n"
+        f"POLICY:\nName: {policy['name']}\nDescription: {policy['description']}\n\n"
+        f"CURRENT STATE (as of {context['current_time']}):\nItems:\n"
+        f"{items_lines if items_lines else '  (no items)'}\n\nAgents:\n{agents_lines}\n\n"
+        "Determine if the policy condition is clearly met by the current data.\n\n"
+        "If the policy fires, produce one or more structured actions:\n"
+        '- reprioritize: {"type":"reprioritize","item_id":"<id>","priority_weight":<1-10>,"reason":"<one sentence>"}\n'
+        '- reassign: {"type":"reassign","item_id":"<id>","agent":"<name>","reason":"<one sentence>"}\n'
+        '- escalate: {"type":"escalate","item_id":"<id>","reason":"<one sentence>"}\n'
+        '- block: {"type":"block","item_id":"<id>","reason":"<one sentence>"}\n'
+        '- notify: {"type":"notify","item_id":"<id or null>","message":"<alert>","severity":"info|warning|critical"}\n'
+        '- skip_force: {"type":"skip_force","item_id":"<id>","reason":"<one sentence>"}\n\n'
+        "Rules: Only fire if the condition is clearly met. Never guess. "
+        "item_id must be a real ID from the list above.\n\n"
+        "Respond ONLY with valid JSON:\n"
+        '{"fires":true|false,"reasoning":"1-3 sentences","actions":[/* empty if fires=false */]}'
+    )
+
+    try:
+        text = _call_llm("claude-haiku-4-5-20251001", [{"role": "user", "content": prompt}], max_tokens=512)
+        result = _extract_json(text)
+        if not isinstance(result.get("fires"), bool):
+            return {"fires": False, "reasoning": "Invalid LLM response", "actions": []}
+        if not isinstance(result.get("actions"), list):
+            result["actions"] = []
+        # Validate action types
+        result["actions"] = [
+            a for a in result["actions"]
+            if isinstance(a, dict) and a.get("type") in VALID_POLICY_ACTION_TYPES
+        ]
+        return result
+    except RuntimeError as e:
+        return {"fires": False, "reasoning": str(e), "actions": []}
+    except Exception as e:
+        return {"fires": False, "reasoning": f"Evaluation error: {e}", "actions": []}
+
+
+def detect_policy_conflicts(fired_policies):
+    """Find contradictory actions across fired policies targeting the same item.
+
+    Returns {"conflicts": [...], "clean": [action_entry, ...]}.
+    """
+    by_item = {}
+    for fp in fired_policies:
+        for action in fp["actions"]:
+            iid = action.get("item_id") or "__global__"
+            by_item.setdefault(iid, []).append({
+                "action": action,
+                "policy_id": fp["policy_id"],
+                "policy_name": fp["policy_name"],
+            })
+
+    conflicts = []
+    clean = []
+    for iid, entries in by_item.items():
+        types = [e["action"]["type"] for e in entries]
+        has_conflict = any(
+            tuple(sorted([types[i], types[j]])) in _CONTRADICTORY_PAIRS
+            for i in range(len(types))
+            for j in range(i + 1, len(types))
+        )
+        if has_conflict:
+            conflicts.append({
+                "item_id": iid,
+                "actions": [e["action"] for e in entries],
+                "policy_names": [e["policy_name"] for e in entries],
+                "entries": entries,
+            })
+        else:
+            clean.extend(entries)
+    return {"conflicts": conflicts, "clean": clean}
+
+
+def resolve_conflicts_with_llm(conflicts, context):
+    """For each conflict, call Claude to adjudicate which action wins.
+    Falls back to first-policy-wins if LLM is unavailable.
+
+    Returns list of {"action": ..., "resolution_reasoning": ..., "conflict_item_id": ...}.
+    """
+    resolved = []
+    for conflict in conflicts:
+        iid = conflict["item_id"]
+        item = next((i for i in context["items"] if i.get("id") == iid), {})
+        actions_text = "\n".join(
+            f"  Policy '{e['policy_name']}': {json.dumps(e['action'])}"
+            for e in conflict["entries"]
+        )
+        prompt = (
+            "Two policies conflict on the same item. Adjudicate which action should win.\n\n"
+            f"Item: {json.dumps(item)}\n\nConflicting actions:\n{actions_text}\n\n"
+            "Choose ONE winning action and explain why. Respond ONLY with JSON:\n"
+            '{"winning_action":{/* the winning action object */},'
+            '"reasoning":"one sentence explaining why this action wins"}'
+        )
+        try:
+            text = _call_llm("claude-haiku-4-5-20251001", [{"role": "user", "content": prompt}], max_tokens=256)
+            result = _extract_json(text)
+            resolved.append({
+                "action": result.get("winning_action", conflict["entries"][0]["action"]),
+                "resolution_reasoning": result.get("reasoning", "LLM adjudication"),
+                "conflict_item_id": iid,
+            })
+        except Exception:
+            resolved.append({
+                "action": conflict["entries"][0]["action"],
+                "resolution_reasoning": "Auto-resolved: first policy wins",
+                "conflict_item_id": iid,
+            })
+    return resolved
+
+
+def execute_policy_actions(action_entries, data):
+    """Execute action entries against backlog data in place.
+
+    action_entries: list of {"action": {...}, "policy_name": ..., "policy_id": ...}
+    Returns list of execution result dicts.
+    """
+    items_by_id = {i.get("id"): i for i in data.get("items", [])}
+    now = datetime.now(timezone.utc).isoformat()
+    results = []
+
+    for entry in action_entries:
+        action = entry["action"]
+        atype = action.get("type")
+        iid = action.get("item_id")
+        item = items_by_id.get(iid) if iid and iid != "__global__" else None
+
+        try:
+            if atype == "reprioritize" and item is not None:
+                old_pw = item.get("priority_weight")
+                item["priority_weight"] = action.get("priority_weight")
+                item["updated_at"] = now
+                results.append({"action": action, "status": "executed",
+                                 "detail": f"priority_weight {old_pw} → {action.get('priority_weight')}"})
+
+            elif atype == "reassign" and item is not None:
+                old_agent = item.get("assigned_to")
+                item["assigned_to"] = action.get("agent")
+                item["updated_at"] = now
+                results.append({"action": action, "status": "executed",
+                                 "detail": f"assigned_to {old_agent} → {action.get('agent')}"})
+
+            elif atype == "escalate" and item is not None:
+                old_pw = item.get("priority_weight")
+                item["priority_weight"] = max(item.get("priority_weight") or 0, 9)
+                if not item.get("category"):
+                    item["category"] = "bug"
+                item["updated_at"] = now
+                results.append({"action": action, "status": "executed",
+                                 "detail": f"escalated priority_weight {old_pw} → {item['priority_weight']}"})
+
+            elif atype == "block" and item is not None:
+                thread = {
+                    "topic": f"Policy block: {action.get('reason', 'Policy rule triggered')}",
+                    "resolved": False,
+                    "waiting_on": "user",
+                    "created_at": now,
+                    "thread": [{"role": "agent",
+                                 "message": f"Blocked by policy '{entry.get('policy_name','')}': "
+                                            f"{action.get('reason','')}",
+                                 "at": now}],
+                }
+                item.setdefault("threads", []).append(thread)
+                item["updated_at"] = now
+                results.append({"action": action, "status": "executed", "detail": "block thread added"})
+
+            elif atype == "notify":
+                results.append({"action": action, "status": "notified",
+                                 "detail": action.get("message", "")})
+
+            elif atype == "skip_force" and item is not None:
+                item["skip_count"] = item.get("skip_count", 0) + 1
+                item["updated_at"] = now
+                results.append({"action": action, "status": "executed",
+                                 "detail": f"skip_count → {item['skip_count']}"})
+
+            else:
+                results.append({"action": action, "status": "skipped",
+                                 "detail": "item not found or unknown action type"})
+        except Exception as exc:
+            results.append({"action": action, "status": "error", "detail": str(exc)})
+
+    return results
+
+
+def run_policy_engine(data, backlog_path, trigger_event=None):
+    """Full policy evaluation pipeline.
+
+    1. Load active policies
+    2. Build context snapshot
+    3. Evaluate each policy with LLM
+    4. Detect + resolve conflicts
+    5. Execute non-conflicting actions (mutates data in place)
+    6. Update fire counts + log
+
+    Returns summary dict.
+    """
+    policies_file = get_policies_path(backlog_path)
+    policies_data = read_policies(policies_file)
+    active = [p for p in policies_data.get("policies", []) if p.get("active", True)]
+    if not active:
+        return {"fires": 0, "actions_executed": 0, "notifications": [], "log_ids": []}
+
+    context = build_policy_context(data)
+    fired = []
+    log_entries = []
+    now = datetime.now(timezone.utc).isoformat()
+
+    for policy in sorted(active, key=lambda p: p.get("priority", 5), reverse=True):
+        result = evaluate_policy_with_llm(policy, context)
+        entry = {
+            "id": generate_policy_id(),
+            "policy_id": policy["id"],
+            "policy_name": policy["name"],
+            "timestamp": now,
+            "trigger_event": trigger_event,
+            "fired": result.get("fires", False),
+            "reasoning": result.get("reasoning", ""),
+            "actions_proposed": result.get("actions", []),
+            "conflict_with": None,
+            "resolution_reasoning": None,
+            "actions_executed": [],
+            "notifications": [],
+        }
+        if result.get("fires"):
+            fired.append({
+                "policy_id": policy["id"],
+                "policy_name": policy["name"],
+                "actions": result.get("actions", []),
+            })
+        log_entries.append(entry)
+
+    if not fired:
+        log_path = get_policy_log_path(backlog_path)
+        for entry in log_entries:
+            append_policy_log_entry(log_path, entry)
+        return {"fires": 0, "actions_executed": 0, "notifications": [], "log_ids": [e["id"] for e in log_entries]}
+
+    conflict_result = detect_policy_conflicts(fired)
+    clean_actions = conflict_result["clean"]
+    conflicts = conflict_result["conflicts"]
+
+    resolved_actions = []
+    if conflicts:
+        resolved = resolve_conflicts_with_llm(conflicts, context)
+        for res in resolved:
+            resolved_actions.append({
+                "action": res["action"],
+                "policy_name": "conflict-resolved",
+                "policy_id": "conflict-resolved",
+            })
+            # Annotate log entries involved in this conflict
+            conflict_names = set()
+            for c in conflicts:
+                if c["item_id"] == res.get("conflict_item_id"):
+                    conflict_names = set(c["policy_names"])
+            for entry in log_entries:
+                if entry["policy_name"] in conflict_names and entry["fired"]:
+                    entry["conflict_with"] = list(conflict_names - {entry["policy_name"]})
+                    entry["resolution_reasoning"] = res.get("resolution_reasoning")
+
+    all_actions = list(clean_actions) + resolved_actions
+    execution_results = execute_policy_actions(all_actions, data)
+
+    notifications = [r["action"].get("message", "") for r in execution_results
+                     if r["action"].get("type") == "notify"]
+    executed_count = sum(1 for r in execution_results if r["status"] == "executed")
+
+    # Update policy fire counts
+    now_ts = datetime.now(timezone.utc).isoformat()
+    for fp in fired:
+        for policy in policies_data.get("policies", []):
+            if policy["id"] == fp["policy_id"]:
+                policy["fire_count"] = policy.get("fire_count", 0) + 1
+                policy["last_fired"] = now_ts
+    save_policies(policies_file, policies_data)
+
+    # Annotate log entries with execution results
+    for entry in log_entries:
+        if entry["fired"]:
+            entry["actions_executed"] = [
+                {"action": r["action"], "status": r["status"], "detail": r.get("detail", "")}
+                for r in execution_results if r["status"] == "executed"
+            ]
+            entry["notifications"] = notifications
+
+    log_path = get_policy_log_path(backlog_path)
+    for entry in log_entries:
+        append_policy_log_entry(log_path, entry)
+
+    return {
+        "fires": len(fired),
+        "actions_executed": executed_count,
+        "notifications": notifications,
+        "log_ids": [e["id"] for e in log_entries],
+    }
+
+
+def compute_policy_suggestions(data, backlog_path):
+    """Analyse backlog patterns and suggest new natural language policies via Claude."""
+    context = build_policy_context(data)
+    policies_file = get_policies_path(backlog_path)
+    policies_data = read_policies(policies_file)
+    existing_descriptions = [p["description"] for p in policies_data.get("policies", [])]
+
+    patterns = []
+    items = context["items"]
+
+    high_skip = [i for i in items if i.get("skip_count", 0) >= 3]
+    if high_skip:
+        patterns.append(f"{len(high_skip)} item(s) skipped 3+ times: "
+                        f"{', '.join(i['title'] for i in high_skip[:3])}")
+
+    critical_unassigned = [
+        i for i in items
+        if i.get("category") == "bug" and (i.get("priority_weight") or 0) >= 9
+        and not i.get("assigned_to")
+    ]
+    if critical_unassigned:
+        patterns.append(f"{len(critical_unassigned)} critical bug(s) unassigned")
+
+    heavily_blocked = [i for i in items if i.get("blocked_by_count", 0) >= 2]
+    if heavily_blocked:
+        patterns.append(f"{len(heavily_blocked)} item(s) blocked by 2+ dependencies")
+
+    for aname, ainfo in context["agents"].items():
+        if ainfo["current_load"] >= ainfo["max_active"]:
+            patterns.append(f"Agent {aname} at max capacity "
+                            f"({ainfo['current_load']}/{ainfo['max_active']})")
+
+    if not patterns:
+        patterns.append("No significant patterns detected — suggest general best-practice rules")
+
+    existing_text = "\n".join(f"- {d}" for d in existing_descriptions) if existing_descriptions else "None"
+    patterns_text = "\n".join(f"- {p}" for p in patterns)
+
+    prompt = (
+        "You are the Flow Work Intelligence advisor. Suggest natural language policies "
+        "for the rule engine based on observed backlog patterns.\n\n"
+        f"Patterns observed:\n{patterns_text}\n\n"
+        f"Existing policies (do not suggest duplicates):\n{existing_text}\n\n"
+        "Suggest 2-4 natural language policies. Each should be a clear, actionable rule "
+        "that Flow can evaluate with LLM reasoning. Examples:\n"
+        "- If a bug is blocking more than 2 active items and was filed in the last 6 hours, jump it to the top.\n"
+        "- Never assign two high-complexity items to the same agent simultaneously.\n\n"
+        "Respond ONLY with a JSON array:\n"
+        '[{"name":"Short name","description":"Full natural language rule","priority":5}]'
+    )
+
+    try:
+        text = _call_llm("claude-sonnet-4-6", [{"role": "user", "content": prompt}], max_tokens=600)
+        suggestions = _extract_json(text)
+        if isinstance(suggestions, list):
+            return [s for s in suggestions if isinstance(s, dict) and "name" in s and "description" in s]
+    except Exception:
+        pass
+    return []
+
+
+def get_policy_influences_for_item(backlog_path, item_id):
+    """Return recent policy actions that influenced this item (for tribunal enrichment)."""
+    log_path = get_policy_log_path(backlog_path)
+    log = read_policy_log(log_path)
+    influences = []
+    for entry in reversed(log.get("entries", [])[-50:]):
+        if not entry.get("fired"):
+            continue
+        for action in entry.get("actions_proposed", []):
+            if action.get("item_id") == item_id and action.get("type") in ("reprioritize", "escalate"):
+                influences.append({
+                    "policy": entry["policy_name"],
+                    "action": action["type"],
+                    "reason": action.get("reason", ""),
+                    "at": entry["timestamp"],
+                })
+    return influences
+
+
+def compute_policy_staleness(policies_data):
+    """Flag policies that may be redundant or no longer relevant."""
+    now = datetime.now(timezone.utc)
+    stale = []
+    for policy in policies_data.get("policies", []):
+        if not policy.get("active"):
+            continue
+        created_at_str = policy.get("created_at", "")
+        last_fired_str = policy.get("last_fired")
+        fire_count = policy.get("fire_count", 0)
+
+        warnings = []
+        try:
+            created_at = datetime.fromisoformat(created_at_str.replace("Z", "+00:00"))
+            age_days = (now - created_at).days
+            if fire_count == 0 and age_days >= 14:
+                warnings.append(f"Never fired in {age_days} days — may be redundant")
+        except (ValueError, AttributeError):
+            pass
+
+        if last_fired_str:
+            try:
+                last_fired = datetime.fromisoformat(last_fired_str.replace("Z", "+00:00"))
+                days_since = (now - last_fired).days
+                if days_since >= 21:
+                    warnings.append(f"Hasn't fired in {days_since} days — still relevant?")
+            except (ValueError, AttributeError):
+                pass
+
+        if warnings:
+            stale.append({"policy_id": policy["id"], "policy_name": policy["name"], "warnings": warnings})
+    return stale
+
+
 class BacklogHandler(BaseHTTPRequestHandler):
     backlog_file = "backlog.json"
 
@@ -1326,6 +1955,17 @@ class BacklogHandler(BaseHTTPRequestHandler):
             self._serve_pulse(agent)
         elif parsed.path == "/api/user":
             self._serve_user()
+        # ── Phase 4: Policy Engine ──────────────────────────
+        elif parsed.path == "/api/policies":
+            self._serve_policies()
+        elif parsed.path == "/api/policies/log":
+            params = parse_qs(parsed.query)
+            limit = int(params.get("limit", [50])[0])
+            self._serve_policy_log(limit)
+        elif parsed.path == "/api/policies/evaluate":
+            self._serve_policy_evaluate()
+        elif parsed.path == "/api/policies/suggestions":
+            self._serve_policy_suggestions()
         else:
             self.send_error(404)
 
@@ -1336,6 +1976,10 @@ class BacklogHandler(BaseHTTPRequestHandler):
         elif parsed.path.startswith("/api/items/"):
             item_id = parsed.path.split("/api/items/")[1]
             self._update_item(item_id)
+        # ── Phase 4: Policy Engine ──────────────────────────
+        elif parsed.path.startswith("/api/policies/"):
+            policy_id = parsed.path.split("/api/policies/")[1]
+            self._update_policy(policy_id)
         else:
             self.send_error(404)
 
@@ -1349,7 +1993,19 @@ class BacklogHandler(BaseHTTPRequestHandler):
                 item_id = parts[3]
                 self._add_signal(item_id)
                 return
+        # POST /api/policies — create new policy
+        if parsed.path == "/api/policies":
+            self._create_policy()
+            return
         self.send_error(404)
+
+    def do_DELETE(self):
+        parsed = urlparse(self.path)
+        if parsed.path.startswith("/api/policies/"):
+            policy_id = parsed.path.split("/api/policies/")[1]
+            self._delete_policy(policy_id)
+        else:
+            self.send_error(404)
 
     def _serve_html(self):
         html_path = ASSETS_DIR / "backlog-board.html"
@@ -1429,11 +2085,169 @@ class BacklogHandler(BaseHTTPRequestHandler):
             self._json_error(500, str(e))
             return
         result = evaluate_tribunal(data, agent=agent)
+        # Enrich winner with any recent policy influences
+        if result.get("picked"):
+            winner_id = result["picked"].get("item_id")
+            if winner_id:
+                influences = get_policy_influences_for_item(self.backlog_file, winner_id)
+                if influences:
+                    result["picked"]["policy_influences"] = influences
         if commit and result.get("picked"):
             decisions_file = get_decisions_path(self.backlog_file)
             decision_id = store_decision(decisions_file, result, agent)
             result["decision_id"] = decision_id
         self._json_response(200, result)
+
+    # ── Phase 4: Policy Engine handlers ───────────────────────────────────────
+
+    def _serve_policies(self):
+        """Return all policies with staleness analysis."""
+        policies_file = get_policies_path(self.backlog_file)
+        policies_data = read_policies(policies_file)
+        stale = compute_policy_staleness(policies_data)
+        stale_by_id = {s["policy_id"]: s["warnings"] for s in stale}
+        for p in policies_data.get("policies", []):
+            p["staleness_warnings"] = stale_by_id.get(p["id"], [])
+        self._json_response(200, policies_data)
+
+    def _create_policy(self):
+        """POST /api/policies — create a new policy."""
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_BODY_SIZE:
+            self._json_error(413, "Request body too large")
+            return
+        body = self.rfile.read(content_length)
+        try:
+            incoming = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._json_error(400, f"Invalid JSON: {e}")
+            return
+
+        name = incoming.get("name", "").strip()
+        description = incoming.get("description", "").strip()
+        if not name or not description:
+            self._json_error(400, "name and description are required")
+            return
+
+        now = datetime.now(timezone.utc).isoformat()
+        policy = {
+            "id": generate_policy_id(),
+            "name": name,
+            "description": description,
+            "priority": int(incoming.get("priority", 5)),
+            "active": bool(incoming.get("active", True)),
+            "created_at": now,
+            "fire_count": 0,
+            "last_fired": None,
+        }
+
+        policies_file = get_policies_path(self.backlog_file)
+        policies_data = read_policies(policies_file)
+        policies_data["policies"].append(policy)
+        save_policies(policies_file, policies_data)
+        self._json_response(201, {"status": "ok", "policy": policy})
+
+    def _update_policy(self, policy_id):
+        """PUT /api/policies/<id> — update name, description, priority, active."""
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_BODY_SIZE:
+            self._json_error(413, "Request body too large")
+            return
+        body = self.rfile.read(content_length)
+        try:
+            updates = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._json_error(400, f"Invalid JSON: {e}")
+            return
+
+        policies_file = get_policies_path(self.backlog_file)
+        policies_data = read_policies(policies_file)
+        found = False
+        for policy in policies_data.get("policies", []):
+            if policy["id"] == policy_id:
+                for field in ("name", "description", "priority", "active"):
+                    if field in updates:
+                        policy[field] = updates[field]
+                found = True
+                break
+
+        if not found:
+            self._json_error(404, f"Policy {policy_id} not found")
+            return
+
+        save_policies(policies_file, policies_data)
+        self._json_response(200, {"status": "ok"})
+
+    def _delete_policy(self, policy_id):
+        """DELETE /api/policies/<id> — remove a policy."""
+        policies_file = get_policies_path(self.backlog_file)
+        policies_data = read_policies(policies_file)
+        before = len(policies_data.get("policies", []))
+        policies_data["policies"] = [
+            p for p in policies_data.get("policies", []) if p["id"] != policy_id
+        ]
+        if len(policies_data["policies"]) == before:
+            self._json_error(404, f"Policy {policy_id} not found")
+            return
+        save_policies(policies_file, policies_data)
+        self._json_response(200, {"status": "ok"})
+
+    def _serve_policy_log(self, limit=50):
+        """GET /api/policies/log — return recent policy fire history."""
+        log_path = get_policy_log_path(self.backlog_file)
+        log = read_policy_log(log_path)
+        entries = log.get("entries", [])
+        # Return most recent first
+        self._json_response(200, {"entries": list(reversed(entries[-limit:]))})
+
+    def _serve_policy_evaluate(self):
+        """GET /api/policies/evaluate — manually trigger policy evaluation and return results."""
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError as e:
+            self._json_error(500, str(e))
+            return
+
+        with write_lock:
+            try:
+                data = read_backlog(self.backlog_file)
+            except ValueError as e:
+                self._json_error(500, str(e))
+                return
+            result = run_policy_engine(data, self.backlog_file, trigger_event="manual")
+            if result["actions_executed"] > 0:
+                data["version"] = data.get("version", 0) + 1
+                atomic_write(self.backlog_file, data)
+
+        self._json_response(200, result)
+
+    def _serve_policy_suggestions(self):
+        """GET /api/policies/suggestions — LLM-generated rule suggestions based on patterns."""
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError as e:
+            self._json_error(500, str(e))
+            return
+        suggestions = compute_policy_suggestions(data, self.backlog_file)
+        self._json_response(200, {"suggestions": suggestions})
+
+    def _trigger_policy_engine_background(self, trigger_event=None):
+        """Fire policy evaluation in a background thread after a write completes."""
+        backlog_file = self.backlog_file
+
+        def run():
+            try:
+                with write_lock:
+                    data = read_backlog(backlog_file)
+                    result = run_policy_engine(data, backlog_file, trigger_event=trigger_event)
+                    if result["actions_executed"] > 0:
+                        data["version"] = data.get("version", 0) + 1
+                        atomic_write(backlog_file, data)
+            except Exception:
+                pass  # Policy engine failures must never affect core backlog
+
+        t = threading.Thread(target=run, daemon=True)
+        t.start()
 
     def _serve_decisions(self):
         """Return stored decisions for review."""
@@ -1521,6 +2335,9 @@ class BacklogHandler(BaseHTTPRequestHandler):
         if events:
             response["_events"] = events
         self._json_response(200, response)
+        # Fire policy engine asynchronously — must not block the write response
+        trigger = events[0]["type"] if events else "write"
+        self._trigger_policy_engine_background(trigger_event=trigger)
 
     def _update_item(self, item_id):
         """Update a single item by ID. Reads current file, patches the item, writes back."""
@@ -1594,6 +2411,9 @@ class BacklogHandler(BaseHTTPRequestHandler):
         if events:
             response["_events"] = events
         self._json_response(200, response)
+        # Fire policy engine asynchronously
+        trigger = events[0]["type"] if events else "item_update"
+        self._trigger_policy_engine_background(trigger_event=trigger)
 
     def _add_signal(self, item_id):
         """Append a readiness signal to an item's readiness_signals array.

@@ -515,3 +515,202 @@ Returns a proactive coordination payload for an agent — bundles recommendation
 - `startable_items`: Items at ≥70% readiness not yet in-progress. If `?agent=name` is provided, filtered to items where the agent is not overloaded.
 - `active_agents`: Full agent activity snapshot — who is working on what and at what load.
 - `conflicts`: Proactively surfaced so the agent can avoid or coordinate around contested areas before starting work.
+
+---
+
+## Phase 4: Natural Language Rule Engine
+
+### Policy (`policies.json`)
+
+Policies are natural language rules evaluated by an LLM after every state change. Stored in `policies.json` alongside `backlog.json`.
+
+```json
+{
+  "policies": [
+    {
+      "id": "string (8-char alphanumeric)",
+      "name": "string — short human-readable name",
+      "description": "string — full natural language rule (the LLM evaluates this as a prompt)",
+      "priority": "integer (1–10) — higher priority policies evaluated first; wins conflicts",
+      "active": "boolean — inactive policies are skipped during evaluation",
+      "created_at": "ISO 8601 timestamp",
+      "fire_count": "integer — total times this policy has fired",
+      "last_fired": "ISO 8601 | null — timestamp of last fire"
+    }
+  ]
+}
+```
+
+- Four default policies are seeded on first use: critical bug escalation, neglected item forcing, concurrent complexity warning, stale ready item notification.
+- Policies are evaluated in descending priority order (10 first).
+- `fire_count` and `last_fired` are updated atomically after each evaluation pass.
+
+### Policy Structured Actions
+
+When an LLM decides a policy fires, it returns one or more structured actions — never prose. Flow executes these deterministically:
+
+| Type | Effect | Required Fields |
+|------|--------|-----------------|
+| `reprioritize` | Changes `priority_weight` on item | `item_id`, `priority_weight`, `reason` |
+| `reassign` | Changes `assigned_to` on item | `item_id`, `agent`, `reason` |
+| `escalate` | Sets `priority_weight ≥ 9`, marks as critical | `item_id`, `reason` |
+| `block` | Adds a block thread (`waiting_on: user`) | `item_id`, `reason` |
+| `notify` | Surfaces a warning message (no state change) | `item_id` (or null), `message`, `severity` |
+| `skip_force` | Increments `skip_count` | `item_id`, `reason` |
+
+### Policy Log Entry (`policy_log.json`)
+
+Every policy evaluation (fired or not) is logged. Capped at 200 entries.
+
+```json
+{
+  "entries": [
+    {
+      "id": "string (8-char alphanumeric)",
+      "policy_id": "string",
+      "policy_name": "string",
+      "timestamp": "ISO 8601",
+      "trigger_event": "string — event that triggered evaluation (e.g. 'critical_bug_created', 'item_update', 'manual')",
+      "fired": "boolean",
+      "reasoning": "string — LLM's 1-3 sentence explanation of why it fired or did not",
+      "actions_proposed": ["PolicyAction — full action objects returned by LLM"],
+      "conflict_with": ["string | null — names of conflicting policies, if any"],
+      "resolution_reasoning": "string | null — LLM adjudication explanation if conflict occurred",
+      "actions_executed": [
+        {
+          "action": "PolicyAction",
+          "status": "executed | notified | skipped | error",
+          "detail": "string — what changed"
+        }
+      ],
+      "notifications": ["string — messages from notify actions"]
+    }
+  ]
+}
+```
+
+### Policy Endpoints
+
+#### `GET /api/policies`
+
+Returns all policies with computed staleness analysis.
+
+```json
+{
+  "policies": [
+    {
+      /* ...Policy fields... */
+      "staleness_warnings": ["string — e.g. 'Never fired in 18 days — may be redundant'"]
+    }
+  ]
+}
+```
+
+**Staleness rules:**
+- `fire_count == 0` and age ≥ 14 days → "Never fired in N days — may be redundant"
+- `last_fired` more than 21 days ago → "Hasn't fired in N days — still relevant?"
+
+#### `POST /api/policies`
+
+Create a new policy.
+
+**Request:**
+```json
+{
+  "name": "string (required)",
+  "description": "string (required)",
+  "priority": "integer (default 5)",
+  "active": "boolean (default true)"
+}
+```
+
+**Response (201):** `{"status": "ok", "policy": {...}}`
+
+#### `PUT /api/policies/<id>`
+
+Update `name`, `description`, `priority`, or `active` on an existing policy.
+
+#### `DELETE /api/policies/<id>`
+
+Remove a policy permanently.
+
+#### `GET /api/policies/log[?limit=N]`
+
+Return recent policy fire history, most recent first. Default limit: 50.
+
+```json
+{"entries": [PolicyLogEntry, ...]}
+```
+
+#### `GET /api/policies/evaluate`
+
+Manually trigger a full policy evaluation pass right now. Applies any fired actions and returns a summary.
+
+```json
+{
+  "fires": "integer — number of policies that fired",
+  "actions_executed": "integer — number of state-changing actions applied",
+  "notifications": ["string — notify messages"],
+  "log_ids": ["string — IDs of log entries created"]
+}
+```
+
+#### `GET /api/policies/suggestions`
+
+Analyse current backlog patterns (high skip counts, unassigned critical bugs, overloaded agents, heavily blocked items) and return LLM-suggested policies.
+
+```json
+{
+  "suggestions": [
+    {
+      "name": "string",
+      "description": "string",
+      "priority": "integer"
+    }
+  ]
+}
+```
+
+### Tribunal Recommendation — Policy Influence Enrichment
+
+When `GET /api/recommend` returns a winner that was recently influenced by a policy action (reprioritize or escalate), the `picked` object includes:
+
+```json
+{
+  "picked": {
+    /* ...existing fields... */
+    "policy_influences": [
+      {
+        "policy": "string — policy name",
+        "action": "reprioritize | escalate",
+        "reason": "string — the action's reason from the policy",
+        "at": "ISO 8601 — when the action was applied"
+      }
+    ]
+  }
+}
+```
+
+### Conflict Resolution
+
+When two policies produce contradictory actions on the same item (e.g., one `escalate`s while another `block`s), a second LLM call adjudicates:
+
+- Contradictory pairs: `(escalate, skip_force)`, `(escalate, block)`, `(reprioritize, skip_force)`
+- The winning action is selected by the LLM with a one-sentence reasoning
+- Both the conflict and resolution are recorded in `policy_log.json`
+- Non-conflicting actions from other items proceed unaffected
+
+### Evaluation Pipeline
+
+After every `PUT /api/backlog` or `PUT /api/items/<id>` write:
+
+1. Active policies loaded from `policies.json` (sorted by priority descending)
+2. Context snapshot built: item scores, readiness, agent loads, timestamps
+3. Each policy evaluated via `claude-haiku-4-5` — returns `{fires, reasoning, actions}`
+4. Conflict detection across all fired actions
+5. LLM adjudication for any conflicts (via `claude-haiku-4-5`)
+6. Non-conflicting + resolved actions executed against `backlog.json` (new version bump)
+7. Fire counts updated in `policies.json`
+8. All evaluations (fired or not) logged to `policy_log.json`
+
+The entire pipeline runs in a background thread — the original write response is never delayed. Requires `ANTHROPIC_API_KEY` in the server environment; gracefully skips if absent.

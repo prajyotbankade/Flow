@@ -170,6 +170,47 @@ Highest positive affinity wins. Tie or no positive affinity → ask user.
 
 `low` → haiku · `medium` → sonnet · `high` → opus. Advisory — shown in work brief.
 
+### Natural Language Rule Engine (Phase 4)
+
+Flow evaluates active policies after every state change. Policies are written in plain English; Flow uses LLM reasoning to decide if they fire and what structured action to take. Requires `ANTHROPIC_API_KEY`.
+
+**Policy commands:**
+
+| Prompt | Action |
+|---|---|
+| "Add rule: [description]" | `POST /api/policies` with name + description |
+| "List rules" / "Show policies" | `GET /api/policies` |
+| "Disable rule [name]" | `PUT /api/policies/<id>` `{"active": false}` |
+| "Delete rule [name]" | `DELETE /api/policies/<id>` |
+| "Show rule history" | `GET /api/policies/log` |
+| "Run rules now" | `GET /api/policies/evaluate` |
+| "Suggest rules" | `GET /api/policies/suggestions` |
+
+**Structured action types:**
+
+| Type | Effect |
+|---|---|
+| `reprioritize` | Change `priority_weight` on item |
+| `reassign` | Change `assigned_to` on item |
+| `escalate` | Set `priority_weight` ≥ 9, mark as critical |
+| `block` | Add a block thread (waiting_on: user) |
+| `notify` | Surface a warning (no state change) |
+| `skip_force` | Increment `skip_count` — deprioritize temporarily |
+
+**Evaluation pipeline:** On every write, policies are evaluated in priority order (10 = highest). The LLM decides if each policy fires; conflicting actions on the same item are adjudicated by a second LLM call. Actions are applied synchronously in a background thread — the main response is never delayed.
+
+**Policy effectiveness:** Each policy tracks `fire_count` and `last_fired`. Policies that never fire after 14 days, or haven't fired in 21 days, surface staleness warnings in the web board settings.
+
+**When to add policies (examples):**
+- "If a bug is blocking more than 2 active items, escalate it immediately."
+- "Never assign two high-complexity items to the same agent simultaneously."
+- "If something has been skipped 5 times, force it to the top."
+- "Notify me when any item has been in 'ready' for more than 7 days without being picked up."
+
+**Gate rules vs. policies:** Gate rules (`requires` arrays) are structural — they enforce the sequential flow of lanes and are evaluated synchronously at write time. Policies are contextual intelligence — they respond to live system state and apply judgment. Both layers coexist: gates prevent invalid moves; policies surface intelligent actions.
+
+**Rule conflict resolution:** When two policies produce contradictory actions on the same item (e.g., one escalates while another blocks), a second LLM call adjudicates. The winning action and reasoning are logged to `policy_log.json`.
+
 ## Concurrency Safety
 
 Server rejects writes where client `version` < current (HTTP 409).
@@ -180,7 +221,7 @@ Server rejects writes where client `version` < current (HTTP 409).
 ```
 GET  /api/backlog[?agent=name]              Full or agent-filtered backlog
 GET  /api/scores                            Ranked items with score_breakdown + readiness
-GET  /api/recommend[?agent=name&commit=true]  Tribunal-justified recommendation
+GET  /api/recommend[?agent=name&commit=true]  Tribunal-justified recommendation (+ policy_influences if applicable)
 GET  /api/decisions                         Stored decision history with outcomes
 GET  /api/agents                            Agent load info
 GET  /api/graph                             Dependency graph with critical path, conflicts, rebalancing
@@ -188,6 +229,13 @@ GET  /api/pulse[?agent=name]               Proactive push — recommendation + c
 PUT  /api/backlog                           Full write (version-checked)
 PUT  /api/items/<id>                        Single item update
 POST /api/items/<id>/signal                 Append a readiness signal to an item
+GET  /api/policies                          List all policies with staleness analysis
+POST /api/policies                          Create a policy {"name","description","priority","active"}
+PUT  /api/policies/<id>                     Update a policy (name, description, priority, active)
+DELETE /api/policies/<id>                   Delete a policy
+GET  /api/policies/log[?limit=N]            Recent policy fire history (default 50)
+GET  /api/policies/evaluate                 Manually trigger policy evaluation right now
+GET  /api/policies/suggestions              LLM-generated rule suggestions based on observed patterns
 ```
 
 ### Using `/api/pulse` (preferred for agent coordination)
