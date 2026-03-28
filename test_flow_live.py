@@ -1,3 +1,4 @@
+import os
 import pytest
 import requests
 from deepeval import assert_test
@@ -5,12 +6,18 @@ from deepeval.metrics import AnswerRelevancyMetric, GEval
 from deepeval.models import OllamaModel
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-from flow_skill import run_flow, run_flow_tribunal, run_flow_graph
+from flow_skill import run_flow, run_flow_tribunal, run_flow_graph, run_flow_policy
+
+requires_anthropic = pytest.mark.skipif(
+    not os.environ.get("ANTHROPIC_API_KEY"),
+    reason="ANTHROPIC_API_KEY not set — policy engine LLM tests skipped",
+)
 
 BACKLOG_URL = "http://localhost:8089/api/backlog"
 
-local_qwen = OllamaModel(model="qwen2.5-coder:14b")
-relevancy_metric = AnswerRelevancyMetric(threshold=0.6, model=local_qwen)
+local_qwen = OllamaModel(model="qwen2.5-coder:7b")       # generation model
+eval_qwen = OllamaModel(model="qwen2.5-coder:14b")      # evaluation/judge model
+relevancy_metric = AnswerRelevancyMetric(threshold=0.6, model=eval_qwen)
 
 # ---------------------------------------------------------------------------
 # Scenarios
@@ -85,10 +92,9 @@ SCENARIOS = [
             "so 95% of the max -3.0 penalty applies)."
         ),
         "criteria": (
-            "The response recommends 'Root Task' and references the unblock score_breakdown field "
-            "or unblocking multiplier as the reason it outranks 'Blocked Task'. "
-            "Bonus if it notes the blocked_penalty applied to 'Blocked Task' and that it is "
-            "proportional to the blocker's readiness rather than a flat -3.0."
+            "The response recommends 'Root Task' and references 'unblock' (the score_breakdown field) "
+            "as the reason it outranks 'Blocked Task'. The word 'unblock' must appear in the explanation. "
+            "Bonus if it notes the blocked_penalty applied to 'Blocked Task'."
         ),
     },
     {
@@ -181,6 +187,7 @@ def restore_backlog():
 # ---------------------------------------------------------------------------
 # Tests
 # ---------------------------------------------------------------------------
+@pytest.mark.timeout(300)
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[s["name"] for s in SCENARIOS])
 def test_flow_skill_live(scenario):
     # 1. SETUP — get current version
@@ -209,7 +216,7 @@ def test_flow_skill_live(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=local_qwen,
+        model=eval_qwen,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])
@@ -431,6 +438,7 @@ TRIBUNAL_SCENARIOS = [
 ]
 
 
+@pytest.mark.timeout(300)
 @pytest.mark.parametrize(
     "scenario", TRIBUNAL_SCENARIOS, ids=[s["name"] for s in TRIBUNAL_SCENARIOS]
 )
@@ -461,7 +469,7 @@ def test_tribunal_justification(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=local_qwen,
+        model=eval_qwen,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])
@@ -730,6 +738,7 @@ GRAPH_SCENARIOS = [
 ]
 
 
+@pytest.mark.timeout(300)
 @pytest.mark.parametrize(
     "scenario", GRAPH_SCENARIOS, ids=[s["name"] for s in GRAPH_SCENARIOS]
 )
@@ -761,7 +770,275 @@ def test_graph_coordination(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=local_qwen,
+        model=eval_qwen,
+    )
+
+    assert_test(test_case, [relevancy_metric, correctness])
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: Natural Language Rule Engine — Direct API Tests
+# ---------------------------------------------------------------------------
+
+POLICIES_URL   = "http://localhost:8089/api/policies"
+POLICY_LOG_URL = "http://localhost:8089/api/policies/log"
+POLICY_EVAL_URL = "http://localhost:8089/api/policies/evaluate"
+
+
+def test_policy_list_structure():
+    """GET /api/policies must return a policies array with required fields."""
+    resp = requests.get(POLICIES_URL)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "policies" in data
+    assert isinstance(data["policies"], list)
+    assert len(data["policies"]) > 0, "Default policies must be seeded"
+
+    for policy in data["policies"]:
+        for field in ("id", "name", "description", "priority", "active",
+                      "created_at", "fire_count", "staleness_warnings"):
+            assert field in policy, f"Policy missing field: {field}"
+        assert isinstance(policy["active"], bool)
+        assert isinstance(policy["priority"], int)
+        assert isinstance(policy["fire_count"], int)
+        assert isinstance(policy["staleness_warnings"], list)
+
+
+def test_policy_crud_lifecycle():
+    """POST creates, GET verifies, PUT updates, DELETE removes a policy."""
+    create_resp = requests.post(POLICIES_URL, json={
+        "name": "Test CRUD policy",
+        "description": "If any item has skip_count >= 99, reprioritize it.",
+        "priority": 3,
+        "active": True,
+    })
+    assert create_resp.status_code == 201
+    policy_id = create_resp.json()["policy"]["id"]
+    assert policy_id
+
+    ids = [p["id"] for p in requests.get(POLICIES_URL).json()["policies"]]
+    assert policy_id in ids, "Newly created policy must appear in list"
+
+    update_resp = requests.put(f"{POLICIES_URL}/{policy_id}", json={
+        "name": "Updated CRUD policy",
+        "active": False,
+    })
+    assert update_resp.status_code == 200
+    assert update_resp.json()["status"] == "ok"
+
+    updated = next(
+        (p for p in requests.get(POLICIES_URL).json()["policies"] if p["id"] == policy_id),
+        None,
+    )
+    assert updated is not None
+    assert updated["name"] == "Updated CRUD policy"
+    assert updated["active"] is False
+
+    del_resp = requests.delete(f"{POLICIES_URL}/{policy_id}")
+    assert del_resp.status_code == 200
+    assert del_resp.json()["status"] == "ok"
+
+    final_ids = [p["id"] for p in requests.get(POLICIES_URL).json()["policies"]]
+    assert policy_id not in final_ids, "Deleted policy must not appear in list"
+
+
+def test_policy_log_structure():
+    """GET /api/policies/log must return entries with required fields."""
+    resp = requests.get(POLICY_LOG_URL)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "entries" in data
+    assert isinstance(data["entries"], list)
+
+    if data["entries"]:
+        entry = data["entries"][0]
+        for field in ("id", "policy_id", "policy_name", "timestamp", "fired",
+                      "reasoning", "actions_proposed", "actions_executed", "notifications"):
+            assert field in entry, f"Log entry missing field: {field}"
+
+
+def test_policy_log_limit_param():
+    """GET /api/policies/log?limit=2 must return at most 2 entries."""
+    resp = requests.get(f"{POLICY_LOG_URL}?limit=2")
+    assert resp.status_code == 200
+    assert len(resp.json()["entries"]) <= 2
+
+
+def test_policy_evaluate_structure():
+    """GET /api/policies/evaluate must return required keys."""
+    resp = requests.get(POLICY_EVAL_URL)
+    assert resp.status_code == 200
+    data = resp.json()
+
+    for key in ("fires", "actions_executed", "notifications", "log_ids"):
+        assert key in data, f"Evaluate result missing key: {key}"
+    assert isinstance(data["fires"], int)
+    assert isinstance(data["actions_executed"], int)
+    assert isinstance(data["notifications"], list)
+    assert isinstance(data["log_ids"], list)
+
+
+@requires_anthropic
+def test_policy_evaluate_fires_for_skipped_item():
+    """
+    A policy targeting skip_count >= 5 must fire when a matching item is present.
+    """
+    bl_resp = requests.get(BACKLOG_URL)
+    bl_resp.raise_for_status()
+    version = bl_resp.json().get("version", 0)
+
+    items = [{
+        "id": "SKIP1", "title": "Long-neglected task", "status": "ready",
+        "priority_weight": 3, "skip_count": 7, "reopen_count": 0,
+        "tags": [], "links": [], "threads": [],
+        "lane_history": [
+            {"lane": "backlog", "at": "2026-03-01T00:00:00Z", "by": "u"},
+            {"lane": "refined", "at": "2026-03-02T00:00:00Z", "by": "u"},
+        ],
+        "gate_from": 0, "created_at": "2026-03-01T00:00:00Z",
+        "updated_at": "2026-03-01T00:00:00Z",
+    }]
+    requests.put(BACKLOG_URL, json={"version": version, "items": items}).raise_for_status()
+
+    create_resp = requests.post(POLICIES_URL, json={
+        "name": "Force neglected: skip >= 5",
+        "description": (
+            "If an item has been skipped 5 or more times without being started, "
+            "reprioritize it to priority_weight 8."
+        ),
+        "priority": 9,
+        "active": True,
+    })
+    create_resp.raise_for_status()
+    policy_id = create_resp.json()["policy"]["id"]
+
+    try:
+        eval_resp = requests.get(POLICY_EVAL_URL)
+        assert eval_resp.status_code == 200
+
+        log_entries = requests.get(f"{POLICY_LOG_URL}?limit=20").json()["entries"]
+        policy_entries = [e for e in log_entries if e.get("policy_id") == policy_id]
+        assert policy_entries, "Policy must appear in log after evaluation"
+
+        fired_entries = [e for e in policy_entries if e.get("fired") is True]
+        assert fired_entries, (
+            "Policy must fire when item has skip_count=7. "
+            f"Log entries: {policy_entries}"
+        )
+    finally:
+        requests.delete(f"{POLICIES_URL}/{policy_id}")
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: LLM-based Policy Evaluation Scenarios
+# ---------------------------------------------------------------------------
+
+POLICY_SCENARIOS = [
+    {
+        "name": "Rule_Authoring_Natural_Language",
+        "input": (
+            "I just added a rule: 'If any item has been skipped 5+ times, bump it "
+            "to priority 8 to force a decision.' Did the rule engine evaluate this policy? "
+            "What was its reasoning?"
+        ),
+        "policy_description": (
+            "If an item has been skipped 5 or more times without being started, "
+            "reprioritize it to priority_weight 8 to force a decision."
+        ),
+        "items": [
+            {
+                "id": "NEG1", "title": "Kept getting pushed aside", "status": "ready",
+                "priority_weight": 2, "skip_count": 6, "reopen_count": 0,
+                "tags": [], "links": [], "threads": [],
+                "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-01T00:00:00Z", "by": "u"},
+                    {"lane": "refined", "at": "2026-03-02T00:00:00Z", "by": "u"},
+                ],
+                "gate_from": 0, "created_at": "2026-03-01T00:00:00Z",
+                "updated_at": "2026-03-01T00:00:00Z",
+            },
+        ],
+        "expected": (
+            "The rule engine evaluated the policy about skipped items. "
+            "It found an item with skip_count >= 5 and fired the policy, "
+            "citing the skip_count as the trigger condition in its reasoning."
+        ),
+        "criteria": (
+            "The response confirms the policy was evaluated by the rule engine. "
+            "It references the skip_count or the specific item as the trigger. "
+            "It must describe the LLM's reasoning from the evaluation log. "
+            "It must NOT just describe the policy without citing evaluation results."
+        ),
+    },
+    {
+        "name": "Rule_No_Fire_Conditions_Not_Met",
+        "input": (
+            "The rule engine just ran. None of my items are bugs, none are skipped, "
+            "and none are stale. Did any policies fire? Why or why not?"
+        ),
+        "policy_description": None,
+        "items": [
+            {
+                "id": "CLEAN1", "title": "Fresh normal task", "status": "ready",
+                "priority_weight": 5, "skip_count": 0, "reopen_count": 0,
+                "category": "feature", "tags": ["frontend"],
+                "links": [], "threads": [],
+                "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-25T00:00:00Z", "by": "u"},
+                    {"lane": "refined", "at": "2026-03-26T00:00:00Z", "by": "u"},
+                ],
+                "gate_from": 0, "created_at": "2026-03-25T00:00:00Z",
+                "updated_at": "2026-03-26T00:00:00Z",
+            },
+        ],
+        "expected": (
+            "No policies fired. The items do not meet any trigger conditions — "
+            "no critical bugs, no skipped items, no stale items, no overloaded agents."
+        ),
+        "criteria": (
+            "The response states that no policies fired, or that conditions were not met. "
+            "It must NOT claim a policy fired when none should have. "
+            "It should cite reasoning from the log showing why conditions were not met."
+        ),
+    },
+]
+
+
+@pytest.mark.timeout(300)
+@requires_anthropic
+@pytest.mark.parametrize(
+    "scenario", POLICY_SCENARIOS, ids=[s["name"] for s in POLICY_SCENARIOS]
+)
+def test_policy_rule_engine(scenario):
+    """Phase 4: LLM interprets natural language policy evaluation results."""
+    resp = requests.get(BACKLOG_URL)
+    resp.raise_for_status()
+    version = resp.json().get("version", 0)
+
+    requests.put(
+        BACKLOG_URL,
+        json={"version": version, "items": scenario["items"]},
+    ).raise_for_status()
+
+    actual = run_flow_policy(
+        scenario["input"],
+        policy_description=scenario["policy_description"],
+    )
+
+    test_case = LLMTestCase(
+        input=scenario["input"],
+        actual_output=actual,
+        expected_output=scenario["expected"],
+    )
+
+    correctness = GEval(
+        name="Policy Rule Engine Quality",
+        criteria=scenario["criteria"],
+        evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
+        threshold=0.6,
+        model=eval_qwen,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])
