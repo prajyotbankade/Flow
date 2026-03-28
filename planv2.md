@@ -29,6 +29,21 @@ But it's **not agent-usable yet**. The skill reads like a reference manual, not 
 
 ---
 
+## Task 0: Relocate Eval/Benchmark Files
+
+**Goal:** Move `flow_skill.py`, `test_flow_live.py`, and test result files from the project root into `skills/backlog-manager/evals/` so agents don't confuse benchmark infrastructure with the actual skill.
+
+**Why:** `flow_skill.py` at the project root looks like the skill's main file. It's actually benchmark tooling that wraps API calls through Ollama for cheap eval runs. Keeping it at the root caused the lead agent to misidentify it as the skill itself — a mistake that would repeat for any new agent or conversation.
+
+### Tasks
+- [ ] Move `flow_skill.py` to `skills/backlog-manager/evals/eval_flow_skill.py` (rename for clarity)
+- [ ] Move `test_flow_live.py` to `skills/backlog-manager/evals/test_flow_live.py`
+- [ ] Move `test_results_*.txt`, `test_results_summary.md`, `test_results_full.txt` to `skills/backlog-manager/evals/results/`
+- [ ] Update any imports or file paths inside the moved files
+- [ ] Verify evals still run correctly from new location
+
+---
+
 ## Task 1: Research `agent.md` Placement
 
 **Goal:** Determine where Claude recommends keeping agent team definitions so both the lead agent and sub-agents reliably read them.
@@ -223,13 +238,14 @@ When I receive a correction, I update this file before finishing my task.
 ## Execution Order
 
 ```
-Task 1 (research agent.md placement)
-  └─> Task 2 (server reads agent.md) + Task 3 (SKILL.md additions) + Task 4 (strategic lens)
-        └─> Task 6 (agent.md + persona files)
-              └─> Task 5 (SKILL.md restructure — after everything stabilizes)
+Task 0 (relocate eval files — removes confusion for all agents)
+  └─> Task 1 (research agent.md placement)
+        └─> Task 2 (server reads agent.md) + Task 3 (SKILL.md additions) + Task 4 (strategic lens)
+              └─> Task 6 (agent.md + persona files)
+                    └─> Task 5 (SKILL.md restructure — after everything stabilizes)
 ```
 
-Task 1 is the prerequisite. Tasks 2, 3, 4 can run in parallel once placement is decided. Task 6 depends on Tasks 1-3. Task 5 is last — restructure after all new content is added.
+Task 0 is a quick cleanup that prevents agent confusion immediately. Task 1 is the research prerequisite for the rest. Tasks 2, 3, 4 can run in parallel once placement is decided. Task 6 depends on Tasks 1-3. Task 5 is last — restructure after all new content is added.
 
 ---
 
