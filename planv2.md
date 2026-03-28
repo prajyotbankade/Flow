@@ -169,6 +169,7 @@ Possible signals:
 - [ ] Consolidate scoring explanation (currently in multiple places)
 - [ ] Move API reference detail lower — keep behavioral intent at the top
 - [ ] Ensure operating procedure (Task 3) remains the entry point
+- [ ] Make `/api/pulse` the single source of truth — bundle policy evaluation results into the pulse response so agents make one call, not two
 - [ ] Verify no functionality is lost after restructure
 
 ---
