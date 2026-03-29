@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "flow-board",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": ["skills/backlog-manager/scripts/backlog_server.py", "--file", "backlog.json", "--no-open", "--port", "8089"],
+      "port": 8089
+    }
+  ]
+}
