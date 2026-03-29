@@ -22,56 +22,88 @@ But it's **not agent-usable yet**. The skill reads like a reference manual, not 
 - No precedence hierarchy — gates, readiness, tribunal, policies all described at same level
 - No decomposition guidance — how to break features into tasks
 - No sub-agent handoff protocol
-- No persistent agent identity (`agent.md` / persona files)
+- No persistent agent identity (`.claude/agents/` persona files)
 - No Strategic lens — business value/impact is implicit, not scored
 - Server start buried at bottom of SKILL.md
-- `/api/agents` doesn't read from a shared agent definition file
+- `/api/agents` doesn't read from `.claude/agents/` definition files
 
 ---
 
-## Task 0: Relocate Eval/Benchmark Files
+## Task 0: Relocate Eval/Benchmark Files ✅
 
 **Goal:** Move `flow_skill.py`, `test_flow_live.py`, and test result files from the project root into `skills/backlog-manager/evals/` so agents don't confuse benchmark infrastructure with the actual skill.
 
 **Why:** `flow_skill.py` at the project root looks like the skill's main file. It's actually benchmark tooling that wraps API calls through Ollama for cheap eval runs. Keeping it at the root caused the lead agent to misidentify it as the skill itself — a mistake that would repeat for any new agent or conversation.
 
 ### Tasks
-- [ ] Move `flow_skill.py` to `skills/backlog-manager/evals/eval_flow_skill.py` (rename for clarity)
-- [ ] Move `test_flow_live.py` to `skills/backlog-manager/evals/test_flow_live.py`
-- [ ] Move `test_results_*.txt`, `test_results_summary.md`, `test_results_full.txt` to `skills/backlog-manager/evals/results/`
-- [ ] Update any imports or file paths inside the moved files
+- [x] Move `flow_skill.py` to `skills/backlog-manager/evals/eval_flow_skill.py` (rename for clarity)
+- [x] Move `test_flow_live.py` to `skills/backlog-manager/evals/test_flow_live.py`
+- [x] Move `test_results_*.txt`, `test_results_summary.md`, `test_results_full.txt` to `skills/backlog-manager/evals/results/`
+- [x] Update any imports or file paths inside the moved files
 - [ ] Verify evals still run correctly from new location
 
 ---
 
-## Task 1: Research `agent.md` Placement
+## Task 1: Research `agent.md` Placement ✅
 
 **Goal:** Determine where Claude recommends keeping agent team definitions so both the lead agent and sub-agents reliably read them.
 
 **Why first:** Every other task depends on knowing where agent definitions live. Server integration (Task 2), SKILL.md references (Task 3), and persona files (Task 6) all need this answer.
 
-### Deliverable
-- Research Claude Code documentation for recommended agent definition patterns
-- Decide on file location and structure
-- Document the decision
+### Decision: `.claude/agents/` (unified roster + persona)
+
+Claude Code has a **native sub-agent system** — `.claude/agents/*.md` files with YAML frontmatter. Each file defines a sub-agent the lead can spawn by name.
+
+**Key insight:** Instead of a separate `agent.md` roster + individual persona files, we unify them. Each agent gets one file in `.claude/agents/` where the YAML frontmatter IS the roster data (skills, capacity) and the markdown body IS the persona (identity, learnings).
+
+**Format — `.claude/agents/<name>.md`:**
+```markdown
+---
+name: backend-dev
+description: Backend specialist — Python, APIs, databases, auth
+skills: [python, api, database, auth]
+complexity: [medium, high]
+max_active: 2
+---
+
+## Persona
+I am a backend specialist. I write minimal, correct code.
+I prefer raw SQL over ORM for bulk operations.
+I ask before making destructive changes.
+
+## Learnings (max 10 items — one line each)
+- Always use /api/pulse instead of separate API calls
+```
+
+**Why this works:**
+- **Claude Code native** — `.claude/agents/` is where Claude Code looks for sub-agents. The lead agent spawns them by name.
+- **Single file per agent** — frontmatter = roster data, body = persona. No separate roster file to maintain.
+- **Server-parseable** — Python globs `.claude/agents/*.md`, parses YAML frontmatter, serves structured data via `/api/agents`.
+- **Team roster is the directory** — `ls .claude/agents/` = your team. Adding an agent = adding a file.
+
+**Impact on other tasks:**
+- Task 2: Server reads `.claude/agents/*.md` (not a single `agent.md`)
+- Task 3: Handoff protocol points to `.claude/agents/<name>.md`
+- Task 6: No separate `agent.md` needed — the directory replaces it. Task 6 focuses on creating the initial agent files and defining the constrained persona template.
 
 ---
 
-## Task 2: Update `/api/agents` to Read from `agent.md`
+## Task 2: Update `/api/agents` to Read from `.claude/agents/` ✅
 
-**Goal:** The server reads agent profiles from the same file the lead agent reads. Single source of truth for who's on the team, their skills, and their capacity.
+**Goal:** The server reads agent profiles from the same files the lead agent reads. Single source of truth for who's on the team, their skills, and their capacity.
 
-**Why:** Currently agent data lives somewhere in the server config. If `agent.md` is the canonical team definition, the server should consume it — not maintain a separate copy.
+**Why:** Currently agent data lives somewhere in the server config. `.claude/agents/*.md` is the canonical team definition — the server should consume it, not maintain a separate copy.
 
 ### Tasks
-- [ ] Parse `agent.md` on server startup and on each `/api/agents` request
-- [ ] Map agent.md fields to existing agent profile structure (skills, max_active, preferred_complexity)
-- [ ] Preserve backward compatibility — if no agent.md exists, fall back to current behavior
-- [ ] Update `/api/recommend` and `/api/pulse` to use agent.md-sourced profiles
+- [x] Glob `.claude/agents/*.md` and parse YAML frontmatter from each file
+- [x] Map frontmatter fields (skills, complexity, max_active) to existing agent profile structure
+- [x] Preserve backward compatibility — if `.claude/agents/` doesn't exist or is empty, fall back to current behavior
+- [x] Update `/api/recommend` and `/api/pulse` to use `.claude/agents/`-sourced profiles
+- [x] Re-read on each `/api/agents` request (no caching — files may change mid-session as agents update learnings)
 
 ---
 
-## Task 3: SKILL.md Additions
+## Task 3: SKILL.md Additions ✅
 
 **Goal:** Add the operating guide that turns SKILL.md from a reference manual into an actionable playbook. No restructuring — just additions at the top.
 
@@ -82,12 +114,15 @@ But it's **not agent-usable yet**. The skill reads like a reference manual, not 
 **3a. Operating Procedure (top of file)**
 ```
 ## How to operate
+If the server is not running, start it before doing anything else.
+
 1. Start server: python <skill-path>/scripts/backlog_server.py --file backlog.json
-2. If server is already running, verify with a health check (GET /api/backlog)
-3. Decompose the work into tasks — add via API with dependencies and links
-4. Assign based on team (agent.md) using assignment intelligence
-5. Delegate to sub-agents with handoff protocol
-6. Monitor via /api/pulse, act on _events after every write
+   - If already running, verify with a health check (GET /api/backlog)
+2. Decompose the work into tasks — add via API with dependencies and links
+3. Assign based on team (.claude/agents/) using assignment intelligence
+4. Delegate to sub-agents with handoff protocol
+5. Monitor via /api/pulse, act on _events after every write
+6. After task completion, review sub-agent persona files — remove duplicates, merge similar learnings, trim anything now obvious from the codebase
 ```
 
 **3b. Precedence Chain**
@@ -108,7 +143,7 @@ When the user describes a feature to build:
 2. Set dependencies — use "blocks" links for sequential work, no link for parallel work
 3. Assign complexity: low (< 1 hour), medium (1-4 hours), high (4+ hours)
 4. Set tags for skill matching (e.g., backend, frontend, auth, testing)
-5. Set priority_weight based on dependency depth — items that unblock the most get highest weight
+5. Set priority_weight based on how much value this item unlocks — consider both dependency depth (items that unblock the most work) and business importance. If a Strategic focus is declared, weight items matching it higher
 6. Add all items via API, dependencies first so links resolve correctly
 ```
 
@@ -121,20 +156,21 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 3. Their agent name: use GET /api/backlog?agent=<name> to see only your work
 4. Status protocol: set in-progress when starting, code-review or done when finishing
 5. Blocker protocol: if blocked, open a thread via PUT /api/items/<id> and report back
-6. Their persona file path (from agent.md) — agent reads it for identity and past learnings
+6. Their persona file path (.claude/agents/<name>.md) — agent reads it for identity and past learnings
 7. Self-correction instruction: if you make a mistake and get corrected, update your persona file before finishing
 ```
 
 ### Tasks
-- [ ] Add operating procedure to top of SKILL.md
-- [ ] Add precedence chain section
-- [ ] Add decomposition guidance section
-- [ ] Add sub-agent handoff protocol section
-- [ ] Move server start command from bottom to step 1 of operating procedure
+- [x] Add operating procedure to top of SKILL.md (server-first line as literal first instruction)
+- [x] Add precedence chain section
+- [x] Add decomposition guidance section
+- [x] Add sub-agent handoff protocol section
+- [x] Move server start command from bottom to step 1 of operating procedure
+- [x] Add persona pruning as step 6 in operating procedure
 
 ---
 
-## Task 4: Implement Strategic Lens
+## Task 4: Implement Strategic Lens ✅
 
 **Goal:** Add the 6th tribunal lens that evaluates business value and strategic alignment. Designed in Phase 1 plan but not implemented.
 
@@ -143,17 +179,19 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 ### Design
 The Strategic lens evaluates: "Is this item aligned with the current declared priority themes?"
 
+**Scope:** Strategic is a **tribunal lens only**. It does not modify the raw priority score. This keeps raw scores deterministic and debuggable, while Strategic influence is visible in tribunal justifications (e.g., "recommended because it aligns with current focus: auth"). Strategic weight can be tuned independently without re-calibrating the scoring model.
+
 Possible signals:
 - `priority_weight >= 8` — human explicitly marked it high priority
 - Tags matching a declared "focus area" in config (e.g., `current_focus: ["auth", "security"]`)
 - Category alignment (e.g., bugs during a stability focus)
 
 ### Tasks
-- [ ] Add `strategic` lens weight to tribunal config (default: 1.0)
-- [ ] Add `current_focus` config field — list of tags/categories the team is currently prioritizing
-- [ ] Implement `evaluate_lens_strategic()` following the pattern of existing 5 lenses
-- [ ] Integrate into tribunal evaluation pipeline
-- [ ] Update SKILL.md with Strategic lens documentation
+- [x] Add `strategic` lens weight to tribunal config (default: 1.0)
+- [x] Add `current_focus` config field — list of tags/categories the team is currently prioritizing
+- [x] Implement `evaluate_lens_strategic()` following the pattern of existing 5 lenses
+- [x] Integrate into tribunal evaluation pipeline
+- [x] Update SKILL.md with Strategic lens documentation
 - [ ] Add evals: strategic alignment scoring, focus area matching
 
 ---
@@ -174,79 +212,74 @@ Possible signals:
 
 ---
 
-## Task 6: `agent.md` + Persona Files
+## Task 6: Agent Persona Files ✅
 
-**Goal:** Define a persistent team with individual agent identities. Each agent has a persona file that carries their skills, behavioral traits, and accumulated learnings. Agents are responsible for updating their own learnings.
+**Goal:** Create the initial team in `.claude/agents/` with constrained persona files. Each agent has a unified file (YAML frontmatter for roster data, markdown body for persona + learnings). Agents are responsible for updating their own learnings.
 
 **Why:** Solves the memory propagation problem. Sub-agents today are born blank — no history, no personality, no lessons learned. Persona files give each agent a persistent identity that survives across conversations.
 
 ### Design
 
-**`agent.md`** — Team roster read by lead agent and server:
+Per the Task 1 decision, each agent lives in `.claude/agents/<name>.md`. No separate roster file — the directory IS the team.
+
+**Template — `.claude/agents/<name>.md`:**
 ```markdown
-# Team
+---
+name: backend-dev
+description: Backend specialist — Python, APIs, databases, auth
+skills: [python, api, database, auth]
+complexity: [medium, high]
+max_active: 2
+---
 
-## backend-dev
-- Skills: python, api, database, auth
-- Complexity: medium, high
-- Max active: 2
-- Persona: agents/backend-dev.md
-
-## frontend-dev
-- Skills: react, typescript, css, ui
-- Complexity: low, medium
-- Max active: 2
-- Persona: agents/frontend-dev.md
-
-## qa
-- Skills: testing, api, e2e
-- Complexity: low, medium
-- Max active: 3
-- Persona: agents/qa.md
-```
-
-**Persona files** — Each agent's identity + self-maintained learnings:
-```markdown
-# Backend Engineer
-
-## My persona
+## Persona
 I am a backend specialist. I write minimal, correct code.
 I prefer raw SQL over ORM for bulk operations.
 I ask before making destructive changes.
 
-## My learnings
-- flow_skill.py is benchmark infra, not the skill itself
+## Learnings (max 10 items — one line each, no narrative)
 - Always use /api/pulse instead of separate API calls for recommendations
 
-## My file
-This file: agents/backend-dev.md
-When I receive a correction, I update this file before finishing my task.
+## Rules
+- Before adding a learning, check if it's already captured. If it is, skip it.
+- When I receive a correction, I update this file before finishing my task.
+- If learnings reach 10, I consolidate or drop entries that are now obvious from the codebase.
 ```
 
-**Self-correction protocol** — Part of every agent's persona:
-> When you make a mistake or receive a correction during a task, update your persona file with the learning before reporting back. This is your responsibility — the lead agent won't track this for you.
+**Persona constraints:**
+- **Max learnings:** 10 one-line items. No narrative, no multi-line explanations. Forces prioritization — only behavior-changing learnings survive.
+- **No duplicates:** Before adding a learning, check if it's already captured. If it is, skip it.
+- **Total file size:** Keep persona files under 40 lines. If approaching the limit, consolidate or drop learnings that are now obvious from the codebase.
+- **Format:** YAML frontmatter (structured, server-parseable) + markdown body (human-readable, agent-parseable).
+
+**Self-correction protocol** — Part of every agent's Rules section:
+> When you make a mistake or receive a correction during a task, update this file's Learnings before finishing. This is your responsibility — the lead agent won't track this for you.
+
+**Leader pruning protocol** — Part of the lead agent's operating procedure (Task 3a, step 6):
+> After a sub-agent completes a task, the lead agent reviews their persona file: remove duplicates, merge overlapping learnings, and trim anything that's now obvious from the code or docs. This keeps persona files clean and prevents bloat across conversations.
 
 ### Tasks
-- [ ] Research and decide `agent.md` location (Task 1 output feeds this)
-- [ ] Define `agent.md` schema/format
-- [ ] Create initial persona files for default team roles
-- [ ] Add self-correction instruction to each persona
-- [ ] Integrate persona file path into sub-agent handoff protocol (Task 3d)
-- [ ] Document in SKILL.md how to customize the team
+- [x] Create `.claude/agents/` directory
+- [x] Create initial agent files for default team roles (backend-dev, frontend-dev, qa) using constrained template
+- [x] Ensure each file has: YAML frontmatter (skills, complexity, max_active) + Persona + Learnings + Rules sections
+- [x] Cap at 10 learnings, 40 lines total per file
+- [x] Add self-correction and dedup rules to each agent's Rules section
+- [x] Verify server (Task 2) correctly parses the created files
+- [x] Document in SKILL.md how to customize the team (add/remove files in `.claude/agents/`)
 
 ---
 
 ## Execution Order
 
 ```
-Task 0 (relocate eval files — removes confusion for all agents)
-  └─> Task 1 (research agent.md placement)
-        └─> Task 2 (server reads agent.md) + Task 3 (SKILL.md additions) + Task 4 (strategic lens)
-              └─> Task 6 (agent.md + persona files)
+Task 0 (relocate eval files — removes confusion for all agents) ✅
+  └─> Task 1 (research agent placement — decided: .claude/agents/) ✅
+        └─> Task 2 (server reads .claude/agents/) ✅ + Task 3 (SKILL.md additions) ✅ + Task 4 (strategic lens) ✅
+              └─> Task 6 (create agent persona files in .claude/agents/) ✅
                     └─> Task 5 (SKILL.md restructure — after everything stabilizes)
 ```
 
-Task 0 is a quick cleanup that prevents agent confusion immediately. Task 1 is the research prerequisite for the rest. Tasks 2, 3, 4 can run in parallel once placement is decided. Task 6 depends on Tasks 1-3. Task 5 is last — restructure after all new content is added.
+Task 0 ✅ — eval files relocated to `skills/backlog-manager/evals/`. Task 1 ✅ — decided on `.claude/agents/*.md` with YAML frontmatter (unified roster + persona). Tasks 2, 3, 4 can now run in parallel. Task 6 depends on Tasks 1-3. Task 5 is last — restructure after all new content is added.
 
 ---
 

@@ -33,8 +33,10 @@ API:
 """
 
 import argparse
+import glob as glob_mod
 import json
 import os
+import re
 import subprocess
 import tempfile
 import threading
@@ -77,11 +79,101 @@ def read_backlog(filepath):
     Raises ValueError if the file exists but contains invalid JSON."""
     try:
         with open(filepath, "r") as f:
-            return json.load(f)
+            data = json.load(f)
     except FileNotFoundError:
-        return {"version": 0, "config": {"scope": "project", "project_name": ""}, "items": []}
+        data = {"version": 0, "config": {"scope": "project", "project_name": ""}, "items": []}
     except json.JSONDecodeError as e:
         raise ValueError(f"backlog.json is corrupted and cannot be read: {e}")
+
+    # Merge agent profiles from .claude/agents/*.md into config.agents
+    project_root = str(Path(filepath).parent)
+    merge_agent_profiles(data, project_root)
+    return data
+
+
+# ── Agent file parsing (.claude/agents/*.md) ─────────────────────────────────
+
+# Regex to extract YAML frontmatter between --- delimiters
+_FRONTMATTER_RE = re.compile(r"\A---\s*\n(.*?)\n---", re.DOTALL)
+
+# Regex to parse a single YAML line: "key: value" (supports simple scalars and [] arrays)
+_YAML_LINE_RE = re.compile(r"^(\w+)\s*:\s*(.+)$")
+
+# Regex to parse a YAML inline list: [item1, item2, ...]
+_YAML_LIST_RE = re.compile(r"^\[(.+)]$")
+
+
+def _parse_simple_yaml(text):
+    """Parse simple YAML frontmatter (flat key-value pairs, inline lists).
+    No external dependency — handles the subset we need for agent files."""
+    result = {}
+    for line in text.strip().splitlines():
+        m = _YAML_LINE_RE.match(line.strip())
+        if not m:
+            continue
+        key, val = m.group(1), m.group(2).strip()
+        list_m = _YAML_LIST_RE.match(val)
+        if list_m:
+            # Inline list: [a, b, c]
+            result[key] = [v.strip().strip("'\"") for v in list_m.group(1).split(",")]
+        else:
+            # Scalar — try int, then keep as string
+            try:
+                result[key] = int(val)
+            except ValueError:
+                result[key] = val.strip("'\"")
+    return result
+
+
+def parse_agent_files(project_root):
+    """Parse all .claude/agents/*.md files and return a dict of agent profiles.
+    Each file's YAML frontmatter provides: name, skills, complexity, max_active.
+    Returns {agent_name: {skills: [...], max_active: N, preferred_complexity: [...]}}."""
+    agents_dir = os.path.join(project_root, ".claude", "agents")
+    if not os.path.isdir(agents_dir):
+        return {}
+
+    agents = {}
+    for fpath in sorted(glob_mod.glob(os.path.join(agents_dir, "*.md"))):
+        try:
+            with open(fpath, "r") as f:
+                content = f.read()
+        except OSError:
+            continue
+
+        fm_match = _FRONTMATTER_RE.match(content)
+        if not fm_match:
+            continue
+
+        meta = _parse_simple_yaml(fm_match.group(1))
+        name = meta.get("name")
+        if not name:
+            # Fall back to filename without extension
+            name = Path(fpath).stem
+
+        agents[name] = {
+            "skills": meta.get("skills", []),
+            "max_active": meta.get("max_active", 3),
+            "preferred_complexity": meta.get("complexity", []),
+        }
+    return agents
+
+
+def merge_agent_profiles(data, project_root):
+    """Merge .claude/agents/*.md profiles into data['config']['agents'].
+    File-sourced agents take precedence. Agents defined only in config
+    (no matching .md file) are preserved as fallback."""
+    file_agents = parse_agent_files(project_root)
+    if not file_agents:
+        return  # No .claude/agents/ directory or no files — keep existing config
+
+    config = data.setdefault("config", {})
+    existing = config.get("agents", {})
+
+    # File agents take precedence; preserve config-only agents as fallback
+    merged = dict(existing)
+    merged.update(file_agents)
+    config["agents"] = merged
 
 
 DEFAULT_STATUSES = [
@@ -345,6 +437,13 @@ LENS_WEIGHTS = {
     "agent_fit": 0.8,
     "risk": 1.0,
     "momentum": 0.6,
+    "strategic": 1.0,
+}
+
+# Default strategic config — current_focus is a list of tags/categories the team prioritizes
+DEFAULT_STRATEGIC = {
+    "current_focus": [],        # e.g., ["auth", "security"] — items matching these get a boost
+    "high_priority_threshold": 8,  # priority_weight >= this counts as explicitly high priority
 }
 
 
@@ -789,6 +888,55 @@ def evaluate_lens_momentum(item, breakdown):
     }
 
 
+def evaluate_lens_strategic(item, strategic_cfg):
+    """Strategic: alignment with declared business priorities and focus areas.
+
+    This is a tribunal-only lens — it does NOT modify the raw priority score.
+    Keeps raw scores deterministic and debuggable; strategic influence is visible
+    only in tribunal justifications and can be tuned independently.
+    """
+    score = 0.0
+    reasons = []
+
+    current_focus = strategic_cfg.get("current_focus", [])
+    high_priority_threshold = strategic_cfg.get("high_priority_threshold", 8)
+
+    # Signal 1: Human explicitly marked high priority
+    pw = item.get("priority_weight")
+    if pw is not None and pw >= high_priority_threshold:
+        score += 5.0
+        reasons.append(f"Explicitly high priority ({pw}/10)")
+
+    # Signal 2: Tags matching declared focus areas
+    if current_focus:
+        item_tags = set(item.get("tags", []))
+        focus_set = set(current_focus)
+        focus_match = item_tags & focus_set
+        if focus_match:
+            score += len(focus_match) * 3.0
+            reasons.append(f"Matches current focus: {', '.join(sorted(focus_match))}")
+
+    # Signal 3: Category alignment (e.g., bugs during a stability/security focus)
+    if current_focus:
+        category = item.get("category", "")
+        category_focus_map = {
+            "bug": {"stability", "quality", "reliability", "security"},
+            "debt": {"stability", "quality", "reliability", "maintainability"},
+        }
+        mapped_themes = category_focus_map.get(category, set())
+        theme_match = mapped_themes & focus_set
+        if theme_match:
+            score += 2.0
+            reasons.append(f"{category.title()} aligns with focus: {', '.join(sorted(theme_match))}")
+
+    return {
+        "lens": "strategic",
+        "item_id": item.get("id"),
+        "score": round(score, 2),
+        "argument": "; ".join(reasons) if reasons else None,
+    }
+
+
 def evaluate_tribunal(data, agent=None):
     """Run the tribunal: every lens evaluates every candidate, then aggregate.
 
@@ -796,6 +944,7 @@ def evaluate_tribunal(data, agent=None):
     """
     config = data.get("config", {})
     scoring_cfg = {**DEFAULT_SCORING, **config.get("scoring", {})}
+    strategic_cfg = {**DEFAULT_STRATEGIC, **config.get("strategic", {})}
     agents_cfg = config.get("agents", {})
     items = data.get("items", [])
 
@@ -822,6 +971,7 @@ def evaluate_tribunal(data, agent=None):
             "agent_fit": evaluate_lens_agent_fit(item, agent, agents_cfg, items),
             "risk": evaluate_lens_risk(item, breakdown, blocks_map, items_by_id),
             "momentum": evaluate_lens_momentum(item, breakdown),
+            "strategic": evaluate_lens_strategic(item, strategic_cfg),
         }
 
     # Compute weighted tribunal score per candidate
@@ -2501,8 +2651,16 @@ def main():
     server = HTTPServer(("localhost", args.port), BacklogHandler)
     url = f"http://localhost:{args.port}"
 
+    # Report agent file discovery
+    project_root = str(Path(BacklogHandler.backlog_file).parent)
+    file_agents = parse_agent_files(project_root)
+
     print(f"Backlog board: {url}")
     print(f"Reading from:  {BacklogHandler.backlog_file}")
+    if file_agents:
+        print(f"Agent files:   .claude/agents/ ({len(file_agents)} agents: {', '.join(file_agents.keys())})")
+    else:
+        print(f"Agent files:   none found (will use config.agents fallback)")
     print(f"Git user:      {GIT_USER['name']} <{GIT_USER['email']}>")
     print("Press Ctrl+C to stop\n")
 

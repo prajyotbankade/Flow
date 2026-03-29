@@ -163,10 +163,11 @@ Flow/
 │       ├── references/
 │       │   └── schema.md         # JSON schema documentation
 │       └── evals/
-│           ├── evals.json        # Test cases and assertions
-│           └── files/            # Fixture data for evals
-├── flow_skill.py             # deepeval skill harness (calls live API + Ollama)
-├── test_flow_live.py         # deepeval benchmark suite (AnswerRelevancy + GEval)
+│           ├── evals.json           # Test cases and assertions
+│           ├── eval_flow_skill.py   # deepeval skill harness (calls live API + Ollama)
+│           ├── test_flow_live.py    # deepeval benchmark suite (AnswerRelevancy + GEval)
+│           ├── files/               # Fixture data for evals
+│           └── results/             # Test run outputs
 └── backlog.json              # Your backlog (zero items, ready to use)
 ```
 

@@ -6,7 +6,7 @@ from deepeval.metrics import AnswerRelevancyMetric, GEval
 from deepeval.models import OllamaModel
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-from flow_skill import run_flow, run_flow_tribunal, run_flow_graph, run_flow_policy
+from eval_flow_skill import run_flow, run_flow_tribunal, run_flow_graph, run_flow_policy
 
 requires_anthropic = pytest.mark.skipif(
     not os.environ.get("ANTHROPIC_API_KEY"),

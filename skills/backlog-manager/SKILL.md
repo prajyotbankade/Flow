@@ -5,6 +5,54 @@ description: Manage a project backlog board — add, prioritize, refine, link, a
 
 # Backlog Manager
 
+## How to Operate
+
+If the server is not running, start it before doing anything else.
+
+1. **Start server:** `python <skill-path>/scripts/backlog_server.py --file backlog.json`
+   - If already running, verify with a health check: `GET /api/backlog`
+2. **Decompose** the work into tasks — add via API with dependencies and links (see Decomposing a Feature below)
+3. **Assign** based on team (`.claude/agents/`) using assignment intelligence
+4. **Delegate** to sub-agents with handoff protocol (see Delegating to a Sub-Agent below)
+5. **Monitor** via `/api/pulse` — act on `_events` after every write
+6. **Prune personas** — after task completion, review sub-agent persona files: remove duplicates, merge similar learnings, trim anything now obvious from the codebase
+
+## Decision Hierarchy
+
+```
+Gates (hard stop) → Readiness (eligibility) → Tribunal (recommendation) → Policies (overrides)
+```
+
+- **Gates** prevent invalid status moves. Non-negotiable.
+- **Readiness** determines if work is startable (>=70%) or fully ready (>=90%).
+- **Tribunal** recommends what to do next based on 6 lenses (urgency, leverage, agent_fit, risk, momentum, strategic).
+- **Policies** can override or nudge — they fire after tribunal and can escalate, reassign, or block.
+
+## Decomposing a Feature
+
+When the user describes a feature to build:
+
+1. Identify distinct units of work (each should be completable by one agent)
+2. Set dependencies — use `blocks` links for sequential work, no link for parallel work
+3. Assign complexity: `low` (< 1 hour), `medium` (1-4 hours), `high` (4+ hours)
+4. Set `tags` for skill matching (e.g., backend, frontend, auth, testing)
+5. Set `priority_weight` based on how much value this item unlocks — consider both dependency depth (items that unblock the most work) and business importance. If a Strategic focus is declared, weight items matching it higher
+6. Add all items via API, dependencies first so links resolve correctly
+
+## Delegating to a Sub-Agent
+
+When spawning a sub-agent for an assigned task, include in the prompt:
+
+1. The task details (title, description, acceptance criteria from backlog)
+2. Server URL: `http://localhost:8089`
+3. Their agent name: use `GET /api/backlog?agent=<name>` to see only your work
+4. Status protocol: set `in-progress` when starting, `code-review` or `done` when finishing
+5. Blocker protocol: if blocked, open a thread via `PUT /api/items/<id>` and report back
+6. Their persona file path (`.claude/agents/<name>.md`) — agent reads it for identity and past learnings
+7. Self-correction instruction: if you make a mistake and get corrected, update your persona file before finishing
+
+---
+
 Data store: `backlog.json` at project root. Always re-read before writing. Increment `version` on every write. Full schema: `references/schema.md`.
 
 Status flow: `backlog → refined → ready → in-progress → code-review → done` (`discarded` from any lane, no gates).
@@ -87,9 +135,25 @@ Defaults (all configurable via `config.scoring`):
 
 ### Justification Engine (Tribunal)
 
-Use `GET /api/recommend[?agent=name]` to get a justified recommendation. The tribunal evaluates all eligible items through 5 lenses (urgency, leverage, agent_fit, risk, momentum) and produces:
+Use `GET /api/recommend[?agent=name]` to get a justified recommendation. The tribunal evaluates all eligible items through 6 lenses and produces:
 - **Picked item** with reasoning, confidence, supporting lenses, and readiness context
 - **Shadow ranking** of runners-up with "why not" explanations (including blocker readiness %)
+
+**Tribunal lenses:**
+
+| Lens | Weight | Evaluates |
+|---|---|---|
+| urgency | 1.0 | Time-sensitivity, criticality, staleness |
+| leverage | 1.2 | Downstream unblock cascade |
+| agent_fit | 0.8 | Skill match, complexity preference, load, history |
+| risk | 1.0 | Blocking impact, reopens, skip neglect |
+| momentum | 0.6 | Status progression, recent activity |
+| strategic | 1.0 | Business value alignment with declared focus areas |
+
+**Strategic lens** — tribunal-only, does not modify raw scores. Configure via `config.strategic`:
+- `current_focus`: list of tags/categories the team is prioritizing (e.g., `["auth", "security"]`)
+- Items with matching tags, high `priority_weight` (≥8), or category alignment (e.g., bugs during stability focus) score higher in the tribunal
+- Justifications cite the specific signal: "Matches current focus: auth" or "Explicitly high priority (9/10)"
 
 When committing to a pick, use `?commit=true` to store the decision for outcome tracking.
 
@@ -165,6 +229,35 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 - −5 if agent at/above `max_active`
 
 Highest positive affinity wins. Tie or no positive affinity → ask user.
+
+### Agent Team (`.claude/agents/`)
+
+The team roster lives in `.claude/agents/*.md`. Each file defines one agent with YAML frontmatter (skills, capacity) and a markdown body (persona, learnings, rules). The server reads these files on every request — no restart needed.
+
+**To add an agent:** Create `.claude/agents/<name>.md` with this template:
+```markdown
+---
+name: <agent-name>
+description: <one-line role description>
+skills: [tag1, tag2, ...]
+complexity: [low, medium, high]
+max_active: <int>
+---
+
+## Persona
+<2-3 sentences: who you are, how you work, what you prefer>
+
+## Learnings (max 10 items — one line each, no narrative)
+
+## Rules
+- Before adding a learning, check if it's already captured. If it is, skip it.
+- When I receive a correction, I update this file before finishing my task.
+- If learnings reach 10, I consolidate or drop entries that are now obvious from the codebase.
+```
+
+**To remove an agent:** Delete the file. **To modify:** Edit the file directly — changes take effect on next API call.
+
+**Persona constraints:** Max 10 learnings, max 40 lines per file. The lead agent prunes personas after task completion (step 6 of How to Operate).
 
 ### Model Routing
 
@@ -255,4 +348,3 @@ Returns the full dependency graph. Key fields:
 - **nodes[].is_critical_path**: `true` if this item is in the top-5 by cascade count
 - **nodes[].cascade_count**: Number of items transitively unblocked when this completes
 
-Start server: `python <skill-path>/scripts/backlog_server.py [--port 8089] [--file backlog.json]`
