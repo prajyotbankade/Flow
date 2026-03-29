@@ -19,7 +19,7 @@ API:
     GET  /api/decisions            Stored decision history with outcomes
     GET  /api/agents               Agent profiles with current load
     GET  /api/graph                Live dependency graph with readiness, critical path, conflicts
-    GET  /api/pulse                Proactive push payload (optional ?agent=name)
+    GET  /api/pulse                Proactive push payload + policy intelligence (optional ?agent=name)
     PUT  /api/backlog              Full backlog write (version checked, atomic, returns _events)
     PUT  /api/items/<id>           Single item update (version checked, atomic, returns _events)
     POST /api/items/<id>/signal    Append a readiness signal to an item
@@ -653,11 +653,12 @@ def compute_dependency_graph(data):
     }
 
 
-def compute_pulse(data, agent_name=None):
+def compute_pulse(data, agent_name=None, backlog_path=None):
     """Compute a proactive push pulse for an agent.
 
-    Bundles: tribunal recommendation + startable items + conflicts + rebalancing + active agents view.
-    Returns {agent, recommendation, startable_items, conflicts, rebalancing, active_agents, generated_at}.
+    Bundles: tribunal recommendation + startable items + conflicts + rebalancing +
+    active agents + policy intelligence.
+    Single call replaces /api/recommend + /api/agents + /api/policies + /api/policies/log.
     """
     items = data.get("items", [])
     config = data.get("config", {})
@@ -703,7 +704,7 @@ def compute_pulse(data, agent_name=None):
             "readiness_level": "ready" if rd["score"] >= 0.90 else "startable",
         })
 
-    return {
+    result = {
         "agent": agent_name,
         "recommendation": recommendation,
         "startable_items": startable[:5],
@@ -712,6 +713,11 @@ def compute_pulse(data, agent_name=None):
         "active_agents": active_agents,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
+
+    if backlog_path:
+        result["policies"] = compute_pulse_policy_summary(backlog_path, recommendation)
+
+    return result
 
 
 def evaluate_lens_urgency(item, breakdown, scoring_cfg):
@@ -2075,6 +2081,55 @@ def compute_policy_staleness(policies_data):
     return stale
 
 
+def compute_pulse_policy_summary(backlog_path, recommendation):
+    """Build policy intelligence summary for the pulse response.
+
+    Read-only — surfaces what the policy engine has already done so agents
+    don't need separate calls to /api/policies, /api/policies/log, etc.
+    """
+    policies_file = get_policies_path(backlog_path)
+    policies_data = read_policies(policies_file)
+    active_policies = [p for p in policies_data.get("policies", []) if p.get("active", True)]
+    stale = compute_policy_staleness(policies_data)
+
+    # Recent fires from log
+    log_path = get_policy_log_path(backlog_path)
+    log = read_policy_log(log_path)
+    recent_entries = log.get("entries", [])[-20:]
+    recent_fires = []
+    notifications = []
+    for entry in reversed(recent_entries):
+        if entry.get("fired"):
+            recent_fires.append({
+                "policy": entry["policy_name"],
+                "reasoning": entry.get("reasoning", ""),
+                "actions": [a.get("type") for a in entry.get("actions_proposed", [])],
+                "at": entry["timestamp"],
+            })
+        for n in entry.get("notifications", []):
+            if n:
+                notifications.append({
+                    "policy": entry["policy_name"],
+                    "message": n,
+                    "at": entry["timestamp"],
+                })
+
+    # Policy influences on the recommended item
+    influences = []
+    if recommendation.get("picked"):
+        winner_id = recommendation["picked"].get("item_id")
+        if winner_id:
+            influences = get_policy_influences_for_item(backlog_path, winner_id)
+
+    return {
+        "active_count": len(active_policies),
+        "recent_fires": recent_fires[:5],
+        "notifications": notifications[:5],
+        "influences_on_pick": influences,
+        "stale_warnings": stale,
+    }
+
+
 class BacklogHandler(BaseHTTPRequestHandler):
     backlog_file = "backlog.json"
 
@@ -2217,13 +2272,13 @@ class BacklogHandler(BaseHTTPRequestHandler):
         self._json_response(200, graph)
 
     def _serve_pulse(self, agent=None):
-        """Proactive push pulse — recommendation + readiness + conflicts + coordination context."""
+        """Proactive push pulse — recommendation + readiness + conflicts + coordination + policies."""
         try:
             data = read_backlog(self.backlog_file)
         except ValueError as e:
             self._json_error(500, str(e))
             return
-        pulse = compute_pulse(data, agent_name=agent)
+        pulse = compute_pulse(data, agent_name=agent, backlog_path=self.backlog_file)
         self._json_response(200, pulse)
 
     def _serve_recommend(self, agent=None, commit=False):
