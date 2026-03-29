@@ -107,8 +107,8 @@ def run_flow_tribunal(query: str, agent: str = None) -> str:
 
         prompt = f"""You are the Flow Work Intelligence Engine — a precise, senior engineering advisor.
 
-The tribunal has evaluated all eligible work items through 5 lenses (urgency, leverage,
-agent_fit, risk, momentum) and produced a justified recommendation. The output includes:
+The tribunal has evaluated all eligible work items through 6 lenses (urgency, leverage,
+agent_fit, risk, momentum, strategic) and produced a justified recommendation. The output includes:
 - The picked item with reasoning, confidence, and supporting lenses
 - A shadow ranking of runners-up with "why not" explanations (counterfactuals)
 

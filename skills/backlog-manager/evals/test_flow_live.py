@@ -484,12 +484,16 @@ GRAPH_URL  = "http://localhost:8089/api/graph"
 PULSE_URL  = "http://localhost:8089/api/pulse"
 
 
-def _seed_items(items):
-    """Seed the backlog with the given items and return the new version."""
+def _seed_items(items, config=None):
+    """Seed the backlog with the given items (and optional config) and return the new version."""
     resp = requests.get(BACKLOG_URL)
     resp.raise_for_status()
-    version = resp.json().get("version", 0)
-    requests.put(BACKLOG_URL, json={"version": version, "items": items}).raise_for_status()
+    data = resp.json()
+    version = data.get("version", 0)
+    payload = {"version": version, "items": items}
+    if config is not None:
+        payload["config"] = config
+    requests.put(BACKLOG_URL, json=payload).raise_for_status()
     return version + 1
 
 
@@ -598,12 +602,24 @@ def test_pulse_payload_completeness():
     pulse = resp.json()
 
     for key in ("agent", "recommendation", "startable_items", "conflicts",
-                "rebalancing", "active_agents", "generated_at"):
+                "rebalancing", "active_agents", "generated_at", "policies"):
         assert key in pulse, f"Pulse missing key: {key}"
 
     assert isinstance(pulse["startable_items"], list)
     assert isinstance(pulse["active_agents"], list)
     assert isinstance(pulse["conflicts"], list)
+
+    # Validate policies sub-structure
+    policies = pulse["policies"]
+    assert isinstance(policies, dict), "policies must be a dict"
+    for pkey in ("active_count", "recent_fires", "notifications",
+                 "influences_on_pick", "stale_warnings"):
+        assert pkey in policies, f"policies missing key: {pkey}"
+    assert isinstance(policies["active_count"], int)
+    assert isinstance(policies["recent_fires"], list)
+    assert isinstance(policies["notifications"], list)
+    assert isinstance(policies["influences_on_pick"], list)
+    assert isinstance(policies["stale_warnings"], list)
 
 
 def test_pulse_agent_filter():
@@ -1035,6 +1051,329 @@ def test_policy_rule_engine(scenario):
 
     correctness = GEval(
         name="Policy Rule Engine Quality",
+        criteria=scenario["criteria"],
+        evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
+        threshold=0.6,
+        model=eval_qwen,
+    )
+
+    assert_test(test_case, [relevancy_metric, correctness])
+
+
+# ---------------------------------------------------------------------------
+# Phase 5: Strategic Lens — Structural + LLM Tests
+# These validate that the strategic tribunal lens correctly responds to
+# config.strategic.current_focus, high priority_weight, and category alignment.
+# ---------------------------------------------------------------------------
+
+RECOMMEND_URL = "http://localhost:8089/api/recommend"
+
+
+def _make_strategic_config(current_focus):
+    """Build a backlog config with strategic focus set. No gate requires — tests
+    don't need gate validation and it avoids 422 errors when seeding items."""
+    return {
+        "scope": "project",
+        "project_name": "Flow",
+        "statuses": [
+            {"id": "backlog", "label": "Backlog"},
+            {"id": "refined", "label": "Refined"},
+            {"id": "ready", "label": "Ready"},
+            {"id": "in-progress", "label": "In Progress"},
+            {"id": "code-review", "label": "Code Review"},
+            {"id": "done", "label": "Done"},
+            {"id": "discarded", "label": "Discarded"},
+        ],
+        "strategic": {"current_focus": current_focus},
+    }
+
+
+def test_strategic_lens_present_in_tribunal():
+    """The tribunal response must include a 'strategic' lens in the lenses array."""
+    items = [
+        {
+            "id": "STR1", "title": "Auth hardening", "status": "ready",
+            "priority_weight": 9, "tags": ["auth", "security"],
+            "links": [], "lane_history": [
+                {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+            ],
+            "gate_from": 0, "complexity": "medium", "reopen_count": 0,
+            "skip_count": 0, "threads": [],
+            "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+        },
+    ]
+    _seed_items(items, config=_make_strategic_config(["auth"]))
+
+    resp = requests.get(RECOMMEND_URL)
+    assert resp.status_code == 200
+    tribunal = resp.json()
+
+    lens_names = [l["lens"] for l in tribunal.get("lenses", [])]
+    assert "strategic" in lens_names, (
+        f"Strategic lens missing from tribunal. Lenses: {lens_names}"
+    )
+
+
+def test_strategic_focus_match_boosts_item():
+    """An item with tags matching current_focus must score higher on the strategic lens
+    than an item with no matching tags."""
+    items = [
+        {
+            "id": "MATCH", "title": "Fix auth tokens", "status": "ready",
+            "priority_weight": 5, "tags": ["auth", "backend"], "category": "feature",
+            "links": [], "lane_history": [
+                {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+            ],
+            "gate_from": 0, "complexity": "medium", "reopen_count": 0,
+            "skip_count": 0, "threads": [],
+            "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+        },
+        {
+            "id": "NOMATCH", "title": "Dashboard CSS polish", "status": "ready",
+            "priority_weight": 5, "tags": ["frontend", "css"], "category": "feature",
+            "links": [], "lane_history": [
+                {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+            ],
+            "gate_from": 0, "complexity": "medium", "reopen_count": 0,
+            "skip_count": 0, "threads": [],
+            "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+        },
+    ]
+    _seed_items(items, config=_make_strategic_config(["auth", "security"]))
+
+    resp = requests.get(RECOMMEND_URL)
+    assert resp.status_code == 200
+    tribunal = resp.json()
+
+    strategic_lens = next(
+        (l for l in tribunal.get("lenses", []) if l["lens"] == "strategic"), None
+    )
+    assert strategic_lens is not None, "Strategic lens must be present"
+    assert strategic_lens["score"] > 0, (
+        f"Strategic lens must have positive score when focus matches. Got: {strategic_lens}"
+    )
+    assert strategic_lens["argued_for"] == "MATCH", (
+        f"Strategic lens should argue for MATCH (auth tag matches focus). "
+        f"Got: {strategic_lens['argued_for']}"
+    )
+
+
+def test_strategic_high_priority_signal():
+    """An item with priority_weight >= 8 must trigger the strategic high-priority signal
+    even without current_focus set."""
+    items = [
+        {
+            "id": "HI", "title": "Critical migration", "status": "ready",
+            "priority_weight": 9, "tags": ["backend"], "category": "feature",
+            "links": [], "lane_history": [
+                {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+            ],
+            "gate_from": 0, "complexity": "medium", "reopen_count": 0,
+            "skip_count": 0, "threads": [],
+            "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+        },
+        {
+            "id": "LO", "title": "Nice-to-have cleanup", "status": "ready",
+            "priority_weight": 3, "tags": ["backend"], "category": "feature",
+            "links": [], "lane_history": [
+                {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+            ],
+            "gate_from": 0, "complexity": "medium", "reopen_count": 0,
+            "skip_count": 0, "threads": [],
+            "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+        },
+    ]
+    _seed_items(items, config=_make_strategic_config([]))
+
+    resp = requests.get(RECOMMEND_URL)
+    assert resp.status_code == 200
+    tribunal = resp.json()
+
+    strategic_lens = next(
+        (l for l in tribunal.get("lenses", []) if l["lens"] == "strategic"), None
+    )
+    assert strategic_lens is not None
+    assert strategic_lens["score"] > 0, (
+        f"Strategic lens must score > 0 for priority_weight=9. Got: {strategic_lens}"
+    )
+    assert strategic_lens["argument"] is not None, (
+        "Strategic lens must have an argument for high priority"
+    )
+    assert "priority" in strategic_lens["argument"].lower(), (
+        f"Strategic argument should reference priority. Got: {strategic_lens['argument']}"
+    )
+
+
+def test_strategic_category_alignment():
+    """A bug item should get a strategic boost when current_focus includes 'stability'."""
+    items = [
+        {
+            "id": "BUG1", "title": "Fix crash on login", "status": "ready",
+            "priority_weight": 5, "tags": ["auth"], "category": "bug",
+            "links": [], "lane_history": [
+                {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+            ],
+            "gate_from": 0, "complexity": "low", "reopen_count": 0,
+            "skip_count": 0, "threads": [],
+            "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+        },
+        {
+            "id": "FEAT1", "title": "Add dark mode", "status": "ready",
+            "priority_weight": 5, "tags": ["frontend"], "category": "feature",
+            "links": [], "lane_history": [
+                {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+            ],
+            "gate_from": 0, "complexity": "low", "reopen_count": 0,
+            "skip_count": 0, "threads": [],
+            "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+        },
+    ]
+    _seed_items(items, config=_make_strategic_config(["stability"]))
+
+    resp = requests.get(RECOMMEND_URL)
+    assert resp.status_code == 200
+    tribunal = resp.json()
+
+    strategic_lens = next(
+        (l for l in tribunal.get("lenses", []) if l["lens"] == "strategic"), None
+    )
+    assert strategic_lens is not None
+    assert strategic_lens["score"] > 0, (
+        f"Strategic lens must score > 0 for bug + stability focus. Got: {strategic_lens}"
+    )
+    assert strategic_lens["argued_for"] == "BUG1", (
+        f"Strategic lens should argue for BUG1 (bug aligns with stability focus). "
+        f"Got: {strategic_lens['argued_for']}"
+    )
+
+
+# ---------------------------------------------------------------------------
+# Strategic Lens — LLM Scenarios (via tribunal)
+# ---------------------------------------------------------------------------
+
+STRATEGIC_SCENARIOS = [
+    {
+        "name": "Strategic_Focus_Drives_Pick",
+        "input": (
+            "The team's current focus is on auth and security. Two items are ready: "
+            "'Fix auth tokens' (tags: auth, backend) and 'Dashboard CSS polish' (tags: frontend, css). "
+            "Both have the same priority weight. Which should the tribunal recommend and why?"
+        ),
+        "items": [
+            {
+                "id": "SAUTH", "title": "Fix auth tokens", "status": "ready",
+                "priority_weight": 5, "tags": ["auth", "backend"], "category": "feature",
+                "links": [], "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0, "complexity": "medium", "reopen_count": 0,
+                "skip_count": 0, "threads": [],
+                "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+            },
+            {
+                "id": "SCSS", "title": "Dashboard CSS polish", "status": "ready",
+                "priority_weight": 5, "tags": ["frontend", "css"], "category": "feature",
+                "links": [], "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0, "complexity": "medium", "reopen_count": 0,
+                "skip_count": 0, "threads": [],
+                "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+            },
+        ],
+        "config": _make_strategic_config(["auth", "security"]),
+        "expected": (
+            "The tribunal recommends 'Fix auth tokens' because it aligns with the current "
+            "strategic focus on auth and security. The strategic lens gives it a boost due to "
+            "tag match. 'Dashboard CSS polish' has no alignment with the declared focus areas."
+        ),
+        "criteria": (
+            "The response recommends 'Fix auth tokens' over 'Dashboard CSS polish'. "
+            "The reasoning must reference strategic alignment, focus area, or the auth/security "
+            "focus as the differentiator. It must NOT just say 'higher score' without explaining "
+            "the strategic lens influence."
+        ),
+    },
+    {
+        "name": "Strategic_Bug_Stability_Alignment",
+        "input": (
+            "The team is focused on stability. There's a bug 'Fix crash on login' "
+            "and a feature 'Add dark mode' — same priority, both ready. "
+            "Does the bug get a strategic advantage because of the stability focus?"
+        ),
+        "items": [
+            {
+                "id": "SBUG", "title": "Fix crash on login", "status": "ready",
+                "priority_weight": 5, "tags": ["auth"], "category": "bug",
+                "links": [], "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0, "complexity": "low", "reopen_count": 0,
+                "skip_count": 0, "threads": [],
+                "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+            },
+            {
+                "id": "SDARK", "title": "Add dark mode", "status": "ready",
+                "priority_weight": 5, "tags": ["frontend"], "category": "feature",
+                "links": [], "lane_history": [
+                    {"lane": "backlog", "at": "2026-03-20T10:00:00Z", "by": "user"},
+                    {"lane": "refined", "at": "2026-03-21T10:00:00Z", "by": "user"},
+                ],
+                "gate_from": 0, "complexity": "low", "reopen_count": 0,
+                "skip_count": 0, "threads": [],
+                "created_at": "2026-03-20T10:00:00Z", "updated_at": "2026-03-26T10:00:00Z",
+            },
+        ],
+        "config": _make_strategic_config(["stability"]),
+        "expected": (
+            "Yes, the bug gets a strategic advantage. With 'stability' as the current focus, "
+            "bugs align with stability/quality themes in the strategic lens. 'Fix crash on login' "
+            "gets a category alignment boost. 'Add dark mode' as a feature has no stability alignment."
+        ),
+        "criteria": (
+            "The response confirms the bug gets a strategic advantage due to the stability focus. "
+            "It must reference category alignment, stability focus, or the strategic lens as the reason. "
+            "It must NOT treat both items equally — the bug should be clearly favored."
+        ),
+    },
+]
+
+
+@pytest.mark.timeout(300)
+@pytest.mark.parametrize(
+    "scenario", STRATEGIC_SCENARIOS, ids=[s["name"] for s in STRATEGIC_SCENARIOS]
+)
+def test_strategic_tribunal(scenario):
+    """Phase 5: LLM interprets strategic lens influence on tribunal recommendations."""
+    resp = requests.get(BACKLOG_URL)
+    resp.raise_for_status()
+    version = resp.json().get("version", 0)
+
+    requests.put(
+        BACKLOG_URL,
+        json={"version": version, "items": scenario["items"], "config": scenario["config"]},
+    ).raise_for_status()
+
+    actual = run_flow_tribunal(scenario["input"])
+
+    test_case = LLMTestCase(
+        input=scenario["input"],
+        actual_output=actual,
+        expected_output=scenario["expected"],
+    )
+
+    correctness = GEval(
+        name="Strategic Lens Quality",
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
