@@ -155,13 +155,21 @@ Add eval scenarios:
 
 **Acceptance**: All tiebreaker scenarios pass on OpenAI. Tribunal output includes `tie_broken` and `tiebreaker_reason` fields.
 
-### Task 7: Scale Eval Scenarios
+### Task 7: Scale Eval Scenarios + Context Relevancy Metric
 Add eval scenarios that test with large backlogs:
 - Seed 100+ items, ask a recommendation question — verify response is correct AND context was trimmed
 - Seed items with deep dependency chains — verify critical path query includes the full chain but not unrelated items
 - Seed many in-progress items with overlapping tags — verify conflict detection scales
 
-**Acceptance**: New scenarios pass on OpenAI. Token usage is documented per scenario.
+Add a custom DeepEval metric `ContextRelevancyMetric` that validates the slicer didn't cut essential information:
+- The metric receives: `input` (query), `actual_output` (LLM response), `context` (the sliced data sent to the LLM), `expected_output` (ideal answer)
+- It checks: could the expected output be derived from the sliced context alone? If the expected answer references an item, agent, conflict, or score that isn't in the context — the slicer cut too aggressively
+- Score: proportion of expected facts present in the sliced context (1.0 = all facts available, 0.0 = slicer removed everything the LLM needed)
+- Threshold: 0.9 — allows minor omissions but catches critical cuts
+
+Apply this metric alongside existing GEval/AnswerRelevancy on all scale scenarios. This programmatically confirms the slicer preserves the information the LLM needs to answer correctly.
+
+**Acceptance**: New scenarios pass on OpenAI. Context Relevancy >= 0.9 on all scenarios. Token usage is documented per scenario.
 
 ### Task 8: Token Budget & Guardrails
 Add a configurable token budget to the slicer:
