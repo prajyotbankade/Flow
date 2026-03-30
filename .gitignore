@@ -1,5 +1,9 @@
+# Secrets
+.env
+
 # Python
 __pycache__/
+.venv/
 *.pyc
 *.pyo
 
@@ -22,3 +26,4 @@ test_flow_suite.py
 proof.csv
 pro_benchmark.csv
 benchmark_results.csv
+

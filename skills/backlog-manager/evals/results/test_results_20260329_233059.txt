@@ -1,0 +1,77 @@
+============================= test session starts ==============================
+platform darwin -- Python 3.12.13, pytest-9.0.2, pluggy-1.6.0 -- /Users/prajyotbankade/VibeCode/Flow/.venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/prajyotbankade/VibeCode/Flow/skills/backlog-manager/evals
+plugins: deepeval-3.9.3, repeat-0.9.4, xdist-3.8.0, timeout-2.4.0, asyncio-1.3.0, rerunfailures-16.1, anyio-4.13.0
+timeout: 300.0s
+timeout method: signal
+timeout func_only: False
+asyncio: mode=Mode.STRICT, debug=False, asyncio_default_fixture_loop_scope=None, asyncio_default_test_loop_scope=function
+collecting ... collected 29 items
+
+test_flow_live.py::test_flow_skill_live[Impact_vs_Unblock] PASSED        [  3%]
+test_flow_live.py::test_flow_skill_live[Critical_Bug_Boost] PASSED       [  6%]
+test_flow_live.py::test_flow_skill_live[Unblocker_Strategy] PASSED       [ 10%]
+test_flow_live.py::test_flow_skill_live[Readiness_Partial_Block] PASSED  [ 13%]
+test_flow_live.py::test_tribunal_justification[Tribunal_Leverage_Wins] PASSED [ 17%]
+test_flow_live.py::test_tribunal_justification[Tribunal_Counterfactual_Reasoning] PASSED [ 20%]
+test_flow_live.py::test_tribunal_justification[Tribunal_Confidence_Low] PASSED [ 24%]
+test_flow_live.py::test_graph_cascade_correctness PASSED                 [ 27%]
+test_flow_live.py::test_graph_conflict_detection PASSED                  [ 31%]
+test_flow_live.py::test_graph_no_conflict_same_agent PASSED              [ 34%]
+test_flow_live.py::test_pulse_payload_completeness PASSED                [ 37%]
+test_flow_live.py::test_pulse_agent_filter PASSED                        [ 41%]
+test_flow_live.py::test_graph_coordination[Critical_Path_Identification] PASSED [ 44%]
+test_flow_live.py::test_graph_coordination[Conflict_Detection_Response] PASSED [ 48%]
+test_flow_live.py::test_graph_coordination[Pulse_Coordination_Context] PASSED [ 51%]
+test_flow_live.py::test_policy_list_structure PASSED                     [ 55%]
+test_flow_live.py::test_policy_crud_lifecycle PASSED                     [ 58%]
+test_flow_live.py::test_policy_log_structure PASSED                      [ 62%]
+test_flow_live.py::test_policy_log_limit_param PASSED                    [ 65%]
+test_flow_live.py::test_policy_evaluate_structure PASSED                 [ 68%]
+test_flow_live.py::test_policy_evaluate_fires_for_skipped_item SKIPPED   [ 72%]
+test_flow_live.py::test_policy_rule_engine[Rule_Authoring_Natural_Language] SKIPPED [ 75%]
+test_flow_live.py::test_policy_rule_engine[Rule_No_Fire_Conditions_Not_Met] SKIPPED [ 79%]
+test_flow_live.py::test_strategic_lens_present_in_tribunal PASSED        [ 82%]
+test_flow_live.py::test_strategic_focus_match_boosts_item PASSED         [ 86%]
+test_flow_live.py::test_strategic_high_priority_signal PASSED            [ 89%]
+test_flow_live.py::test_strategic_category_alignment PASSED              [ 93%]
+test_flow_live.py::test_strategic_tribunal[Strategic_Focus_Drives_Pick] PASSED [ 96%]
+test_flow_live.py::test_strategic_tribunal[Strategic_Bug_Stability_Alignment] PASSED [100%]Running teardown with pytest sessionfinish...
+
+
+============================================================
+TOKEN USAGE SUMMARY (generation via OpenAI gpt-4o-mini)
+============================================================
+  Prompt tokens:     9,928
+  Completion tokens: 1,180
+  Total tokens:      11,108
+  API calls:         12
+------------------------------------------------------------
+  Note: DeepEval judge tokens not tracked here —
+  check your OpenAI dashboard for full usage.
+============================================================
+
+
+=============================== warnings summary ===============================
+test_flow_live.py::test_flow_skill_live[Impact_vs_Unblock]
+  /Users/prajyotbankade/VibeCode/Flow/.venv/lib/python3.12/site-packages/deepeval/utils.py:195: DeprecationWarning: There is no current event loop
+    loop = asyncio.get_event_loop()
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+Test test_flow_live.py::test_policy_evaluate_fires_for_skipped_item was skipped.
+Reason: 
+('/Users/prajyotbankade/VibeCode/Flow/skills/backlog-manager/evals/test_flow_liv
+e.py', 900, 'Skipped: ANTHROPIC_API_KEY not set — policy engine LLM tests 
+skipped')
+Test test_flow_live.py::test_policy_rule_engine[Rule_Authoring_Natural_Language]
+was skipped. Reason: 
+('/Users/prajyotbankade/VibeCode/Flow/skills/backlog-manager/evals/test_flow_liv
+e.py', 1026, 'Skipped: ANTHROPIC_API_KEY not set — policy engine LLM tests 
+skipped')
+Test test_flow_live.py::test_policy_rule_engine[Rule_No_Fire_Conditions_Not_Met]
+was skipped. Reason: 
+('/Users/prajyotbankade/VibeCode/Flow/skills/backlog-manager/evals/test_flow_liv
+e.py', 1026, 'Skipped: ANTHROPIC_API_KEY not set — policy engine LLM tests 
+skipped')
+============= 26 passed, 3 skipped, 1 warning in 117.44s (0:01:57) =============

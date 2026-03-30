@@ -3,10 +3,9 @@ import pytest
 import requests
 from deepeval import assert_test
 from deepeval.metrics import AnswerRelevancyMetric, GEval
-from deepeval.models import OllamaModel
 from deepeval.test_case import LLMTestCase, LLMTestCaseParams
 
-from eval_flow_skill import run_flow, run_flow_tribunal, run_flow_graph, run_flow_policy
+from eval_flow_skill import run_flow, run_flow_tribunal, run_flow_graph, run_flow_policy, EVAL_LLM
 
 requires_anthropic = pytest.mark.skipif(
     not os.environ.get("ANTHROPIC_API_KEY"),
@@ -15,9 +14,14 @@ requires_anthropic = pytest.mark.skipif(
 
 BACKLOG_URL = "http://localhost:8089/api/backlog"
 
-local_qwen = OllamaModel(model="qwen2.5-coder:7b")       # generation model
-eval_qwen = OllamaModel(model="qwen2.5-coder:14b")      # evaluation/judge model
-relevancy_metric = AnswerRelevancyMetric(threshold=0.6, model=eval_qwen)
+# Judge model — OpenAI for accuracy, Ollama for free local runs
+if EVAL_LLM == "openai":
+    judge_model = "gpt-4o-mini"
+else:
+    from deepeval.models import OllamaModel
+    judge_model = OllamaModel(model="qwen2.5-coder:14b")
+
+relevancy_metric = AnswerRelevancyMetric(threshold=0.6, model=judge_model)
 
 # ---------------------------------------------------------------------------
 # Scenarios
@@ -216,7 +220,7 @@ def test_flow_skill_live(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=eval_qwen,
+        model=judge_model,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])
@@ -469,7 +473,7 @@ def test_tribunal_justification(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=eval_qwen,
+        model=judge_model,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])
@@ -786,7 +790,7 @@ def test_graph_coordination(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=eval_qwen,
+        model=judge_model,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])
@@ -1054,7 +1058,7 @@ def test_policy_rule_engine(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=eval_qwen,
+        model=judge_model,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])
@@ -1377,7 +1381,7 @@ def test_strategic_tribunal(scenario):
         criteria=scenario["criteria"],
         evaluation_params=[LLMTestCaseParams.INPUT, LLMTestCaseParams.ACTUAL_OUTPUT],
         threshold=0.6,
-        model=eval_qwen,
+        model=judge_model,
     )
 
     assert_test(test_case, [relevancy_metric, correctness])

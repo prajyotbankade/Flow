@@ -1,4 +1,5 @@
 import json
+import os
 import requests
 
 BASE_URL      = "http://localhost:8089"
@@ -6,13 +7,75 @@ SCORES_URL    = f"{BASE_URL}/api/scores"
 RECOMMEND_URL = f"{BASE_URL}/api/recommend"
 GRAPH_URL     = f"{BASE_URL}/api/graph"
 PULSE_URL     = f"{BASE_URL}/api/pulse"
+
+# ---------------------------------------------------------------------------
+# LLM backend toggle: set EVAL_LLM=openai to use OpenAI, defaults to ollama
+# ---------------------------------------------------------------------------
+EVAL_LLM = os.environ.get("EVAL_LLM", "ollama").lower()
+
 OLLAMA_URL    = "http://localhost:11434/api/generate"
 OLLAMA_MODEL  = "qwen2.5-coder:7b"
+
+_openai_client = None
+OPENAI_MODEL   = "gpt-4o-mini"
+
+if EVAL_LLM == "openai":
+    from openai import OpenAI
+    from dotenv import load_dotenv
+    load_dotenv()
+    _openai_client = OpenAI()
+
+# ---------------------------------------------------------------------------
+# Token tracker — captures prompt + completion tokens from every LLM call
+# ---------------------------------------------------------------------------
+_token_usage = {
+    "generation": {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0},
+}
+
+
+def _track_tokens(data, category="generation"):
+    """Track tokens from either Ollama or OpenAI response."""
+    _token_usage.setdefault(category, {"prompt_tokens": 0, "completion_tokens": 0, "calls": 0})
+    if EVAL_LLM == "openai":
+        _token_usage[category]["prompt_tokens"] += data.prompt_tokens or 0
+        _token_usage[category]["completion_tokens"] += data.completion_tokens or 0
+    else:
+        _token_usage[category]["prompt_tokens"] += data.get("prompt_eval_count", 0)
+        _token_usage[category]["completion_tokens"] += data.get("eval_count", 0)
+    _token_usage[category]["calls"] += 1
+
+
+def _call_llm(prompt: str) -> str:
+    """Call the configured LLM backend and track tokens."""
+    if EVAL_LLM == "openai":
+        resp = _openai_client.chat.completions.create(
+            model=OPENAI_MODEL,
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=1024,
+        )
+        if resp.usage:
+            _track_tokens(resp.usage, "generation")
+        return resp.choices[0].message.content.strip()
+    else:
+        resp = requests.post(
+            OLLAMA_URL,
+            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
+            timeout=120,
+        )
+        resp.raise_for_status()
+        resp_json = resp.json()
+        _track_tokens(resp_json, "generation")
+        return resp_json.get("response", "").strip()
+
+
+def get_token_usage():
+    """Return accumulated token usage across all categories."""
+    return _token_usage
 
 
 def run_flow(query: str) -> str:
     """
-    Ask the local Ollama LLM to recommend the top work item.
+    Ask the LLM to recommend the top work item.
     The LLM receives the full score_breakdown for every item so it can
     cite exact numeric factors — not guess or template-fill.
     """
@@ -60,9 +123,13 @@ SCORED BACKLOG (rank 1 = highest priority):
 QUESTION:
 {query}
 
-Instructions — follow this EXACT response structure:
+IMPORTANT: Answer the QUESTION directly. Focus your response on what was specifically asked.
+If the question is about readiness or blocked_penalty, lead with that analysis.
+If the question is about ranking or recommendation, lead with the pick.
 
-PICK: [copy rank 1 item's title and id]
+Include these sections as relevant to the question:
+
+PICK: [rank 1 item's title and id]
 WHY: [copy rank 1 item's WHY_TEXT field exactly as written]
 RUNNER-UP: [name the rank 2 item and explain why it lost — cite its blocked_penalty or missing boost]
 READINESS: [for EVERY item that has a readiness.blockers array, state: blocker's readiness %, the blocked_penalty value, and whether the item is startable (readiness ≥ 0.70 = startable with risk). If no items have blockers, say "No blocked items."]
@@ -71,16 +138,10 @@ Rules:
 - PICK is always the rank 1 item. Do NOT pick any other item.
 - WHY must be copied from the rank 1 item's WHY_TEXT field — do not change it.
 - RUNNER-UP: if it has a non-zero blocked_penalty, state the exact value and blocker's readiness %.
-- READINESS is MANDATORY.
-- Keep each line to one sentence. No extra commentary."""
+- When a blocker has readiness ≥ 0.70 (70%), the blocked item IS startable with risk — do NOT say it is blocked or not startable.
+- Keep each section to 1-2 sentences. No extra commentary."""
 
-        ollama_resp = requests.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=60,
-        )
-        ollama_resp.raise_for_status()
-        return ollama_resp.json().get("response", "").strip()
+        return _call_llm(prompt)
 
     except Exception as e:
         return f"Flow Error: {str(e)}"
@@ -88,7 +149,7 @@ Rules:
 
 def run_flow_tribunal(query: str, agent: str = None) -> str:
     """
-    Ask the local Ollama LLM to answer using the tribunal recommendation.
+    Ask the LLM to answer using the tribunal recommendation.
     The LLM receives the full tribunal output — picked item with reasoning,
     supporting lenses, confidence, and shadow ranking with counterfactuals.
     """
@@ -120,20 +181,17 @@ TRIBUNAL RECOMMENDATION:
 QUESTION:
 {query}
 
+IMPORTANT: Answer the QUESTION directly. Focus your response on what was specifically asked.
+
 Instructions:
 - Respond in 3-5 sentences.
-- Lead with the recommended item and the tribunal's reasoning.
+- If the question asks about a SPECIFIC item (e.g. "why wasn't X picked?"), focus entirely on that item — find it in the shadow_ranking and cite its lost_reason, lost_on_lens, and counterfactual reasoning. Do NOT lead with the winner unless the question asks about it.
+- If the question is general, lead with the recommended item and the tribunal's reasoning.
 - Cite specific lens arguments (urgency, leverage, etc.) and their weights.
-- If asked about a specific alternative, cite its shadow ranking entry and lost_reason.
-- Mention the confidence level and what drove it."""
+- Mention the confidence level and what drove it.
+- IMPORTANT: If confidence is "low" or the margin between the top items is small, say so explicitly. Do NOT declare a clear winner — instead state that both items are close and the user should consider context or preference to decide."""
 
-        ollama_resp = requests.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=120,
-        )
-        ollama_resp.raise_for_status()
-        return ollama_resp.json().get("response", "").strip()
+        return _call_llm(prompt)
 
     except Exception as e:
         return f"Flow Error: {str(e)}"
@@ -141,7 +199,7 @@ Instructions:
 
 def run_flow_graph(query: str, agent: str = None) -> str:
     """
-    Ask the local Ollama LLM to answer using the dependency graph and pulse data.
+    Ask the LLM to answer using the dependency graph and pulse data.
     The LLM receives the graph (nodes, edges, critical_path, conflicts, rebalancing)
     and the pulse (active agents, startable items) for a full coordination picture.
     """
@@ -174,58 +232,101 @@ def run_flow_graph(query: str, agent: str = None) -> str:
             "conflicts": graph.get("conflicts", []),
             "rebalancing": graph.get("rebalancing", []),
         }
-        # Derive active agents from pulse OR from graph nodes with assigned_to
-        active_agents = pulse.get("active_agents", [])
-        if not active_agents:
-            seen = {}
-            for n in graph.get("nodes", []):
-                agent = n.get("assigned_to")
-                if agent and n.get("status") == "in-progress" and agent not in seen:
-                    seen[agent] = {
-                        "agent": agent,
-                        "current_item": n.get("title"),
-                        "tags": n.get("tags", []),
-                    }
-            active_agents = list(seen.values())
+        # Derive active agents from graph nodes (most reliable — uses actual item assignments)
+        seen = {}
+        for n in graph.get("nodes", []):
+            agent_name = n.get("assigned_to")
+            if agent_name and n.get("status") == "in-progress" and agent_name not in seen:
+                seen[agent_name] = {
+                    "agent": agent_name,
+                    "current_item": n.get("title"),
+                    "tags": n.get("tags", []),
+                }
+        active_agents = list(seen.values())
 
-        slim_pulse = {
-            "active_agents": active_agents,
-            "startable_items": [
-                {"id": s.get("id"), "title": s.get("title"), "score": s.get("score")}
-                for s in pulse.get("startable_items", [])
-            ],
-            "conflicts": pulse.get("conflicts", []),
-        }
-        context_block = json.dumps({"graph": slim_graph, "pulse": slim_pulse}, indent=2)
+        startable_items = [
+            {"id": s.get("id"), "title": s.get("title"), "score": s.get("score")}
+            for s in pulse.get("startable_items", [])
+        ]
+        conflicts = slim_graph.get("conflicts", []) or pulse.get("conflicts", [])
+        critical_nodes = [n for n in slim_graph["nodes"] if n.get("is_critical_path")]
+
+        # Pre-format sections as plain text so the model doesn't need to parse JSON
+        if active_agents:
+            agents_text = "\n".join(
+                f"  - {a.get('agent', 'unknown')} is working on \"{a.get('current_item', '?')}\" (tags: {', '.join(a.get('tags', []))})"
+                for a in active_agents
+            )
+        else:
+            agents_text = "  No agents are currently active."
+
+        if conflicts:
+            conflicts_text = "\n".join(
+                f"  - CONFLICT: {c.get('description', 'unknown conflict')}"
+                for c in conflicts
+            )
+        else:
+            conflicts_text = "  No conflicts detected."
+
+        if startable_items:
+            startable_text = "\n".join(
+                f"  - \"{s.get('title', '?')}\" (id: {s.get('id', '?')}, score: {s.get('score', '?')})"
+                for s in startable_items
+            )
+        else:
+            # Fallback: list non-done graph nodes as candidates
+            candidates = [n for n in slim_graph["nodes"] if n.get("status") not in ("done", "discarded", "in-progress")]
+            if candidates:
+                startable_text = "\n".join(
+                    f"  - \"{n.get('title', '?')}\" (id: {n.get('id', '?')}, status: {n.get('status', '?')}, score: {n.get('score', '?')})"
+                    for n in candidates
+                )
+            else:
+                startable_text = "  No startable items available."
+
+        if critical_nodes:
+            critical_text = "\n".join(
+                f"  - \"{n.get('title', '?')}\" — cascade_count: {n.get('cascade_count', 0)}"
+                for n in critical_nodes
+            )
+        else:
+            critical_text = "  No items on the critical path."
 
         prompt = f"""You are the Flow Work Intelligence Engine.
 
-DATA (graph = dependency graph, pulse = coordination state):
-{context_block}
+ACTIVE AGENTS:
+{agents_text}
+
+CONFLICTS:
+{conflicts_text}
+
+STARTABLE ITEMS:
+{startable_text}
+
+CRITICAL PATH:
+{critical_text}
 
 QUESTION:
 {query}
 
-Instructions — you MUST use ALL of these sections in your response:
+IMPORTANT: Answer the QUESTION directly. Focus your response on what was specifically asked.
+If the question is about conflicts, lead with and focus on the CONFLICTS data.
+If the question is about what to work on, lead with RECOMMENDATION.
+If the question covers multiple topics, address each one.
 
-RECOMMENDATION: [task title to work on next — pick from startable_items or the highest-score node]
-AGENTS: [list each agent from active_agents with their current task and tags; if empty, say "No other agents are currently active — you can start this task without coordination concerns"]
-CONFLICTS: [if the graph.conflicts array has 1 or more entries, there IS a conflict — for each entry copy its "description" field verbatim; if the array is empty, say "No coordination conflicts detected between any agents or items"]
-CRITICAL PATH: [if any node has is_critical_path=true, name it and state its cascade_count; if none, say "No items are on the critical path — no downstream delays to worry about"]
+Available sections (include only those relevant to the question):
+
+RECOMMENDATION: Pick a task from STARTABLE ITEMS, or the highest-score node if none are startable.
+AGENTS: State each active agent and their current task. If none, say "No other agents are currently active."
+CONFLICTS: If a CONFLICT line exists above, there IS a conflict — state it clearly, name both items, both agents, and the shared tags. If none, say "No coordination conflicts detected."
+CRITICAL PATH: If any item is listed above, name it and its cascade_count. If none, say "No items are on the critical path."
 
 Rules:
-- Every section above is MANDATORY — do not skip any.
+- ONLY include sections that directly answer the question. Omit all others.
 - Keep each section to 1-2 sentences.
-- Cite numeric values from the data (cascade_count, load %, conflict tags).
-- Do NOT output anything outside these four sections."""
+- Cite numeric values (cascade_count, tags, scores)."""
 
-        ollama_resp = requests.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=120,
-        )
-        ollama_resp.raise_for_status()
-        return ollama_resp.json().get("response", "").strip()
+        return _call_llm(prompt)
 
     except Exception as e:
         return f"Flow Error: {str(e)}"
@@ -233,7 +334,7 @@ Rules:
 
 def run_flow_policy(query: str, policy_description: str = None) -> str:
     """
-    Ask Ollama to reason about policy evaluation results.
+    Ask the LLM to reason about policy evaluation results.
     Optionally seeds a temporary policy before evaluating, then interprets the result.
     """
     try:
@@ -308,13 +409,7 @@ Instructions:
 - Note any actions that were executed or notifications raised.
 - If no policies fired, explain what conditions were not met."""
 
-        ollama_resp = requests.post(
-            OLLAMA_URL,
-            json={"model": OLLAMA_MODEL, "prompt": prompt, "stream": False},
-            timeout=60,
-        )
-        ollama_resp.raise_for_status()
-        return ollama_resp.json().get("response", "").strip()
+        return _call_llm(prompt)
 
     except Exception as e:
         return f"Flow Error: {str(e)}"
