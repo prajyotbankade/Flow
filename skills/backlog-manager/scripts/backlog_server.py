@@ -665,7 +665,12 @@ def compute_pulse(data, agent_name=None, backlog_path=None):
     agents_cfg = config.get("agents", {})
     done_or_discarded = {"done", "discarded"}
 
-    recommendation = evaluate_tribunal(data, agent=agent_name)
+    # Build ONCE here — pass to everything below
+    blocks_map, blocked_by = resolve_blocks(items)
+    items_by_id = {i.get("id"): i for i in items}
+    
+    recommendation = evaluate_tribunal(data, agent=agent_name,
+                                       blocks_map=blocks_map, blocked_by=blocked_by)
     conflicts = detect_conflicts(items)
     rebalancing = compute_workload_rebalancing(items, agents_cfg)
 
@@ -684,7 +689,7 @@ def compute_pulse(data, agent_name=None, backlog_path=None):
             "max_active": max_active,
             "load_pct": round(len(in_prog) / max(max_active, 1) * 100),
         })
-
+    
     startable = []
     for item in items:
         if item.get("status") in done_or_discarded or item.get("status") == "in-progress":
@@ -694,7 +699,7 @@ def compute_pulse(data, agent_name=None, backlog_path=None):
             continue
         if agent_name:
             profile = agents_cfg.get(agent_name, {})
-            if compute_agent_affinity(item, agent_name, profile, items) < 0:
+            if compute_agent_affinity(item, agent_name, profile, items_by_id, {}) < 0:
                 continue
         startable.append({
             "id": item.get("id"),
@@ -776,7 +781,7 @@ def evaluate_lens_leverage(item, breakdown, blocks_map):
     }
 
 
-def evaluate_lens_agent_fit(item, agent_name, agents_cfg, all_items):
+def evaluate_lens_agent_fit(item, agent_name, agents_cfg, items_by_id):
     """Agent fit: how well matched to the best available agent."""
     score = 0.0
     reasons = []
@@ -784,7 +789,7 @@ def evaluate_lens_agent_fit(item, agent_name, agents_cfg, all_items):
 
     if agent_name:
         profile = agents_cfg.get(agent_name, {})
-        affinity = compute_agent_affinity(item, agent_name, profile, all_items)
+        affinity = compute_agent_affinity(item, agent_name, profile, items_by_id, {})
         if affinity > 0:
             score += affinity * 1.5
             item_tags = set(item.get("tags", []))
@@ -803,7 +808,7 @@ def evaluate_lens_agent_fit(item, agent_name, agents_cfg, all_items):
     else:
         best_affinity = -float("inf")
         for aname, aprofile in agents_cfg.items():
-            aff = compute_agent_affinity(item, aname, aprofile, all_items)
+            aff = compute_agent_affinity(item, aname, aprofile, items_by_id, {})
             if aff > best_affinity:
                 best_affinity = aff
                 best_agent = aname
@@ -943,7 +948,7 @@ def evaluate_lens_strategic(item, strategic_cfg):
     }
 
 
-def evaluate_tribunal(data, agent=None):
+def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None):
     """Run the tribunal: every lens evaluates every candidate, then aggregate.
 
     Returns structured verdict with justification and counterfactuals.
@@ -954,7 +959,11 @@ def evaluate_tribunal(data, agent=None):
     agents_cfg = config.get("agents", {})
     items = data.get("items", [])
 
-    score_results = compute_scores(data)
+    # Only resolve if caller didn't pre-build
+    if blocks_map is None or blocked_by is None:
+        blocks_map, blocked_by = resolve_blocks(items)
+
+    score_results = compute_scores(data, blocks_map=blocks_map, blocked_by=blocked_by)
     breakdowns_by_id = {r["id"]: r["score_breakdown"] for r in score_results}
     scores_by_id = {r["id"]: r["score"] for r in score_results}
     readiness_by_id = {r["id"]: r.get("readiness", {}) for r in score_results}
@@ -963,7 +972,7 @@ def evaluate_tribunal(data, agent=None):
     if not candidates:
         return {"picked": None, "shadow_ranking": [], "lenses": [], "candidates_evaluated": 0}
 
-    blocks_map, blocked_by = resolve_blocks(items)
+    
     items_by_id = {i.get("id"): i for i in items}
 
     # Evaluate every lens for every candidate
@@ -974,7 +983,7 @@ def evaluate_tribunal(data, agent=None):
         evaluations[iid] = {
             "urgency": evaluate_lens_urgency(item, breakdown, scoring_cfg),
             "leverage": evaluate_lens_leverage(item, breakdown, blocks_map),
-            "agent_fit": evaluate_lens_agent_fit(item, agent, agents_cfg, items),
+            "agent_fit": evaluate_lens_agent_fit(item, agent, agents_cfg, items_by_id),
             "risk": evaluate_lens_risk(item, breakdown, blocks_map, items_by_id),
             "momentum": evaluate_lens_momentum(item, breakdown),
             "strategic": evaluate_lens_strategic(item, strategic_cfg),
@@ -1200,7 +1209,7 @@ def compute_freshness(updated_at_str, scoring_cfg):
     return 0.0
 
 
-def compute_agent_affinity(item, agent_name, agent_profile, all_items):
+def compute_agent_affinity(item, agent_name, agent_profile, items_by_id, in_progress_per_agent):
     """Compute affinity score for assigning item to agent.
 
     Returns a numeric affinity: higher is better. Negative means overloaded.
@@ -1219,7 +1228,7 @@ def compute_agent_affinity(item, agent_name, agent_profile, all_items):
 
     # Linked item history: +3 if agent previously worked on a linked item
     linked_ids = {link.get("item_id") for link in item.get("links", [])}
-    items_by_id = {i.get("id"): i for i in all_items}
+    #items_by_id = {i.get("id"): i for i in all_items}
     for lid in linked_ids:
         linked = items_by_id.get(lid)
         if not linked:
@@ -1235,17 +1244,15 @@ def compute_agent_affinity(item, agent_name, agent_profile, all_items):
 
     # Overload penalty: -5 if at or above max_active
     max_active = agent_profile.get("max_active", DEFAULT_THRESHOLDS["max_active_per_agent"])
-    in_progress_count = sum(
-        1 for i in all_items
-        if i.get("assigned_to") == agent_name and i.get("status") == "in-progress"
-    )
+    in_progress_count = in_progress_per_agent.get(agent_name, 0)
+
     if in_progress_count >= max_active:
         affinity -= 5
 
     return affinity
 
 
-def compute_scores(data):
+def compute_scores(data, blocks_map=None, blocked_by=None):
     """Compute scores for all items using the Work Intelligence Engine formula.
 
     Returns list of {id, title, status, score, score_breakdown, readiness,
@@ -1261,11 +1268,27 @@ def compute_scores(data):
     if total == 0:
         return []
 
-    blocks_map, blocked_by = resolve_blocks(items)
+    if blocks_map is None or blocked_by is None:
+        blocks_map, blocked_by = resolve_blocks(items)
     done_or_discarded = {"done", "discarded"}
     items_by_id = {i.get("id"): i for i in items}
+    in_progress_per_agent = {
+        aname: sum(
+            1 for i in items
+            if i.get("assigned_to") == aname and i.get("status") == "in-progress"
+        )
+        for aname in agents_cfg
+    }
     startable_threshold = readiness_cfg.get("startable_threshold", 0.70)
     ready_threshold = readiness_cfg.get("ready_threshold", 0.90)
+
+    in_progress_per_agent = {
+        aname: sum(
+            1 for i in items
+            if i.get("assigned_to") == aname and i.get("status") == "in-progress"
+        )
+        for aname in agents_cfg
+    }
 
     results = []
     for idx, item in enumerate(items):
@@ -1298,16 +1321,17 @@ def compute_scores(data):
             if items_by_id.get(b, {}).get("status") not in done_or_discarded
         ]
         if active_blockers:
-            blocker_readiness_scores = [
-                compute_item_readiness(items_by_id[b], done_or_discarded)["score"]
+            blocker_readiness_map = {
+                b: compute_item_readiness(items_by_id[b], done_or_discarded)["score"]
                 for b in active_blockers if b in items_by_id
-            ]
-            min_readiness = min(blocker_readiness_scores) if blocker_readiness_scores else 0.0
+            }
+            min_readiness = min(blocker_readiness_map.values()) if blocker_readiness_map else 0.0
             # Penalty scales from full (blocker at 0%) to zero (blocker fully ready)
             breakdown["blocked_penalty"] = round(
                 scoring["blocked_penalty"] * (1.0 - min_readiness), 2
             )
         else:
+            blocker_readiness_map = {} 
             min_readiness = 1.0
             breakdown["blocked_penalty"] = 0.0
 
@@ -1346,9 +1370,7 @@ def compute_scores(data):
             blocker_details = [
                 {
                     "blocker_id": b,
-                    "readiness": compute_item_readiness(
-                        items_by_id[b], done_or_discarded
-                    )["score"] if b in items_by_id else 0.0,
+                    "readiness": blocker_readiness_map.get(b, 0.0),
                 }
                 for b in active_blockers
             ]
@@ -1357,7 +1379,7 @@ def compute_scores(data):
         best_agent = None
         best_affinity = -float("inf")
         for aname, aprofile in agents_cfg.items():
-            aff = compute_agent_affinity(item, aname, aprofile, items)
+            aff = compute_agent_affinity(item, aname, aprofile, items_by_id, in_progress_per_agent)
             if aff > best_affinity:
                 best_affinity = aff
                 best_agent = aname
