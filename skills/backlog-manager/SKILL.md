@@ -338,13 +338,39 @@ The item must pass through `in-progress` again before `code-review` becomes reac
 
 ### Natural Language Rule Engine
 
-Policies are plain English rules evaluated by LLM reasoning on every write. Requires `ANTHROPIC_API_KEY`.
+Policies are plain English rules. When a policy has a `conditions` + `action` block, the server evaluates it with pure Python — **no API key required**. Policies without `conditions` fall back to LLM evaluation (requires `ANTHROPIC_API_KEY`).
+
+**When creating a policy, always compile the natural language description into structured `conditions` + `action` fields.** This makes the policy free to evaluate for everyone.
+
+**Structured condition format:**
+```json
+{
+  "conditions": {
+    "match": "all",
+    "rules": [
+      { "field": "category",        "op": "eq",   "value": "bug" },
+      { "field": "priority_weight", "op": "gte",  "value": 9 },
+      { "field": "assigned_to",     "op": "null"              },
+      { "field": "hours_since_created", "op": "gte", "value": 4 }
+    ]
+  },
+  "action": { "type": "escalate", "reason": "Critical unassigned bug" }
+}
+```
+
+**`match`:** `"all"` (AND) or `"any"` (OR)
+
+**Supported fields:** any item field (`status`, `category`, `complexity`, `priority_weight`, `assigned_to`, `skip_count`, `reopen_count`, `blocks_count`, `blocked_by_count`, `score`, `readiness`, `readiness_level`, `tags`) plus computed: `hours_since_created`, `hours_in_status`
+
+**Supported ops:** `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `null`, `not_null`, `contains`
+
+**`action` type values:** `reprioritize` (include `priority_weight`), `reassign` (include `agent`), `escalate`, `block`, `notify` (include `message` and `severity`: `info|warning|critical`), `skip_force`. Always include `reason`.
 
 **Policy commands:**
 
 | Prompt | Action |
 |---|---|
-| "Add rule: [description]" | `POST /api/policies` with name + description |
+| "Add rule: [description]" | `POST /api/policies` with name, description, conditions, action |
 | "List rules" / "Show policies" | `GET /api/policies` |
 | "Disable rule [name]" | `PUT /api/policies/<id>` `{"active": false}` |
 | "Delete rule [name]" | `DELETE /api/policies/<id>` |
@@ -363,7 +389,7 @@ Policies are plain English rules evaluated by LLM reasoning on every write. Requ
 | `notify` | Surface a warning (no state change) |
 | `skip_force` | Increment `skip_count` — deprioritize temporarily |
 
-**Evaluation pipeline:** Policies evaluate in priority order (10 = highest) on every write. Conflicting actions on the same item are adjudicated by a second LLM call; the winning action and reasoning are logged to `policy_log.json`. Actions apply in a background thread — the main response is never delayed.
+**Evaluation pipeline:** Policies evaluate in priority order (10 = highest) on every write. Policies with `conditions` use the pure-Python structured evaluator (no API key needed). Policies without `conditions` use LLM reasoning (`ANTHROPIC_API_KEY` required). Conflicting actions on the same item are adjudicated by a second LLM call; the winning action and reasoning are logged to `policy_log.json`. Actions apply in a background thread — the main response is never delayed.
 
 **Policy effectiveness:** Each policy tracks `fire_count` and `last_fired`. Staleness warnings surface in pulse (`policies.stale_warnings`) and in the web board settings when policies haven't fired in 21+ days or never fired after 14+ days.
 
@@ -388,7 +414,7 @@ PUT  /api/backlog                            Full write (version-checked)
 PUT  /api/items/<id>                         Single item update
 POST /api/items/<id>/signal                  Append a readiness signal to an item
 GET  /api/policies                           List all policies with staleness analysis
-POST /api/policies                           Create a policy {"name","description","priority","active"}
+POST /api/policies                           Create a policy {"name","description","priority","active","conditions"?,"action"?}
 PUT  /api/policies/<id>                      Update a policy (name, description, priority, active)
 DELETE /api/policies/<id>                    Delete a policy
 GET  /api/policies/log[?limit=N]             Recent policy fire history (default 50)

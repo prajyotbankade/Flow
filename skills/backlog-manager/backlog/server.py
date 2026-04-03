@@ -1131,6 +1131,92 @@ def build_policy_context(data):
     return {"items": items_ctx, "agents": agents_ctx, "current_time": datetime.now(timezone.utc).isoformat()}
 
 
+def _eval_rule(item, rule, now_dt):
+    """Evaluate a single structured rule against an item. Returns bool."""
+    field = rule.get("field", "")
+    op = rule.get("op", "")
+    value = rule.get("value")
+
+    if field == "hours_since_created":
+        raw = item.get("created_at", "")
+        if not raw:
+            return False
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            field_val = (now_dt - dt).total_seconds() / 3600
+        except (ValueError, TypeError):
+            return False
+    elif field == "hours_in_status":
+        raw = item.get("updated_at", "") or item.get("created_at", "")
+        if not raw:
+            return False
+        try:
+            dt = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+            field_val = (now_dt - dt).total_seconds() / 3600
+        except (ValueError, TypeError):
+            return False
+    else:
+        field_val = item.get(field)
+
+    if op == "null":
+        return field_val is None or field_val == "" or field_val == []
+    if op == "not_null":
+        return field_val is not None and field_val != "" and field_val != []
+    if field_val is None:
+        return False
+    if op == "eq":
+        return field_val == value
+    if op == "neq":
+        return field_val != value
+    if op == "contains":
+        if isinstance(field_val, list):
+            return value in field_val
+        return str(value) in str(field_val)
+    try:
+        fv, v = float(field_val), float(value)
+    except (TypeError, ValueError):
+        return False
+    if op == "gt":  return fv > v
+    if op == "gte": return fv >= v
+    if op == "lt":  return fv < v
+    if op == "lte": return fv <= v
+    return False
+
+
+def evaluate_policy_structured(policy, context):
+    """Evaluate a policy using its structured conditions block — no LLM needed."""
+    conditions = policy.get("conditions", {})
+    action_tmpl = policy.get("action", {})
+    rules = conditions.get("rules", [])
+    match_mode = conditions.get("match", "all")
+
+    if not rules or not action_tmpl:
+        return {"fires": False, "reasoning": "Missing conditions or action in policy", "actions": []}
+
+    now_dt = datetime.now(timezone.utc)
+    matching = []
+    for item in context.get("items", []):
+        results = [_eval_rule(item, rule, now_dt) for rule in rules]
+        matched = any(results) if match_mode == "any" else all(results)
+        if matched:
+            matching.append(item)
+
+    if not matching:
+        return {"fires": False, "reasoning": "No items matched the conditions", "actions": []}
+
+    actions = []
+    for item in matching:
+        action = dict(action_tmpl)
+        if action.get("type") != "notify":
+            action["item_id"] = item["id"]
+        actions.append(action)
+
+    preview = ", ".join(i["title"] for i in matching[:3])
+    if len(matching) > 3:
+        preview += f" (+{len(matching) - 3} more)"
+    return {"fires": True, "reasoning": f"{len(matching)} item(s) matched: {preview}", "actions": actions}
+
+
 def _call_llm(model, messages, max_tokens=512):
     try:
         import anthropic
@@ -1303,7 +1389,10 @@ def run_policy_engine(data, backlog_path, trigger_event=None):
     log_entries = []
     now = datetime.now(timezone.utc).isoformat()
     for policy in sorted(active, key=lambda p: p.get("priority", 5), reverse=True):
-        result = evaluate_policy_with_llm(policy, context)
+        if policy.get("conditions"):
+            result = evaluate_policy_structured(policy, context)
+        else:
+            result = evaluate_policy_with_llm(policy, context)
         entry = {
             "id": generate_policy_id(), "policy_id": policy["id"], "policy_name": policy["name"],
             "timestamp": now, "trigger_event": trigger_event,
@@ -1546,6 +1635,9 @@ class BacklogHandler(BaseHTTPRequestHandler):
             self._serve_policy_evaluate()
         elif parsed.path == "/api/policies/suggestions":
             self._serve_policy_suggestions()
+        elif parsed.path in ("/favicon.ico", "/apple-touch-icon.png", "/robots.txt"):
+            self.send_response(204)
+            self.end_headers()
         else:
             self.send_error(404)
 
@@ -1700,6 +1792,10 @@ class BacklogHandler(BaseHTTPRequestHandler):
             "priority": int(incoming.get("priority", 5)), "active": bool(incoming.get("active", True)),
             "created_at": now, "fire_count": 0, "last_fired": None,
         }
+        if "conditions" in incoming and isinstance(incoming["conditions"], dict):
+            policy["conditions"] = incoming["conditions"]
+        if "action" in incoming and isinstance(incoming["action"], dict):
+            policy["action"] = incoming["action"]
         policies_file = get_policies_path(self.backlog_file)
         policies_data = read_policies(policies_file)
         policies_data["policies"].append(policy)

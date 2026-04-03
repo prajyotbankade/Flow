@@ -917,13 +917,35 @@
     .rebalance-item:last-child { margin-bottom: 0; }
     .graph-content {
       flex: 1; min-width: 0; background: #fff; border-radius: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: auto; padding: 20px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06); overflow: hidden;
+      display: flex; flex-direction: column;
     }
+    .graph-header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px 8px; flex-shrink: 0; border-bottom: 1px solid #f3f4f6;
+    }
+    .graph-viewport {
+      flex: 1; min-height: 300px; overflow: hidden; cursor: grab; position: relative;
+    }
+    .graph-viewport.dragging { cursor: grabbing; }
+    .graph-canvas {
+      transform-origin: 0 0; will-change: transform; user-select: none;
+      padding: 20px; display: inline-block;
+    }
+    .graph-zoom-controls { display: flex; gap: 4px; flex-shrink: 0; }
+    .graph-zoom-btn {
+      width: 28px; height: 28px; border-radius: 6px; border: 1px solid #e5e7eb;
+      background: #fff; cursor: pointer; font-size: 16px; font-weight: 500;
+      color: #374151; display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.06); line-height: 1;
+    }
+    .graph-zoom-btn:hover { background: #f3f4f6; }
+    .graph-zoom-btn.fit-btn { width: auto; padding: 0 8px; font-size: 11px; }
     .graph-empty {
       color: #9ca3af; text-align: center; padding: 48px 24px; font-size: 13px;
     }
     .graph-legend {
-      display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 16px;
+      display: flex; gap: 16px; flex-wrap: wrap;
       font-size: 11px; color: #6b7280;
     }
     .legend-item { display: flex; align-items: center; gap: 5px; }
@@ -1110,82 +1132,92 @@
         <h2>Board Settings</h2>
         <button class="close-btn" onclick="closeSettings()">&times;</button>
       </div>
-      <div class="modal-body">
-        <div class="settings-section-label">Project Name</div>
-        <input type="text" class="settings-project-input" id="settings-project-name" placeholder="My Project">
+      <div class="modal-tabs">
+        <button class="modal-tab stab active" data-stab="board" onclick="switchSettingsTab('board')">Board</button>
+        <button class="modal-tab stab" data-stab="agents" onclick="switchSettingsTab('agents')">Agent Profiles</button>
+        <button class="modal-tab stab" data-stab="scoring" onclick="switchSettingsTab('scoring')">Scoring Weights</button>
+        <button class="modal-tab stab" data-stab="policies" onclick="switchSettingsTab('policies')">Policies</button>
+      </div>
 
-        <hr class="settings-divider">
-
-        <div class="settings-section-label">Workflow Lanes</div>
-        <p class="settings-help" style="margin-bottom:12px;">
-          Drag to reorder. First lane is always Backlog (entry point). Last lane is your done state.
-          Use <strong>Requires</strong> to add gate rules — items must pass through required lanes before entering.
-        </p>
-
-        <ul class="settings-lane-list" id="settings-lane-list"></ul>
-
-        <div class="add-lane-row">
-          <input type="text" id="new-lane-name" placeholder="New lane name (e.g., Code Review)..."
-                 onkeydown="if(event.key==='Enter'){addLane();event.preventDefault();}">
-          <button class="btn btn-primary btn-sm" onclick="addLane()">+ Add Lane</button>
-        </div>
-
-        <hr class="settings-divider">
-
-        <div class="settings-section-label">Agent Profiles</div>
-        <p class="settings-help" style="margin-bottom:12px;">
-          Define agent capabilities for intelligent work assignment. Skills are matched against item tags.
-        </p>
-        <div id="settings-agents-list"></div>
-        <div class="add-lane-row">
-          <input type="text" id="new-agent-name" placeholder="Agent name (e.g., worker-1)..."
-                 onkeydown="if(event.key==='Enter'){addAgentProfile();event.preventDefault();}">
-          <button class="btn btn-primary btn-sm" onclick="addAgentProfile()">+ Add Agent</button>
-        </div>
-
-        <hr class="settings-divider">
-
-        <div class="settings-section-label">Scoring Weights</div>
-        <p class="settings-help" style="margin-bottom:12px;">
-          Adjust how the intelligence engine scores and ranks work items.
-        </p>
-        <div id="settings-scoring-weights" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
-
-        <hr class="settings-divider">
-
-        <div class="settings-section-label">Natural Language Policies</div>
-        <p class="settings-help" style="margin-bottom:12px;">
-          Write rules in plain English. Flow evaluates them after every state change using LLM reasoning
-          and applies structured actions (reprioritize, reassign, escalate, notify, block, skip).
-          Requires <code>ANTHROPIC_API_KEY</code>.
-        </p>
-        <div class="policy-list" id="settings-policy-list"></div>
-        <div style="display:flex;gap:6px;margin-bottom:8px;">
-          <button class="btn btn-primary btn-sm" onclick="showPolicyAddForm()">+ Add Policy</button>
-          <button class="btn btn-ghost btn-sm" onclick="loadPolicySuggestions()">✦ Suggest Rules</button>
-          <button class="btn btn-ghost btn-sm" onclick="openPolicyLog()">History</button>
-        </div>
-        <div id="policy-add-form" style="display:none;" class="policy-add-form">
-          <div class="settings-section-label" style="margin-bottom:6px;">New Policy</div>
-          <input type="text" id="new-policy-name" class="settings-project-input" placeholder="Short name (e.g. Jump critical bugs)">
-          <textarea id="new-policy-desc" class="settings-project-input" style="height:72px;resize:vertical;"
-            placeholder="Natural language rule (e.g. If a bug is blocking more than 2 active items and was filed in the last 6 hours, jump it to the top.)"></textarea>
-          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
-            <label style="font-size:12px;color:#374151;">Priority:</label>
-            <input type="number" id="new-policy-priority" value="5" min="1" max="10"
-                   style="width:60px;" class="settings-project-input">
-            <span style="font-size:11px;color:#9ca3af;">1 = lowest, 10 = highest</span>
+      <div class="modal-tab-content active" id="stab-board">
+        <div class="modal-body">
+          <div class="settings-section-label">Project Name</div>
+          <input type="text" class="settings-project-input" id="settings-project-name" placeholder="My Project">
+          <hr class="settings-divider">
+          <div class="settings-section-label">Workflow Lanes</div>
+          <p class="settings-help" style="margin-bottom:12px;">
+            Drag to reorder. First lane is always Backlog (entry point). Last lane is your done state.
+            Use <strong>Requires</strong> to add gate rules — items must pass through required lanes before entering.
+          </p>
+          <ul class="settings-lane-list" id="settings-lane-list"></ul>
+          <div class="add-lane-row">
+            <input type="text" id="new-lane-name" placeholder="New lane name (e.g., Code Review)..."
+                   onkeydown="if(event.key==='Enter'){addLane();event.preventDefault();}">
+            <button class="btn btn-primary btn-sm" onclick="addLane()">+ Add Lane</button>
           </div>
-          <div style="display:flex;gap:6px;">
-            <button class="btn btn-primary btn-sm" onclick="createPolicy()">Add Policy</button>
-            <button class="btn btn-ghost btn-sm" onclick="hidePolicyAddForm()">Cancel</button>
-          </div>
-        </div>
-        <div class="policy-suggestions" id="policy-suggestions" style="display:none;">
-          <div class="settings-section-label" style="margin-bottom:6px;">Suggested Policies</div>
-          <div id="policy-suggestions-list"></div>
         </div>
       </div>
+
+      <div class="modal-tab-content" id="stab-agents">
+        <div class="modal-body">
+          <div class="settings-section-label">Agent Profiles</div>
+          <p class="settings-help" style="margin-bottom:12px;">
+            Define agent capabilities for intelligent work assignment. Skills are matched against item tags.
+          </p>
+          <div id="settings-agents-list"></div>
+          <div class="add-lane-row">
+            <input type="text" id="new-agent-name" placeholder="Agent name (e.g., worker-1)..."
+                   onkeydown="if(event.key==='Enter'){addAgentProfile();event.preventDefault();}">
+            <button class="btn btn-primary btn-sm" onclick="addAgentProfile()">+ Add Agent</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-tab-content" id="stab-scoring">
+        <div class="modal-body">
+          <div class="settings-section-label">Scoring Weights</div>
+          <p class="settings-help" style="margin-bottom:12px;">
+            Adjust how the intelligence engine scores and ranks work items.
+          </p>
+          <div id="settings-scoring-weights" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;"></div>
+        </div>
+      </div>
+
+      <div class="modal-tab-content" id="stab-policies">
+        <div class="modal-body">
+          <div class="settings-section-label">Natural Language Policies</div>
+          <p class="settings-help" style="margin-bottom:12px;">
+            Policies watch your backlog after every change and automatically fix priority issues, like escalating a critical bug that's been sitting unassigned, or forcing a decision on items that keep getting skipped. Add an <code>ANTHROPIC_API_KEY</code> to let AI evaluate these rules for you.
+          </p>
+          <div class="policy-list" id="settings-policy-list"></div>
+          <div style="display:flex;gap:6px;margin-bottom:8px;">
+            <button class="btn btn-primary btn-sm" onclick="showPolicyAddForm()">+ Add Policy</button>
+            <button class="btn btn-ghost btn-sm" onclick="loadPolicySuggestions()">✦ Suggest Rules</button>
+            <button class="btn btn-ghost btn-sm" onclick="openPolicyLog()">History</button>
+          </div>
+          <div id="policy-add-form" style="display:none;" class="policy-add-form">
+            <div class="settings-section-label" style="margin-bottom:6px;">New Policy</div>
+            <input type="text" id="new-policy-name" class="settings-project-input" placeholder="Short name (e.g. Jump critical bugs)">
+            <textarea id="new-policy-desc" class="settings-project-input" style="height:72px;resize:vertical;"
+              placeholder="Natural language rule (e.g. If a bug is blocking more than 2 active items and was filed in the last 6 hours, jump it to the top.)"></textarea>
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+              <label style="font-size:12px;color:#374151;">Priority:</label>
+              <input type="number" id="new-policy-priority" value="5" min="1" max="10"
+                     style="width:60px;" class="settings-project-input">
+              <span style="font-size:11px;color:#9ca3af;">1 = lowest, 10 = highest</span>
+            </div>
+            <div style="display:flex;gap:6px;">
+              <button class="btn btn-primary btn-sm" onclick="createPolicy()">Add Policy</button>
+              <button class="btn btn-ghost btn-sm" onclick="hidePolicyAddForm()">Cancel</button>
+            </div>
+          </div>
+          <div class="policy-suggestions" id="policy-suggestions" style="display:none;">
+            <div class="settings-section-label" style="margin-bottom:6px;">Suggested Policies</div>
+            <div id="policy-suggestions-list"></div>
+          </div>
+        </div>
+      </div>
+
       <div class="modal-footer">
         <div style="display:flex;gap:8px;margin-left:auto;">
           <button class="btn btn-ghost" onclick="closeSettings()">Cancel</button>
@@ -1900,6 +1932,97 @@
       document.querySelectorAll('.modal-tab-content').forEach(c => {
         c.classList.toggle('active', c.id === `tab-${tabName}`);
       });
+    }
+
+    function switchSettingsTab(tabName) {
+      document.querySelectorAll('#settings-overlay .stab').forEach(t => {
+        t.classList.toggle('active', t.dataset.stab === tabName);
+      });
+      document.querySelectorAll('#settings-overlay .modal-tab-content').forEach(c => {
+        c.classList.toggle('active', c.id === `stab-${tabName}`);
+      });
+    }
+
+    // ── Graph pan / zoom ──
+    let _graphZoom = { scale: 1, tx: 0, ty: 0, dragging: false, hasDragged: false, startX: 0, startY: 0, startTx: 0, startTy: 0 };
+    let _graphFitted = false;
+
+    function setGraphTransform() {
+      const canvas = document.getElementById('graph-canvas');
+      if (canvas) canvas.style.transform = `translate(${_graphZoom.tx}px,${_graphZoom.ty}px) scale(${_graphZoom.scale})`;
+    }
+
+    function graphZoomIn() {
+      _graphZoom.scale = Math.min(_graphZoom.scale * 1.25, 4);
+      setGraphTransform();
+    }
+
+    function graphZoomOut() {
+      _graphZoom.scale = Math.max(_graphZoom.scale / 1.25, 0.05);
+      setGraphTransform();
+    }
+
+    function graphZoomFit() {
+      const vp = document.getElementById('graph-viewport');
+      const canvas = document.getElementById('graph-canvas');
+      if (!vp || !canvas) return;
+      const vpW = vp.clientWidth, vpH = vp.clientHeight;
+      const cW = parseFloat(canvas.dataset.w) + 40;
+      const cH = parseFloat(canvas.dataset.h) + 40;
+      const scale = Math.min(vpW / cW, vpH / cH, 1);
+      _graphZoom.scale = scale;
+      _graphZoom.tx = Math.max(0, (vpW - cW * scale) / 2);
+      _graphZoom.ty = Math.max(0, (vpH - cH * scale) / 2);
+      setGraphTransform();
+    }
+
+    function initGraphInteraction() {
+      const vp = document.getElementById('graph-viewport');
+      if (!vp || vp._graphBound) return;
+      vp._graphBound = true;
+
+      vp.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const rect = vp.getBoundingClientRect();
+        const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+        const factor = e.deltaY > 0 ? 0.9 : 1.1;
+        const newScale = Math.max(0.05, Math.min(4, _graphZoom.scale * factor));
+        _graphZoom.tx = mx - (mx - _graphZoom.tx) * (newScale / _graphZoom.scale);
+        _graphZoom.ty = my - (my - _graphZoom.ty) * (newScale / _graphZoom.scale);
+        _graphZoom.scale = newScale;
+        setGraphTransform();
+      }, { passive: false });
+
+      vp.addEventListener('mousedown', (e) => {
+        if (e.button !== 0) return;
+        _graphZoom.dragging = true;
+        _graphZoom.hasDragged = false;
+        _graphZoom.startX = e.clientX; _graphZoom.startY = e.clientY;
+        _graphZoom.startTx = _graphZoom.tx; _graphZoom.startTy = _graphZoom.ty;
+        vp.classList.add('dragging');
+      });
+
+      window.addEventListener('mousemove', (e) => {
+        if (!_graphZoom.dragging) return;
+        const dx = e.clientX - _graphZoom.startX, dy = e.clientY - _graphZoom.startY;
+        if (Math.abs(dx) > 4 || Math.abs(dy) > 4) _graphZoom.hasDragged = true;
+        _graphZoom.tx = _graphZoom.startTx + dx;
+        _graphZoom.ty = _graphZoom.startTy + dy;
+        setGraphTransform();
+      });
+
+      window.addEventListener('mouseup', () => {
+        if (_graphZoom.dragging) {
+          _graphZoom.dragging = false;
+          const vp2 = document.getElementById('graph-viewport');
+          if (vp2) vp2.classList.remove('dragging');
+        }
+      });
+
+      // Suppress click-on-node after a drag
+      vp.addEventListener('click', (e) => {
+        if (_graphZoom.hasDragged) { e.stopPropagation(); _graphZoom.hasDragged = false; }
+      }, true);
     }
 
     function renderHistory(item) {
@@ -2901,9 +3024,13 @@
         const stale = (p.staleness_warnings || []).length > 0;
         const hasFires = (p.fire_count || 0) > 0;
         const lastFired = p.last_fired ? new Date(p.last_fired).toLocaleDateString() : 'Never';
+        const isStructured = !!p.conditions;
         const staleHtml = stale
           ? `<div class="policy-stale-warning">⚠ ${p.staleness_warnings.join(' · ')}</div>`
           : '';
+        const modeBadge = isStructured
+          ? `<span title="Evaluated without API key" style="font-size:10px;color:#059669;background:#d1fae5;padding:2px 6px;border-radius:4px;">structured</span>`
+          : `<span title="Needs ANTHROPIC_API_KEY to fire — stored but won't evaluate without it" style="font-size:10px;color:#9ca3af;background:#f3f4f6;padding:2px 6px;border-radius:4px;">llm</span>`;
         return `
           <div class="policy-item${isOn ? '' : ' inactive'}${stale ? ' stale' : ''}" data-policy-id="${esc(p.id)}">
             <div class="policy-item-header">
@@ -2911,6 +3038,7 @@
                 onclick="togglePolicy('${escJs(p.id)}', ${!isOn})"></button>
               <span class="policy-name">${esc(p.name)}</span>
               <span class="policy-priority">p${p.priority || 5}</span>
+              ${modeBadge}
               <span class="policy-fire-badge${hasFires ? ' has-fires' : ''}">
                 ${hasFires ? '⚡ ' + p.fire_count + ' fire' + (p.fire_count !== 1 ? 's' : '') : '0 fires'} · ${lastFired}
               </span>
@@ -3253,6 +3381,7 @@
         graphView.classList.remove('active');
         btnKanban.classList.add('active');
         btnGraph.classList.remove('active');
+        _graphFitted = false;
       }
     }
 
@@ -3397,14 +3526,14 @@
       const criticalPath = new Set((graphData && graphData.critical_path) || []);
       const conflictItems = new Set((graphData && graphData.conflicts || []).flatMap(c => c.items));
 
-      // Only show items with links (plus critical path items)
+      // Show items with blocks links, on critical path, or involved in conflicts
       const linkedIds = new Set(edges.flatMap(e => [e.source, e.target]));
-      const relevant = nodes.filter(n => linkedIds.has(n.id) || criticalPath.has(n.id));
+      const relevant = nodes.filter(n => linkedIds.has(n.id) || criticalPath.has(n.id) || conflictItems.has(n.id));
 
       if (!relevant.length) {
         content.innerHTML = `<div class="graph-empty">
           <div style="font-size:24px;margin-bottom:8px;">🔗</div>
-          <div style="font-weight:500;color:#374151;margin-bottom:4px;">No dependency links yet</div>
+          <div style="font-weight:500;color:#374151;margin-bottom:4px;">No dependency links or conflicts yet</div>
           <div>Add "blocks" links between items to see the dependency graph here.</div>
         </div>`;
         return;
@@ -3452,24 +3581,29 @@
       });
 
       const NW = 180, NH = 60, HGAP = 16, VGAP = 48, PAD = 24;
+      const MAX_PER_ROW = 6;
+
+      // Split wide layers into wrapped sub-rows so the graph doesn't become a single long line
+      const posRows = [];
+      Object.keys(byLayer).sort((a, b) => a - b).forEach(l => {
+        const layerNodes = byLayer[l];
+        for (let i = 0; i < layerNodes.length; i += MAX_PER_ROW) {
+          posRows.push(layerNodes.slice(i, i + MAX_PER_ROW));
+        }
+      });
+
+      const maxRowW = Math.max(...posRows.map(row => row.length * (NW + HGAP) - HGAP));
       const positions = {};
-      Object.entries(byLayer).forEach(([l, layerNodes]) => {
-        const totalW = layerNodes.length * (NW + HGAP) - HGAP;
-        layerNodes.forEach((n, i) => {
-          positions[n.id] = { x: i * (NW + HGAP), y: parseInt(l) * (NH + VGAP), layerW: totalW };
+      posRows.forEach((row, rowIdx) => {
+        const rowW = row.length * (NW + HGAP) - HGAP;
+        const offset = (maxRowW - rowW) / 2;
+        row.forEach((n, i) => {
+          positions[n.id] = { x: i * (NW + HGAP) + offset, y: rowIdx * (NH + VGAP) };
         });
       });
 
-      // Offset each layer to center it within max width
-      const maxLayerW = Math.max(...Object.values(byLayer).map(ln => ln.length * (NW + HGAP) - HGAP));
-      Object.entries(byLayer).forEach(([l, layerNodes]) => {
-        const layerW = layerNodes.length * (NW + HGAP) - HGAP;
-        const offset = (maxLayerW - layerW) / 2;
-        layerNodes.forEach(n => { positions[n.id].x += offset; });
-      });
-
-      const totalW = maxLayerW + PAD * 2;
-      const totalH = (layer) * (NH + VGAP) + PAD * 2;
+      const totalW = maxRowW + PAD * 2;
+      const totalH = posRows.length * (NH + VGAP) + PAD * 2;
 
       const statusColors = {
         'done': '#8b5cf6', 'in-progress': '#3b82f6', 'code-review': '#ec4899',
@@ -3500,6 +3634,21 @@
         const x2 = to.x + NW / 2 + PAD, y2 = to.y + NH / 2 + PAD;
         svgEdges += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
           stroke="#e2e8f0" stroke-width="1" stroke-dasharray="4,3"/>`;
+      });
+
+      // Draw conflict edges (dashed amber — items competing for same resources)
+      (graphData.conflicts || []).forEach(c => {
+        const items = c.items || [];
+        for (let i = 0; i < items.length; i++) {
+          for (let j = i + 1; j < items.length; j++) {
+            const from = positions[items[i]], to = positions[items[j]];
+            if (!from || !to) continue;
+            const x1 = from.x + NW / 2 + PAD, y1 = from.y + NH / 2 + PAD;
+            const x2 = to.x + NW / 2 + PAD, y2 = to.y + NH / 2 + PAD;
+            svgEdges += `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"
+              stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="5,4" opacity="0.6"/>`;
+          }
+        }
       });
 
       // Draw nodes
@@ -3537,29 +3686,44 @@
       const svgW = Math.max(totalW, 400);
       const svgH = Math.max(totalH, 200);
 
-      const legend = `
-        <div class="graph-legend">
-          <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fef2f2;border:2px solid #ef4444;"></span>Critical path</div>
-          <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fffbeb;border:2px solid #f59e0b;"></span>Conflict</div>
-          <div class="legend-item"><div style="width:24px;height:2px;background:#ef4444;display:inline-block;vertical-align:middle;"></div> Blocks (critical)</div>
-          <div class="legend-item"><div style="width:24px;height:2px;background:#d1d5db;display:inline-block;vertical-align:middle;"></div> Blocks</div>
-          <div class="legend-item"><div style="width:24px;height:1px;border-top:1px dashed #cbd5e1;display:inline-block;vertical-align:middle;"></div> Related</div>
+      const isFirstRender = !_graphFitted;
+      _graphZoom = { scale: 1, tx: 0, ty: 0, dragging: false, hasDragged: false, startX: 0, startY: 0, startTx: 0, startTy: 0 };
+
+      content.innerHTML = `
+        <div class="graph-header">
+          <div class="graph-legend">
+            <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fef2f2;border:2px solid #ef4444;"></span>Critical path</div>
+            <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fffbeb;border:2px solid #f59e0b;"></span>Conflict</div>
+            <div class="legend-item"><div style="width:24px;height:2px;background:#ef4444;display:inline-block;vertical-align:middle;"></div> Blocks (critical)</div>
+            <div class="legend-item"><div style="width:24px;height:2px;background:#d1d5db;display:inline-block;vertical-align:middle;"></div> Blocks</div>
+            <div class="legend-item"><div style="width:24px;height:1px;border-top:1px dashed #cbd5e1;display:inline-block;vertical-align:middle;"></div> Related</div>
+            <div class="legend-item"><div style="width:24px;height:1px;border-top:2px dashed #f59e0b;display:inline-block;vertical-align:middle;"></div> Conflict</div>
+          </div>
+          <div class="graph-zoom-controls">
+            <button class="graph-zoom-btn" onclick="graphZoomOut()" title="Zoom out">−</button>
+            <button class="graph-zoom-btn fit-btn" onclick="graphZoomFit()" title="Fit to screen">Fit</button>
+            <button class="graph-zoom-btn" onclick="graphZoomIn()" title="Zoom in">+</button>
+          </div>
+        </div>
+        <div class="graph-viewport" id="graph-viewport">
+          <div class="graph-canvas" id="graph-canvas" data-w="${svgW}" data-h="${svgH}">
+            <svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}"
+                 style="display:block;font-family:-apple-system,sans-serif;">
+              <defs>
+                <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#d1d5db"/>
+                </marker>
+                <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L8,3 z" fill="#ef4444"/>
+                </marker>
+              </defs>
+              ${svgEdges}
+              ${svgNodes}
+            </svg>
+          </div>
         </div>`;
 
-      content.innerHTML = legend + `
-        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${svgW} ${svgH}"
-             style="width:100%;min-height:${svgH}px;font-family:-apple-system,sans-serif;">
-          <defs>
-            <marker id="arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L8,3 z" fill="#d1d5db"/>
-            </marker>
-            <marker id="arrowRed" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
-              <path d="M0,0 L0,6 L8,3 z" fill="#ef4444"/>
-            </marker>
-          </defs>
-          ${svgEdges}
-          ${svgNodes}
-        </svg>`;
+      requestAnimationFrame(() => { if (isFirstRender) { graphZoomFit(); _graphFitted = true; } initGraphInteraction(); });
     }
 
     // ── Alerts ──

@@ -1,179 +1,152 @@
 {
-  "version": 15,
-  "config": {
-    "scope": "project",
-    "project_name": "Flow",
-    "statuses": [
-      {
-        "id": "backlog",
-        "label": "Backlog",
-        "color": "#94a3b8"
-      },
-      {
-        "id": "refined",
-        "label": "Refined",
-        "color": "#f59e0b"
-      },
-      {
-        "id": "ready",
-        "label": "Ready",
-        "color": "#10b981",
-        "requires": [
-          "refined"
-        ]
-      },
-      {
-        "id": "in-progress",
-        "label": "In Progress",
-        "color": "#3b82f6",
-        "requires": [
-          "ready"
-        ]
-      },
-      {
-        "id": "code-review",
-        "label": "Code Review",
-        "color": "#ec4899",
-        "requires": [
-          "in-progress"
-        ]
-      },
-      {
-        "id": "done",
-        "label": "Done",
-        "color": "#8b5cf6",
-        "requires": [
-          "code-review"
-        ]
-      },
-      {
-        "id": "discarded",
-        "label": "Discarded",
-        "color": "#cbd5e1"
-      }
-    ]
-  },
+  "version": 414,
   "items": [
     {
-      "id": "3mbqxhqc",
-      "title": "t2",
-      "description": "",
-      "status": "backlog",
-      "assigned_to": null,
-      "lane_history": [],
-      "gate_from": 0,
-      "threads": [],
-      "links": [],
-      "notes": "",
-      "complexity": null,
-      "category": "feature",
-      "priority_weight": null,
-      "tags": [],
-      "reopen_count": 0,
-      "skip_count": 0,
-      "created_at": "2026-03-24T03:40:24.930Z",
-      "updated_at": "2026-03-24T03:40:24.930Z"
-    },
-    {
-      "id": "hbrmsmay",
-      "title": "t3",
-      "description": "",
-      "status": "backlog",
-      "assigned_to": null,
-      "lane_history": [],
-      "gate_from": 0,
-      "threads": [],
-      "links": [],
-      "notes": "",
-      "complexity": null,
-      "category": "chore",
-      "priority_weight": null,
-      "tags": [],
-      "reopen_count": 0,
-      "skip_count": 0,
-      "created_at": "2026-03-24T03:40:40.566Z",
-      "updated_at": "2026-03-24T03:40:40.566Z"
-    },
-    {
-      "id": "tzxdm4o1",
-      "title": "t1",
-      "description": "",
+      "id": "TIE-009",
+      "title": "Fix intermittent test failure in CI pipeline",
       "status": "ready",
-      "assigned_to": null,
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "devops",
+        "testing"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-04-03T22:07:33.081Z",
+      "created_at": "2026-03-18T09:00:00Z",
+      "description": "Diagnose and fix the flaky test. Fresh ticket with no history.",
+      "_scenario": "reopens_tiebreaker_winner",
+      "priority_weight": 5,
+      "links": [
+        {
+          "item_id": "TIE-010",
+          "type": "discovered-during"
+        }
+      ],
+      "reopen_count": 0,
+      "skip_count": 0,
       "lane_history": [
         {
           "lane": "backlog",
-          "at": "2026-03-24T03:40:43.331182+00:00",
-          "by": "Prajyot Bankade"
+          "at": "2026-03-01T10:00:00Z",
+          "by": "fixture"
         },
         {
           "lane": "refined",
-          "at": "2026-03-24T03:40:46.013333+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "ready",
-          "at": "2026-03-24T03:40:49.229852+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "in-progress",
-          "at": "2026-03-24T03:40:50.921116+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "code-review",
-          "at": "2026-03-24T03:40:57.999730+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "in-progress",
-          "at": "2026-03-24T03:41:08.886793+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "code-review",
-          "at": "2026-03-24T03:41:10.766676+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "done",
-          "at": "2026-03-24T03:41:12.658508+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "in-progress",
-          "at": "2026-03-24T03:41:21.378290+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "ready",
-          "at": "2026-03-24T03:41:23.949526+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "in-progress",
-          "at": "2026-03-24T03:41:26.305516+00:00",
-          "by": "Prajyot Bankade"
-        },
-        {
-          "lane": "refined",
-          "at": "2026-03-24T03:41:31.863915+00:00",
-          "by": "Prajyot Bankade"
+          "at": "2026-03-02T10:00:00Z",
+          "by": "fixture"
         }
       ],
-      "gate_from": 11,
+      "gate_from": 0,
       "threads": [],
+      "category": "feature",
+      "notes": ""
+    },
+    {
+      "id": "TIE-010",
+      "title": "Fix memory leak in background job runner",
+      "status": "ready",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "devops",
+        "testing"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 2,
+      "skips": 1,
+      "updated_at": "2026-03-25T08:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Fix the memory leak. Has been reopened twice \u2014 prior attempts failed.",
+      "_scenario": "reopens_tiebreaker_loser",
+      "priority_weight": 5,
       "links": [],
-      "notes": "",
-      "complexity": null,
+      "reopen_count": 2,
+      "skip_count": 1,
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-03-01T10:00:00Z",
+          "by": "fixture"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-03-02T10:00:00Z",
+          "by": "fixture"
+        }
+      ],
+      "gate_from": 0,
+      "threads": [],
+      "category": "feature"
+    },
+    {
+      "id": "spg3mz1x",
+      "title": "Graph view resets zoom/pan on background poll",
+      "description": "Every background data refresh re-renders the graph diagram and resets the viewport zoom/pan position to fit-to-screen. This makes it impossible to explore a specific area of the graph after zooming in. Should preserve viewport transform state across polls and only reset on explicit user action (e.g. switching away from graph view and back).",
+      "status": "backlog",
       "category": "bug",
-      "priority_weight": null,
-      "tags": [],
-      "reopen_count": 1,
+      "priority_weight": 7,
+      "complexity": "low",
+      "tags": [
+        "ui",
+        "graph"
+      ],
+      "created_at": "2026-04-03T22:17:43.760329+00:00",
+      "updated_at": "2026-04-03T22:17:43.760329+00:00",
+      "lane_history": [
+        "backlog"
+      ],
+      "gate_from": 0,
       "skip_count": 0,
-      "created_at": "2026-03-24T03:40:15.976Z",
-      "updated_at": "2026-03-24T03:41:31.860Z"
+      "reopen_count": 0
     }
-  ]
+  ],
+  "config": {
+    "agents": {
+      "backend-dev": {
+        "skills": [
+          "python",
+          "api",
+          "database",
+          "auth"
+        ],
+        "max_active": 2,
+        "preferred_complexity": [
+          "medium",
+          "high"
+        ]
+      },
+      "frontend-dev": {
+        "skills": [
+          "react",
+          "typescript",
+          "css",
+          "ui"
+        ],
+        "max_active": 2,
+        "preferred_complexity": [
+          "low",
+          "medium"
+        ]
+      },
+      "qa": {
+        "skills": [
+          "testing",
+          "api",
+          "e2e"
+        ],
+        "max_active": 3,
+        "preferred_complexity": [
+          "low",
+          "medium"
+        ]
+      }
+    }
+  }
 }
