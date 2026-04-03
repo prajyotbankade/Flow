@@ -232,7 +232,7 @@ class BacklogStore:
             "title": title,
             "status": "backlog",
             "priority": fields.get("priority"),
-            "priority_weight": fields.get("priority_weight"),
+            "priority_weight": fields.get("priority_weight", 5),
             "complexity": fields.get("complexity"),
             "category": fields.get("category"),
             "tags": fields.get("tags", []),
@@ -262,6 +262,7 @@ class BacklogStore:
 
         Raises GateViolationError if gates are not satisfied.
         Raises ItemNotFoundError if position is out of range.
+        Raises ConflictError if the file was modified since it was read.
         """
         data, item = self.get_item(position)
         statuses = _get_status_config(data)
@@ -271,7 +272,7 @@ class BacklogStore:
             raise GateViolationError(err)
 
         _apply_lane_transition(item, target_status, statuses, moved_by=moved_by)
-        self.write(data)
+        self.write(data, expected_version=data.get("version", 0))
         return item
 
     def assign_item(self, position: int, agent: str) -> dict:
@@ -279,7 +280,7 @@ class BacklogStore:
         data, item = self.get_item(position)
         item["assigned_to"] = agent
         item["updated_at"] = _now_iso()
-        self.write(data)
+        self.write(data, expected_version=data.get("version", 0))
         return item
 
     def unassign_item(self, position: int) -> dict:
@@ -287,7 +288,7 @@ class BacklogStore:
         data, item = self.get_item(position)
         item["assigned_to"] = None
         item["updated_at"] = _now_iso()
-        self.write(data)
+        self.write(data, expected_version=data.get("version", 0))
         return item
 
     def edit_item(self, position: int, **fields) -> dict:
@@ -301,7 +302,7 @@ class BacklogStore:
             if k in allowed:
                 item[k] = v
         item["updated_at"] = _now_iso()
-        self.write(data)
+        self.write(data, expected_version=data.get("version", 0))
         return item
 
     def discard_item(self, position: int, moved_by: str = "cli") -> dict:
@@ -309,7 +310,7 @@ class BacklogStore:
         data, item = self.get_item(position)
         statuses = _get_status_config(data)
         _apply_lane_transition(item, "discarded", statuses, moved_by=moved_by)
-        self.write(data)
+        self.write(data, expected_version=data.get("version", 0))
         return item
 
     def restore_item(self, position: int, moved_by: str = "cli") -> dict:
@@ -317,7 +318,7 @@ class BacklogStore:
         data, item = self.get_item(position)
         statuses = _get_status_config(data)
         _apply_lane_transition(item, "backlog", statuses, moved_by=moved_by)
-        self.write(data)
+        self.write(data, expected_version=data.get("version", 0))
         return item
 
     def pick_item(self, agent: str, moved_by: str = "cli") -> dict:
@@ -325,6 +326,7 @@ class BacklogStore:
 
         Priority is determined by position in the array (earlier = higher priority).
         Raises ItemNotFoundError if no ready items exist.
+        Raises ConflictError if the file was modified since it was read.
         """
         data = self.read()
         statuses = _get_status_config(data)
@@ -339,7 +341,7 @@ class BacklogStore:
         _apply_lane_transition(ready_item, "in-progress", statuses, moved_by=moved_by)
         ready_item["assigned_to"] = agent
         ready_item["updated_at"] = _now_iso()
-        self.write(data)
+        self.write(data, expected_version=data.get("version", 0))
         return ready_item
 
     def reorder(self, position: int, new_position: int) -> None:

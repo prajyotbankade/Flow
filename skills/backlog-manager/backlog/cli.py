@@ -204,7 +204,7 @@ def show(
 def add(
     title: str = typer.Argument(..., help="Item title"),
     file: Optional[str] = FILE_OPT,
-    description: str = typer.Option("", "--description", "-d"),
+    description: str = typer.Option("", "--description", "-d", help="Item description"),
     priority: Optional[str] = typer.Option(None, "--priority", "-p", help="high/medium/low"),
     priority_weight: Optional[int] = typer.Option(None, "--priority-weight", help="1–10"),
     complexity: Optional[str] = typer.Option(None, "--complexity", "-c", help="low/medium/high"),

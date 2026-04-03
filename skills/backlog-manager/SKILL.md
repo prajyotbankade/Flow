@@ -1,9 +1,22 @@
 ---
 name: backlog-manager
-description: Manage a project backlog board — add, prioritize, refine, link, and pick up work items. Use this skill whenever the user mentions backlog, sprint planning, task queue, work items, story grooming, picking up tasks, prioritizing work, linking issues, or wants to organize tasks like a PM/engineer would in an agile workflow. Also triggers when the user says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", "which agent should take this", or "what's blocking progress". If you've just finished a task and the user hasn't given you a new one, generate a work brief and offer to pick up the top-scored item. When you discover bugs, tech debt, or follow-ups while working, add them to the backlog and link them to the source task.
+description: Manage a project backlog — add, prioritize, refine, and pick up work items. Use when the user mentions backlog, tasks, sprints, or work queues. Also triggers proactively after task completion and when bugs or tech debt are discovered during work.
 ---
 
 # Backlog Manager
+
+## Activation Hints
+
+Invoke this skill when the user:
+- Mentions backlog, sprint planning, task queue, work items, story grooming, or agile workflow
+- Says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", "which agent should take this", or "what's blocking progress"
+- Asks about prioritizing, refining, or picking up work
+
+Invoke proactively (without being asked) when:
+- You've just finished a task and the user hasn't given you a new one → generate a work brief and offer to pick up the top-scored item
+- You discover bugs, tech debt, or follow-ups while working → add them to the backlog and link them to the source task
+
+---
 
 ## Setup
 
@@ -14,6 +27,8 @@ cd <skill-path>
 pip install -e .
 export BACKLOG_FILE=/path/to/backlog.json   # or pass --file on every command
 ```
+
+> **Backup:** Copy `backlog.json` before upgrading the skill or making bulk edits. There is no automatic migration.
 
 This gives you two entry points:
 - **`backlog`** — CLI for agents and terminal users (no server required)
@@ -32,7 +47,7 @@ Agents do not need the server running. Use the CLI directly.
 2. **Decompose** the work into tasks — add via CLI or API with dependencies and links
 3. **Assign** based on team (`.claude/agents/`) using assignment intelligence
 4. **Delegate** to sub-agents with handoff protocol (see Delegating to a Sub-Agent below)
-5. **Monitor** via `/api/pulse` (if server running) or `backlog list` — act on `_events` after every write
+5. **Monitor** via `/api/pulse` (if server running) or `backlog list` — act on `_events` after every write. Use `/api/graph` to surface dependency order and critical path before assigning work.
 6. **Prune personas** — after task completion, review sub-agent persona files: remove duplicates, merge similar learnings, trim anything now obvious from the codebase
 
 **Start the web board** (human visual use only):
@@ -59,7 +74,7 @@ When the user describes a feature to build:
 1. Identify distinct units of work (each should be completable by one agent)
 2. Set dependencies — use `blocks` links for sequential work, no link for parallel work
 3. Assign complexity: `low` (< 1 hour), `medium` (1-4 hours), `high` (4+ hours)
-   - Model routing: `low` → haiku · `medium` → sonnet · `high` → opus (advisory — shown in work brief)
+   - Model routing: `low` → haiku · `medium` → sonnet · `high` → opus (advisory — shown in work brief). The spawning agent is responsible for selecting the model when delegating to a sub-agent.
 4. Set `tags` for skill matching (e.g., backend, frontend, auth, testing)
 5. Set `priority_weight` based on how much value this item unlocks — consider both dependency depth (items that unblock the most work) and business importance. If a Strategic focus is declared, weight items matching it higher
 6. Add all items via API, dependencies first so links resolve correctly
@@ -90,8 +105,11 @@ backlog list --assigned-to alice      # filter by assignee
 backlog list --json                   # machine-readable output
 
 backlog show 3                        # full detail for #3
+backlog show 3 --json                 # machine-readable detail
+
 backlog add "Title"                   # add to backlog
 backlog add "Title" --priority high --complexity low --tags "auth,backend"
+backlog add "Title" --description "Details" --priority-weight 8 --category bug --assigned-to alice
 
 backlog move 3 in-progress            # lane transition (gate rules enforced)
 backlog done 3                        # move to done
@@ -99,12 +117,17 @@ backlog assign 3 --to alice
 backlog unassign 3
 
 backlog pick alice                    # pick top ready item → in-progress
+backlog pick alice --json             # machine-readable picked item
 backlog discard 3                     # always allowed from any lane
 backlog restore 3                     # always goes back to backlog
+
 backlog edit 3 --title "New title"
+backlog edit 3 --description "Updated details" --priority high --complexity low
+backlog edit 3 --priority-weight 9 --category bug --tags "auth,backend" --assigned-to alice
 
 backlog init                          # create starter backlog.json
-backlog board                         # launch web board
+backlog board                         # launch web board (port 8089)
+backlog board --port 9000             # custom port
 ```
 
 **Exit codes:** `0` success · `1` gate violation / not found / validation error · `2` version conflict (re-read and retry)
@@ -176,7 +199,7 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 ### Operations
 
-**Add** — Append to end, `status: backlog`, generate 8-char ID. Infer `category`, `complexity`, `tags`, `priority_weight` from context — don't ask. Confirm: "Added as #N (category, complexity, [tags])."
+**Add** — Append to end, `status: backlog`, generate 8-char random alphanumeric ID (lowercase letters + digits; not UUID-based, never reused). Default `priority_weight = 5` if not set. Infer `category`, `complexity`, `tags`, `priority_weight` from context — don't ask. Confirm: "Added as #N (category, complexity, [tags])."
 
 **List** — Group by status: `#N title [score: X] (assigned, complexity, category) — flags`
 
@@ -219,7 +242,7 @@ score = base_priority
       + critical_bug_boost     (category=bug AND priority_weight ≥ 9)
 ```
 
-`base_priority`: `priority_weight × factor` if set; else positional based on array order. `blocked_penalty` scales with blocker readiness — a blocker at 70% applies only 30% of the penalty; a fully-done blocker applies 0. All weights configurable via `config.scoring`.
+`base_priority`: `priority_weight × factor`. All items receive `priority_weight = 5` at creation if not explicitly set, ensuring consistent scoring across mixed backlogs. `blocked_penalty` scales with blocker readiness — a blocker at 70% applies only 30% of the penalty; a fully-done blocker applies 0. All weights configurable via `config.scoring`.
 
 ### Readiness Signals
 
@@ -295,7 +318,7 @@ max_active: <int>
 
 **To remove an agent:** Delete the file. **To modify:** Edit the file directly — changes take effect on next API call.
 
-**Persona constraints:** Max 10 learnings, max 40 lines per file. The lead agent prunes personas after task completion (step 6 of How to Operate).
+**Persona constraints:** Max 10 learnings, max 60 lines per file. The lead agent prunes personas after task completion (step 6 of How to Operate).
 
 ### Lane Gate Rules
 
@@ -305,6 +328,13 @@ Each status can have `requires: [lane_ids]` — item must have passed through th
 - `gate_from`: watermark index. On backward move: append current lane, set `gate_from = len(lane_history)`.
 - Before any forward move: verify target's `requires` against `lane_history[gate_from:]`. If missing: "Can't move to X — requires Y first."
 - Server enforces gates (HTTP 422). Check client-side too.
+
+**Backward-then-forward example:**
+An item progresses `backlog → ready → in-progress`, then gets moved back to `ready`.
+On the backward move, `gate_from` resets to the current length of `lane_history`.
+The earlier `in-progress` entry is now before `gate_from` and is no longer counted as an earned gate.
+Attempting to move to `code-review` (which requires `in-progress`) will be blocked — even though `in-progress` appears in `lane_history`.
+The item must pass through `in-progress` again before `code-review` becomes reachable.
 
 ### Natural Language Rule Engine
 
