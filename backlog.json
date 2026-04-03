@@ -1,90 +1,6 @@
 {
-  "version": 414,
+  "version": 416,
   "items": [
-    {
-      "id": "TIE-009",
-      "title": "Fix intermittent test failure in CI pipeline",
-      "status": "ready",
-      "priority": "medium",
-      "complexity": "low",
-      "tags": [
-        "devops",
-        "testing"
-      ],
-      "assigned_to": "bob",
-      "blocks": [],
-      "blocked_by": [],
-      "reopens": 0,
-      "skips": 0,
-      "updated_at": "2026-04-03T22:07:33.081Z",
-      "created_at": "2026-03-18T09:00:00Z",
-      "description": "Diagnose and fix the flaky test. Fresh ticket with no history.",
-      "_scenario": "reopens_tiebreaker_winner",
-      "priority_weight": 5,
-      "links": [
-        {
-          "item_id": "TIE-010",
-          "type": "discovered-during"
-        }
-      ],
-      "reopen_count": 0,
-      "skip_count": 0,
-      "lane_history": [
-        {
-          "lane": "backlog",
-          "at": "2026-03-01T10:00:00Z",
-          "by": "fixture"
-        },
-        {
-          "lane": "refined",
-          "at": "2026-03-02T10:00:00Z",
-          "by": "fixture"
-        }
-      ],
-      "gate_from": 0,
-      "threads": [],
-      "category": "feature",
-      "notes": ""
-    },
-    {
-      "id": "TIE-010",
-      "title": "Fix memory leak in background job runner",
-      "status": "ready",
-      "priority": "medium",
-      "complexity": "low",
-      "tags": [
-        "devops",
-        "testing"
-      ],
-      "assigned_to": "bob",
-      "blocks": [],
-      "blocked_by": [],
-      "reopens": 2,
-      "skips": 1,
-      "updated_at": "2026-03-25T08:00:00Z",
-      "created_at": "2026-03-01T09:00:00Z",
-      "description": "Fix the memory leak. Has been reopened twice \u2014 prior attempts failed.",
-      "_scenario": "reopens_tiebreaker_loser",
-      "priority_weight": 5,
-      "links": [],
-      "reopen_count": 2,
-      "skip_count": 1,
-      "lane_history": [
-        {
-          "lane": "backlog",
-          "at": "2026-03-01T10:00:00Z",
-          "by": "fixture"
-        },
-        {
-          "lane": "refined",
-          "at": "2026-03-02T10:00:00Z",
-          "by": "fixture"
-        }
-      ],
-      "gate_from": 0,
-      "threads": [],
-      "category": "feature"
-    },
     {
       "id": "spg3mz1x",
       "title": "Graph view resets zoom/pan on background poll",
@@ -93,15 +9,134 @@
       "category": "bug",
       "priority_weight": 7,
       "complexity": "low",
-      "tags": [
-        "ui",
-        "graph"
-      ],
+      "tags": ["ui", "graph"],
       "created_at": "2026-04-03T22:17:43.760329+00:00",
       "updated_at": "2026-04-03T22:17:43.760329+00:00",
-      "lane_history": [
-        "backlog"
-      ],
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0
+    },
+    {
+      "id": "a1b2c3d4",
+      "title": "Work brief → agent handoff",
+      "description": "Turn the scored work brief into an actual agent invocation. The brief already exists as a data structure — this makes it executable: structured prompt with task context, linked items, constraints, and expected output format. Claude picks it up and starts working, not just recommending.",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 9,
+      "complexity": "high",
+      "tags": ["agentic-loop", "core"],
+      "created_at": "2026-04-03T22:30:00.000000+00:00",
+      "updated_at": "2026-04-03T22:30:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "e5f6g7h8",
+          "type": "blocks",
+          "reason": "Handoff must exist before result ingestion can receive anything back"
+        }
+      ]
+    },
+    {
+      "id": "e5f6g7h8",
+      "title": "Agent result ingestion",
+      "description": "When an agent finishes a task, parse its structured completion report and automatically update the backlog: mark item done, add discovered bugs/follow-ups as new items with links, update scores. This closes the agentic loop — Flow drives work, not just tracks it.",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 9,
+      "complexity": "high",
+      "tags": ["agentic-loop", "core"],
+      "created_at": "2026-04-03T22:30:00.000000+00:00",
+      "updated_at": "2026-04-03T22:30:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "a1b2c3d4",
+          "type": "discovered-during",
+          "reason": "Handoff must exist before result ingestion can receive anything back"
+        }
+      ]
+    },
+    {
+      "id": "i9j0k1l2",
+      "title": "Execution history per item",
+      "description": "Store what actually happened on each item — not just status changes, but agent actions, findings, decisions made, and why. Answers 'why does #7 have a reopen penalty?' and makes the scoring model explainable. Foundation for feedback-aware re-scoring.",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "tags": ["agentic-loop", "scoring"],
+      "created_at": "2026-04-03T22:30:00.000000+00:00",
+      "updated_at": "2026-04-03T22:30:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "e5f6g7h8",
+          "type": "follow-up",
+          "reason": "Result ingestion produces the raw data that execution history organizes"
+        }
+      ]
+    },
+    {
+      "id": "m3n4o5p6",
+      "title": "Cold-start UX",
+      "description": "A new user clones Flow and has no backlog.json, no context, no idea what to say. What happens? This item covers the first-time experience: guided setup, example prompts, empty-state messaging on the board, and making the first 'add item' feel natural. The product is only as good as its day-1 experience.",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "tags": ["ux", "onboarding"],
+      "created_at": "2026-04-03T22:30:00.000000+00:00",
+      "updated_at": "2026-04-03T22:30:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0
+    },
+    {
+      "id": "q7r8s9t0",
+      "title": "Feedback-aware re-scoring",
+      "description": "After each agent execution, capture an outcome signal (success, partial, reopened, blocked) and feed it back into the scoring model. Simple at first — thumbs up/down or inferred from reopen/done status — but the foundation matters. Over time, Flow gets smarter about what it recommends.",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 6,
+      "complexity": "high",
+      "tags": ["scoring", "intelligence"],
+      "created_at": "2026-04-03T22:30:00.000000+00:00",
+      "updated_at": "2026-04-03T22:30:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "i9j0k1l2",
+          "type": "follow-up",
+          "reason": "Execution history provides the signal that re-scoring learns from"
+        }
+      ]
+    },
+    {
+      "id": "u1v2w3x4",
+      "title": "GitHub Issues import bridge",
+      "description": "One-way import from GitHub Issues into the backlog (`backlog import --from github-issues`). Dramatically lowers adoption barrier — users don't need a clean JSON backlog to start. Maps issue labels/milestones to Flow tags/complexity where possible. Read-only sync to start.",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 5,
+      "complexity": "medium",
+      "tags": ["integrations", "github"],
+      "created_at": "2026-04-03T22:30:00.000000+00:00",
+      "updated_at": "2026-04-03T22:30:00.000000+00:00",
+      "lane_history": ["backlog"],
       "gate_from": 0,
       "skip_count": 0,
       "reopen_count": 0
@@ -110,42 +145,19 @@
   "config": {
     "agents": {
       "backend-dev": {
-        "skills": [
-          "python",
-          "api",
-          "database",
-          "auth"
-        ],
+        "skills": ["python", "api", "database", "auth"],
         "max_active": 2,
-        "preferred_complexity": [
-          "medium",
-          "high"
-        ]
+        "preferred_complexity": ["medium", "high"]
       },
       "frontend-dev": {
-        "skills": [
-          "react",
-          "typescript",
-          "css",
-          "ui"
-        ],
+        "skills": ["react", "typescript", "css", "ui"],
         "max_active": 2,
-        "preferred_complexity": [
-          "low",
-          "medium"
-        ]
+        "preferred_complexity": ["low", "medium"]
       },
       "qa": {
-        "skills": [
-          "testing",
-          "api",
-          "e2e"
-        ],
+        "skills": ["testing", "api", "e2e"],
         "max_active": 3,
-        "preferred_complexity": [
-          "low",
-          "medium"
-        ]
+        "preferred_complexity": ["low", "medium"]
       }
     }
   }
