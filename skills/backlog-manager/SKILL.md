@@ -5,17 +5,41 @@ description: Manage a project backlog board — add, prioritize, refine, link, a
 
 # Backlog Manager
 
+## Setup
+
+The skill ships as an installable Python package. Install once per machine:
+
+```bash
+cd <skill-path>
+pip install -e .
+export BACKLOG_FILE=/path/to/backlog.json   # or pass --file on every command
+```
+
+This gives you two entry points:
+- **`backlog`** — CLI for agents and terminal users (no server required)
+- **`backlog-server`** — HTTP server for the web Kanban board
+
+**Which interface to use:**
+- Agents and scripts → `backlog` CLI
+- Visual management → `backlog board` (or `backlog-server --file ...`)
+- Natural language → Claude skill (this file)
+
 ## How to Operate
 
-If the server is not running, start it before doing anything else.
+Agents do not need the server running. Use the CLI directly.
 
-1. **Start server:** `python <skill-path>/scripts/backlog_server.py --file backlog.json`
-   - If already running, verify with a health check: `GET /api/backlog`
-2. **Decompose** the work into tasks — add via API with dependencies and links (see Decomposing a Feature below)
+1. **Pick up work:** `backlog pick <your-agent-name>` — moves top ready item to in-progress
+2. **Decompose** the work into tasks — add via CLI or API with dependencies and links
 3. **Assign** based on team (`.claude/agents/`) using assignment intelligence
 4. **Delegate** to sub-agents with handoff protocol (see Delegating to a Sub-Agent below)
-5. **Monitor** via `/api/pulse` — act on `_events` after every write
+5. **Monitor** via `/api/pulse` (if server running) or `backlog list` — act on `_events` after every write
 6. **Prune personas** — after task completion, review sub-agent persona files: remove duplicates, merge similar learnings, trim anything now obvious from the codebase
+
+**Start the web board** (human visual use only):
+```bash
+backlog board                          # uses BACKLOG_FILE, port 8089
+backlog-server --file backlog.json     # explicit path, same thing
+```
 
 ## Decision Hierarchy
 
@@ -51,6 +75,39 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 5. Blocker protocol: if blocked, open a thread via `PUT /api/items/<id>` and report back
 6. Their persona file path (`.claude/agents/<name>.md`) — agent reads it for identity and past learnings
 7. Self-correction instruction: if you make a mistake and get corrected, update your persona file before finishing
+
+---
+
+## CLI Reference
+
+```bash
+# File resolution: --file flag > BACKLOG_FILE env var > error
+export BACKLOG_FILE=/path/to/backlog.json
+
+backlog list                          # board grouped by lane
+backlog list --status ready           # filter by lane
+backlog list --assigned-to alice      # filter by assignee
+backlog list --json                   # machine-readable output
+
+backlog show 3                        # full detail for #3
+backlog add "Title"                   # add to backlog
+backlog add "Title" --priority high --complexity low --tags "auth,backend"
+
+backlog move 3 in-progress            # lane transition (gate rules enforced)
+backlog done 3                        # move to done
+backlog assign 3 --to alice
+backlog unassign 3
+
+backlog pick alice                    # pick top ready item → in-progress
+backlog discard 3                     # always allowed from any lane
+backlog restore 3                     # always goes back to backlog
+backlog edit 3 --title "New title"
+
+backlog init                          # create starter backlog.json
+backlog board                         # launch web board
+```
+
+**Exit codes:** `0` success · `1` gate violation / not found / validation error · `2` version conflict (re-read and retry)
 
 ---
 

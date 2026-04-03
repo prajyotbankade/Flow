@@ -73,18 +73,36 @@ Just talk to Claude — no command needed once the skill is active:
 "Refine #2 — I think we need to scope it down"
 ```
 
-### Launch the visual board
+### Install the CLI package
 
-From the repo (or wherever you cloned it):
+The skill ships as an installable Python package. Install it once to get the `backlog` CLI and `backlog-server` commands:
 
 ```bash
-python skills/backlog-manager/scripts/backlog_server.py
+cd skills/backlog-manager    # or ~/.claude/skills/backlog-manager after standalone install
+pip install -e .
 ```
 
-After a standalone install:
+Set your backlog file once (or pass `--file` on every command):
 
 ```bash
-python ~/.claude/skills/backlog-manager/scripts/backlog_server.py
+export BACKLOG_FILE=/path/to/your/backlog.json
+```
+
+Now agents and scripts can use the CLI directly — no server required:
+
+```bash
+backlog list                  # show board
+backlog add "Fix login bug"   # add item
+backlog pick alice            # pick top ready item, move to in-progress
+backlog move 3 in-progress    # lane transition (gate rules enforced)
+backlog done 3                # complete
+```
+
+### Launch the visual board
+
+```bash
+backlog board                  # uses BACKLOG_FILE, opens at http://localhost:8089
+backlog-server --file backlog.json --port 8089   # explicit, same thing
 ```
 
 Opens a Kanban board at `http://localhost:8089` with drag-and-drop cards, threaded conversations, and real-time sync.
@@ -156,8 +174,14 @@ Flow/
 ├── skills/
 │   └── backlog-manager/
 │       ├── SKILL.md              # Skill instructions (the brain)
+│       ├── pyproject.toml        # Package config — installs backlog + backlog-server CLI
+│       ├── backlog/              # Core Python package
+│       │   ├── core.py           # BacklogStore — all gate/versioning/CRUD logic
+│       │   ├── exceptions.py     # GateViolationError, ConflictError, ItemNotFoundError
+│       │   ├── cli.py            # Typer CLI (backlog command)
+│       │   └── server.py         # HTTP server (backlog-server command)
 │       ├── scripts/
-│       │   └── backlog_server.py # REST API + web board server
+│       │   └── backlog_server.py # Legacy server (kept for reference)
 │       ├── assets/
 │       │   └── backlog-board.html # Kanban board UI
 │       ├── references/
@@ -166,6 +190,7 @@ Flow/
 │           ├── evals.json           # Test cases and assertions
 │           ├── eval_flow_skill.py   # deepeval skill harness (calls live API + Ollama)
 │           ├── test_flow_live.py    # deepeval benchmark suite (AnswerRelevancy + GEval)
+│           ├── test_cli.py          # CLI integration tests (11 scenarios, no server needed)
 │           ├── files/               # Fixture data for evals
 │           └── results/             # Test run outputs
 └── backlog.json              # Your backlog (zero items, ready to use)
