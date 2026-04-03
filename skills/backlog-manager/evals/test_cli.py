@@ -95,7 +95,7 @@ def test_show_human_readable(tmp_backlog):
     result = invoke(["show", "1"], tmp_backlog)
     assert result.exit_code == 0, result.output
     assert "Show me item" in result.output
-    assert "Status" in result.output
+    assert "backlog" in result.output.lower()  # actual status value, not just the label
 
 
 # ── Test: valid lane sequence + lane_history ──────────────────────────────────
@@ -121,6 +121,16 @@ def test_valid_lane_sequence(tmp_backlog):
     # lane_history records each transition from-lane
     history_lanes = [e["lane"] for e in item["lane_history"]]
     assert history_lanes == ["backlog", "ready", "in-progress", "code-review"]
+
+
+def test_done_shorthand_enforces_gate(tmp_backlog):
+    """done is blocked when code-review has not been earned."""
+    invoke(["add", "Gate test item"], tmp_backlog)
+    invoke(["move", "1", "ready"], tmp_backlog)
+    invoke(["move", "1", "in-progress"], tmp_backlog)
+    # Skipping code-review — done should be blocked by its gate
+    result = invoke(["done", "1"], tmp_backlog)
+    assert result.exit_code == 1, result.output
 
 
 def test_done_shorthand(tmp_backlog):
@@ -239,6 +249,7 @@ def test_edit_fields(tmp_backlog):
         ["edit", "1",
          "--title", "Revised title",
          "--priority", "high",
+         "--priority-weight", "9",
          "--complexity", "low",
          "--category", "auth",
          "--tags", "auth,backend",
@@ -251,6 +262,7 @@ def test_edit_fields(tmp_backlog):
     item = data["items"][0]
     assert item["title"] == "Revised title"
     assert item["priority"] == "high"
+    assert item["priority_weight"] == 9
     assert item["complexity"] == "low"
     assert item["category"] == "auth"
     assert item["tags"] == ["auth", "backend"]
@@ -295,6 +307,17 @@ def test_restore_resets_gate_watermark(tmp_backlog):
 
 
 # ── Test: list filters ────────────────────────────────────────────────────────
+
+def test_list_filter_by_status(tmp_backlog):
+    invoke(["add", "Ready item"], tmp_backlog)
+    invoke(["add", "Backlog item"], tmp_backlog)
+    invoke(["move", "1", "ready"], tmp_backlog)
+
+    result = invoke(["list", "--status", "ready"], tmp_backlog)
+    assert result.exit_code == 0, result.output
+    assert "Ready item" in result.output
+    assert "Backlog item" not in result.output
+
 
 def test_list_filter_by_assigned_to(tmp_backlog):
     invoke(["add", "Alice task"], tmp_backlog)
@@ -341,26 +364,40 @@ def test_conflict_on_stale_version(tmp_backlog):
         store.write({"version": 0, "items": []}, expected_version=0)
 
 
-def test_cli_conflict_returns_exit_code_2(tmp_backlog):
-    """CLI returns exit code 2 when a concurrent writer bumps the version mid-operation."""
+def test_cli_conflict_returns_exit_code_2(tmp_backlog, monkeypatch):
+    """CLI returns exit code 2 when a concurrent writer bumps the version mid-operation.
+
+    Always-raise mock: if retry logic is ever added, it must exhaust retries and
+    still surface exit code 2 rather than silently succeeding after one retry.
+    """
     invoke(["add", "Race condition item"], tmp_backlog)
     invoke(["move", "1", "ready"], tmp_backlog)
 
-    # Read current version so we know the baseline
-    data = json.loads(Path(tmp_backlog).read_text())
-    current_version = data["version"]
+    def always_conflict(self, data, expected_version):
+        raise ConflictError("simulated concurrent write")
 
-    # Simulate a concurrent writer bumping the version after the CLI reads but before it writes.
-    # We do this by writing a higher version directly — the next CLI write will see a mismatch.
-    data["version"] = current_version + 10
-    Path(tmp_backlog).write_text(json.dumps(data, indent=2))
+    monkeypatch.setattr(BacklogStore, "write", always_conflict)
 
-    # The CLI reads version N, but the file is now at N+10 — ConflictError → exit 2
     result = invoke(["move", "1", "in-progress"], tmp_backlog)
     assert result.exit_code == 2, result.output
 
 
-# ── Test: BACKLOG_FILE not set ────────────────────────────────────────────────
+# ── Test: BACKLOG_FILE not set / --file override ──────────────────────────────
+
+def test_file_flag_overrides_env_var(tmp_backlog, tmp_path, monkeypatch):
+    """--file takes precedence over BACKLOG_FILE env var.
+
+    The env var points at a non-existent file; success here proves --file
+    short-circuits env var resolution entirely (the env var path is never opened).
+    """
+    other_file = str(tmp_path / "other.json")
+    monkeypatch.setenv("BACKLOG_FILE", other_file)
+
+    invoke(["add", "Override item"], tmp_backlog)
+    result = invoke(["list"], tmp_backlog)
+    assert result.exit_code == 0, result.output
+    assert "Override item" in result.output
+
 
 def test_no_file_specified_exits_with_error(monkeypatch):
     """No --file and BACKLOG_FILE not set → exit 1 with clear message."""
