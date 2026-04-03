@@ -1,0 +1,245 @@
+{
+  "_meta": {
+    "fixture": "tribunal_ties_fixture",
+    "purpose": "Hand-crafted matched pairs for tribunal tiebreaker eval scenarios (Tasks 5 & 6 of Plan v3)",
+    "current_focus": "growth",
+    "active_agents": [
+      "alice",
+      "bob",
+      "carol"
+    ],
+    "scenarios": {
+      "Tribunal_Tie_Breaking_Complexity": [
+        "TIE-001",
+        "TIE-002"
+      ],
+      "Tribunal_Tie_Breaking_Readiness": [
+        "TIE-003",
+        "TIE-004"
+      ],
+      "Tribunal_Tie_Breaking_Equal": [
+        "TIE-005",
+        "TIE-006"
+      ],
+      "Tribunal_Tie_Strategic_Alignment": [
+        "TIE-007",
+        "TIE-008"
+      ],
+      "Tribunal_Tie_Breaking_Reopens": [
+        "TIE-009",
+        "TIE-010"
+      ]
+    }
+  },
+  "items": [
+    {
+      "id": "TIE-001",
+      "title": "Refactor authentication middleware",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "low",
+      "tags": [
+        "backend",
+        "security"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-28T10:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Refactor the auth middleware to use the new token validator.",
+      "_scenario": "complexity_tiebreaker_winner"
+    },
+    {
+      "id": "TIE-002",
+      "title": "Refactor session management middleware",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "medium",
+      "tags": [
+        "backend",
+        "security"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-28T10:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Refactor the session middleware to use the new token validator.",
+      "_scenario": "complexity_tiebreaker_loser"
+    },
+    {
+      "id": "TIE-003",
+      "title": "Implement rate limiting on API gateway",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "infrastructure",
+        "api"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-27T14:00:00Z",
+      "created_at": "2026-03-05T10:00:00Z",
+      "description": "Add rate limiting to the API gateway. All dependencies are resolved.",
+      "_scenario": "readiness_tiebreaker_winner"
+    },
+    {
+      "id": "TIE-004",
+      "title": "Implement throttling on API gateway",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "infrastructure",
+        "api"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [
+        "TIE-003"
+      ],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-27T14:00:00Z",
+      "created_at": "2026-03-05T10:00:00Z",
+      "description": "Add throttling to the API gateway. Depends on rate limiter being in place first.",
+      "_scenario": "readiness_tiebreaker_loser"
+    },
+    {
+      "id": "TIE-005",
+      "title": "Update dependency: lodash to v4.18",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "maintenance",
+        "deps"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-10T09:00:00Z",
+      "description": "Upgrade lodash to latest patch version.",
+      "_scenario": "truly_identical_A"
+    },
+    {
+      "id": "TIE-006",
+      "title": "Update dependency: axios to v1.7",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "maintenance",
+        "deps"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-10T09:00:00Z",
+      "description": "Upgrade axios to latest minor version.",
+      "_scenario": "truly_identical_B"
+    },
+    {
+      "id": "TIE-007",
+      "title": "Build onboarding checklist for new users",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "medium",
+      "tags": [
+        "growth",
+        "onboarding"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-29T11:00:00Z",
+      "created_at": "2026-03-15T09:00:00Z",
+      "description": "Build an onboarding checklist. Directly supports Q2 growth OKR.",
+      "strategic_tags": [
+        "growth",
+        "q2-okr"
+      ],
+      "_scenario": "strategic_alignment_winner"
+    },
+    {
+      "id": "TIE-008",
+      "title": "Build admin audit log viewer",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "medium",
+      "tags": [
+        "admin",
+        "compliance"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-29T11:00:00Z",
+      "created_at": "2026-03-15T09:00:00Z",
+      "description": "Build an audit log viewer for admins. Important but not the current strategic focus.",
+      "strategic_tags": [
+        "compliance"
+      ],
+      "_scenario": "strategic_alignment_loser"
+    },
+    {
+      "id": "TIE-009",
+      "title": "Fix intermittent test failure in CI pipeline",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "devops",
+        "testing"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-30T08:00:00Z",
+      "created_at": "2026-03-18T09:00:00Z",
+      "description": "Diagnose and fix the flaky test. Fresh ticket with no history.",
+      "_scenario": "reopens_tiebreaker_winner"
+    },
+    {
+      "id": "TIE-010",
+      "title": "Fix memory leak in background job runner",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "devops",
+        "testing"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "reopens": 2,
+      "skips": 1,
+      "updated_at": "2026-03-25T08:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Fix the memory leak. Has been reopened twice \u2014 prior attempts failed.",
+      "_scenario": "reopens_tiebreaker_loser"
+    }
+  ]
+}

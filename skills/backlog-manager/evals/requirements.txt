@@ -1,0 +1,7 @@
+deepeval>=3.9.2
+pytest>=7.0
+pytest-timeout
+requests
+openai>=1.0
+python-dotenv
+ollama

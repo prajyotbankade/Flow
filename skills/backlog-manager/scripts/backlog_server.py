@@ -1011,13 +1011,67 @@ def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None, in_pro
         total = sum(e["score"] * LENS_WEIGHTS.get(name, 1.0) for name, e in evals.items())
         tribunal_scores[iid] = round(total, 2)
 
-    ranked = sorted(tribunal_scores.items(), key=lambda x: x[1], reverse=True)
+    # Tiebreaker cascade — applied when two items share identical tribunal_score
+    _complexity_rank = {"low": 0, "medium": 1, "high": 2}
+
+    def _parse_updated_at(iid):
+        ts = items_by_id.get(iid, {}).get("updated_at", "") or ""
+        try:
+            return datetime.fromisoformat(ts.replace("Z", "+00:00")).timestamp()
+        except Exception:
+            return 0.0
+
+    def _tiebreaker(iid):
+        item = items_by_id.get(iid, {})
+        readiness_score = readiness_by_id.get(iid, {}).get("score", 0.0)
+        return (
+            _complexity_rank.get(item.get("complexity"), 1),  # lower complexity first
+            item.get("reopen_count", 0),                      # fewer reopens first
+            -readiness_score,                                  # higher readiness first
+            -_parse_updated_at(iid),                          # more recent activity first
+            item.get("skip_count", 0),                        # fewer skips first
+        )
+
+    ranked = sorted(tribunal_scores.items(), key=lambda x: (-x[1], _tiebreaker(x[0])))
     winner_id = ranked[0][0]
     winner_item = items_by_id[winner_id]
     winner_evals = evaluations[winner_id]
 
-    # Confidence from margin to runner-up
-    if len(ranked) >= 2:
+    # Detect and justify tiebreaker usage
+    tie_broken = False
+    tiebreaker_reason = None
+    if len(ranked) >= 2 and ranked[0][1] == ranked[1][1]:
+        tie_broken = True
+        runner_id = ranked[1][0]
+        runner_item = items_by_id.get(runner_id, {})
+        w_item = winner_item
+        w_complexity = w_item.get("complexity")
+        r_complexity = runner_item.get("complexity")
+        if _complexity_rank.get(w_complexity, 1) < _complexity_rank.get(r_complexity, 1):
+            tiebreaker_reason = f"Tie broken: lower complexity ({w_complexity} vs {r_complexity})"
+        elif w_item.get("reopen_count", 0) < runner_item.get("reopen_count", 0):
+            tiebreaker_reason = (
+                f"Tie broken: fewer reopens "
+                f"({w_item.get('reopen_count', 0)} vs {runner_item.get('reopen_count', 0)})"
+            )
+        elif readiness_by_id.get(winner_id, {}).get("score", 0.0) > readiness_by_id.get(runner_id, {}).get("score", 0.0):
+            w_r = readiness_by_id.get(winner_id, {}).get("score", 0.0)
+            r_r = readiness_by_id.get(runner_id, {}).get("score", 0.0)
+            tiebreaker_reason = f"Tie broken: higher readiness ({int(w_r*100)}% vs {int(r_r*100)}%)"
+        elif _parse_updated_at(winner_id) > _parse_updated_at(runner_id):
+            tiebreaker_reason = "Tie broken: more recent activity (updated_at)"
+        elif w_item.get("skip_count", 0) < runner_item.get("skip_count", 0):
+            tiebreaker_reason = (
+                f"Tie broken: fewer skips "
+                f"({w_item.get('skip_count', 0)} vs {runner_item.get('skip_count', 0)})"
+            )
+        else:
+            tiebreaker_reason = "Tie broken: stable sort (all tiebreaker dimensions equal)"
+
+    # Confidence from margin to runner-up — ties always yield low confidence
+    if tie_broken:
+        confidence = "low"
+    elif len(ranked) >= 2:
         margin = ranked[0][1] - ranked[1][1]
         confidence = "high" if margin > 5 else ("medium" if margin > 2 else "low")
     else:
@@ -1071,6 +1125,8 @@ def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None, in_pro
         "supporting_lenses": supporting,
         "status_note": status_note,
         "readiness": winner_readiness,
+        "tie_broken": tie_broken,
+        "tiebreaker_reason": tiebreaker_reason,
     }
 
     # Shadow ranking — runners-up with "why not" explanations

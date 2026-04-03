@@ -1,6 +1,18 @@
 import json
 import os
 import requests
+from context_slicer import detect_intents, slice_scores, slice_tribunal, slice_graph, slice_policies
+
+# ---------------------------------------------------------------------------
+# Last-context tracker — updated after every slice so scale tests can inspect
+# what data was actually sent to the LLM.
+# ---------------------------------------------------------------------------
+_last_context: dict = {"content": None, "estimated_tokens": 0}
+
+
+def get_last_context() -> dict:
+    """Return a copy of the context block last sent to the LLM."""
+    return dict(_last_context)
 
 BASE_URL      = "http://localhost:8089"
 SCORES_URL    = f"{BASE_URL}/api/scores"
@@ -102,7 +114,14 @@ def run_flow(query: str) -> str:
                 else:
                     item["WHY_TEXT"] = f"base_priority: {bd.get('base_priority', 0)} — highest base priority"
 
-        context_block = json.dumps(scored_items, indent=2)
+        context_block = slice_scores(
+            scored_items, detect_intents(query), len(set(
+                i.get("recommended_agent") for i in scored_items
+                if i.get("recommended_agent")
+            ))
+        )
+        _last_context["content"] = context_block
+        _last_context["estimated_tokens"] = len(context_block) // 4
 
         prompt = f"""You are the Flow Work Intelligence Engine — a precise, senior engineering advisor.
 
@@ -164,7 +183,9 @@ def run_flow_tribunal(query: str, agent: str = None) -> str:
         if not tribunal.get("picked"):
             return "No eligible items for recommendation."
 
-        context_block = json.dumps(tribunal, indent=2)
+        context_block = slice_tribunal(tribunal, detect_intents(query), query)
+        _last_context["content"] = context_block
+        _last_context["estimated_tokens"] = len(context_block) // 4
 
         prompt = f"""You are the Flow Work Intelligence Engine — a precise, senior engineering advisor.
 
@@ -213,7 +234,7 @@ def run_flow_graph(query: str, agent: str = None) -> str:
         pulse_resp.raise_for_status()
         pulse = pulse_resp.json()
 
-        # Slim down context to only the fields the LLM needs
+        # Slim graph nodes to fields the LLM needs before passing to the slicer
         slim_graph = {
             "nodes": [
                 {
@@ -231,8 +252,13 @@ def run_flow_graph(query: str, agent: str = None) -> str:
             "critical_path": graph.get("critical_path", []),
             "conflicts": graph.get("conflicts", []),
             "rebalancing": graph.get("rebalancing", []),
+            "edges": graph.get("edges", []),
         }
-        # Derive active agents from graph nodes (most reliable — uses actual item assignments)
+
+        intents = detect_intents(query)
+        sliced = slice_graph(slim_graph, pulse, intents)
+
+        # Derive active agents from ALL in-progress nodes (not filtered by slicer)
         seen = {}
         for n in graph.get("nodes", []):
             agent_name = n.get("assigned_to")
@@ -244,12 +270,15 @@ def run_flow_graph(query: str, agent: str = None) -> str:
                 }
         active_agents = list(seen.values())
 
-        startable_items = [
-            {"id": s.get("id"), "title": s.get("title"), "score": s.get("score")}
-            for s in pulse.get("startable_items", [])
-        ]
-        conflicts = slim_graph.get("conflicts", []) or pulse.get("conflicts", [])
-        critical_nodes = [n for n in slim_graph["nodes"] if n.get("is_critical_path")]
+        startable_items = sliced.get("startable_items", [])
+        conflicts = sliced.get("conflicts", [])
+        critical_nodes = [n for n in sliced["nodes"] if n.get("is_critical_path")]
+
+        # Track context for fixture/scale tests: record which node IDs entered the prompt
+        sliced_node_ids = [n.get("id") for n in sliced["nodes"] if n.get("id")]
+        _last_context["content"] = json.dumps(sliced, separators=(",", ":"))
+        _last_context["estimated_tokens"] = len(_last_context["content"]) // 4
+        _last_context["node_ids"] = sliced_node_ids
 
         # Pre-format sections as plain text so the model doesn't need to parse JSON
         if active_agents:
@@ -372,11 +401,13 @@ def run_flow_policy(query: str, policy_description: str = None) -> str:
         if created_id:
             requests.delete(f"{policies_url}/{created_id}", timeout=5)
 
-        context_block = json.dumps({
-            "evaluation_result": eval_result,
-            "recent_log": recent_log[-5:],
-            "active_policies": [p for p in policies if p.get("active")],
-        }, indent=2)
+        active_policies = [p for p in policies if p.get("active")]
+        context_block = slice_policies(
+            eval_result,
+            recent_log[-10:],
+            active_policies,
+            detect_intents(query),
+        )
 
         prompt = f"""You are the Flow Work Intelligence Engine — a precise, senior engineering advisor.
 

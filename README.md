@@ -301,6 +301,95 @@ All scoring parameters are tunable in `config.scoring`:
 
 See `references/schema.md` for the full list of configurable weights and thresholds.
 
+### Eval environment setup (one-time)
+
+DeepEval 3.9+ requires Python 3.10+. The system Python on macOS is 3.9 and will fail with a
+`TypeError: unsupported operand type(s) for |` error. Use the Homebrew Python 3.12 venv instead:
+
+```bash
+# Create the venv once
+/opt/homebrew/bin/python3.12 -m venv skills/backlog-manager/evals/.venv
+source skills/backlog-manager/evals/.venv/bin/activate
+pip install -r skills/backlog-manager/evals/requirements.txt
+```
+
+After that, always activate the venv before running evals:
+
+```bash
+source skills/backlog-manager/evals/.venv/bin/activate
+```
+
+### To run stress test
+```bash
+lsof -ti :8089 | xargs kill -9
+find skills/backlog-manager/scripts -name "*.pyc" -delete
+find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
+
+python3 skills/backlog-manager/scripts/backlog_server.py --file stress-tests/backlog_stress_2000.json &
+
+until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
+
+echo "--- Scores (2000) ---"
+time curl -s http://localhost:8089/api/scores | wc -l
+
+echo "--- Recommend (2000) ---"
+time curl -s http://localhost:8089/api/recommend | wc -l
+
+echo "--- Graph (2000) ---"
+time curl -s http://localhost:8089/api/graph | wc -l
+
+echo "--- Pulse (2000) ---"
+time curl -s http://localhost:8089/api/pulse | wc -l
+
+```
+
+### To run all evals (full suite)
+```bash
+source skills/backlog-manager/evals/.venv/bin/activate
+lsof -ti :8089 | xargs kill -9
+find skills/backlog-manager/scripts -name "*.pyc" -delete
+find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
+
+python3 skills/backlog-manager/scripts/backlog_server.py &
+
+until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
+
+cd skills/backlog-manager/evals
+EVAL_LLM=openai python3 -m pytest test_flow_live.py -v 2>&1 | tee results/test_results_$(date +%Y%m%d_%H%M%S).txt
+```
+
+### To run tribunal ties fixture tests
+```bash
+source skills/backlog-manager/evals/.venv/bin/activate
+lsof -ti :8089 | xargs kill -9
+find skills/backlog-manager/scripts -name "*.pyc" -delete
+find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
+
+python3 skills/backlog-manager/scripts/backlog_server.py &
+
+until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
+
+cd skills/backlog-manager/evals
+python3 -m pytest test_flow_live.py::TestTribunalTiesFixture -v
+```
+
+### To run critical path fixture tests
+```bash
+source skills/backlog-manager/evals/.venv/bin/activate
+lsof -ti :8089 | xargs kill -9
+find skills/backlog-manager/scripts -name "*.pyc" -delete
+find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
+
+python3 skills/backlog-manager/scripts/backlog_server.py &
+
+until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
+
+cd skills/backlog-manager/evals
+python3 -m pytest test_flow_live.py::TestCriticalPathFixture -v
+```
+
+
+
 ## License
 
 MIT

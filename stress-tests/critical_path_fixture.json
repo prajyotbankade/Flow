@@ -1,0 +1,786 @@
+{
+  "_meta": {
+    "fixture": "critical_path_fixture",
+    "purpose": "Deliberate deep dependency chain for context slicer critical path eval (Task 7 of Plan v3)",
+    "critical_chain": [
+      "CP-001",
+      "CP-002",
+      "CP-003",
+      "CP-004",
+      "CP-005",
+      "CP-006",
+      "CP-007"
+    ],
+    "chain_depth": 7,
+    "sub_branches": {
+      "ecr_cicd": [
+        "CP-008",
+        "CP-009"
+      ],
+      "secret_policy": [
+        "CP-010"
+      ],
+      "auth_features": [
+        "CP-011",
+        "CP-012"
+      ]
+    },
+    "noise_items": [
+      "NOISE-001",
+      "NOISE-002",
+      "NOISE-003",
+      "NOISE-004",
+      "NOISE-005",
+      "NOISE-006",
+      "NOISE-007",
+      "NOISE-008",
+      "NOISE-009",
+      "NOISE-010",
+      "NOISE-011",
+      "NOISE-012",
+      "NOISE-013",
+      "NOISE-014",
+      "NOISE-015",
+      "NOISE-016",
+      "NOISE-017",
+      "NOISE-018",
+      "NOISE-019",
+      "NOISE-020",
+      "NOISE-021",
+      "NOISE-022",
+      "NOISE-023"
+    ],
+    "active_agents": [
+      "alice",
+      "bob",
+      "carol"
+    ],
+    "slicer_expectation": "A critical_path query must return all CP-001 through CP-007 items. Noise items should be excluded. Sub-branches may be included as context."
+  },
+  "items": [
+    {
+      "id": "CP-001",
+      "title": "Provision cloud infrastructure (VPC, subnets, IAM)",
+      "status": "done",
+      "priority": "critical",
+      "complexity": "high",
+      "tags": [
+        "infrastructure",
+        "foundation"
+      ],
+      "assigned_to": "alice",
+      "blocks": [
+        "CP-002",
+        "CP-003"
+      ],
+      "blocked_by": [],
+      "is_critical_path": true,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-01T10:00:00Z",
+      "created_at": "2026-02-15T09:00:00Z",
+      "description": "Foundation layer. Everything else depends on this."
+    },
+    {
+      "id": "CP-002",
+      "title": "Deploy Kubernetes cluster on provisioned VPC",
+      "status": "in-progress",
+      "priority": "critical",
+      "complexity": "high",
+      "tags": [
+        "infrastructure",
+        "k8s"
+      ],
+      "assigned_to": "alice",
+      "blocks": [
+        "CP-004"
+      ],
+      "blocked_by": [
+        "CP-001"
+      ],
+      "is_critical_path": true,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-28T14:00:00Z",
+      "created_at": "2026-02-20T09:00:00Z",
+      "description": "K8s cluster. Blocks all service deployments."
+    },
+    {
+      "id": "CP-003",
+      "title": "Configure secrets management (Vault)",
+      "status": "todo",
+      "priority": "critical",
+      "complexity": "medium",
+      "tags": [
+        "infrastructure",
+        "security"
+      ],
+      "assigned_to": "bob",
+      "blocks": [
+        "CP-004"
+      ],
+      "blocked_by": [
+        "CP-001"
+      ],
+      "is_critical_path": true,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-25T11:00:00Z",
+      "created_at": "2026-02-20T09:00:00Z",
+      "description": "Vault must be configured before services can pull secrets."
+    },
+    {
+      "id": "CP-004",
+      "title": "Deploy API gateway service to K8s",
+      "status": "todo",
+      "priority": "critical",
+      "complexity": "medium",
+      "tags": [
+        "backend",
+        "api",
+        "k8s"
+      ],
+      "assigned_to": "carol",
+      "blocks": [
+        "CP-005"
+      ],
+      "blocked_by": [
+        "CP-002",
+        "CP-003"
+      ],
+      "is_critical_path": true,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-26T09:00:00Z",
+      "created_at": "2026-02-25T09:00:00Z",
+      "description": "API gateway deployment. Blocked until K8s cluster and Vault are ready."
+    },
+    {
+      "id": "CP-005",
+      "title": "Integrate auth service with API gateway",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "medium",
+      "tags": [
+        "backend",
+        "auth"
+      ],
+      "assigned_to": "alice",
+      "blocks": [
+        "CP-006"
+      ],
+      "blocked_by": [
+        "CP-004"
+      ],
+      "is_critical_path": true,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-27T10:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Auth integration. Blocked until API gateway is live."
+    },
+    {
+      "id": "CP-006",
+      "title": "Enable end-to-end TLS for all internal services",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "low",
+      "tags": [
+        "security",
+        "infrastructure"
+      ],
+      "assigned_to": "bob",
+      "blocks": [
+        "CP-007"
+      ],
+      "blocked_by": [
+        "CP-005"
+      ],
+      "is_critical_path": true,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-28T09:00:00Z",
+      "created_at": "2026-03-05T09:00:00Z",
+      "description": "TLS everywhere. Final security gate before production traffic."
+    },
+    {
+      "id": "CP-007",
+      "title": "Run load test and validate SLOs",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "medium",
+      "tags": [
+        "testing",
+        "reliability"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [
+        "CP-006"
+      ],
+      "is_critical_path": true,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-29T09:00:00Z",
+      "created_at": "2026-03-10T09:00:00Z",
+      "description": "Final validation before launch. Tail of the critical chain."
+    },
+    {
+      "id": "CP-008",
+      "title": "Set up container image registry (ECR)",
+      "status": "done",
+      "priority": "high",
+      "complexity": "low",
+      "tags": [
+        "infrastructure",
+        "k8s"
+      ],
+      "assigned_to": "bob",
+      "blocks": [
+        "CP-009"
+      ],
+      "blocked_by": [
+        "CP-001"
+      ],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-15T10:00:00Z",
+      "created_at": "2026-02-22T09:00:00Z",
+      "description": "ECR for storing Docker images."
+    },
+    {
+      "id": "CP-009",
+      "title": "Configure CI/CD pipeline to push images to ECR",
+      "status": "in-progress",
+      "priority": "high",
+      "complexity": "medium",
+      "tags": [
+        "devops",
+        "ci-cd"
+      ],
+      "assigned_to": "carol",
+      "blocks": [
+        "CP-004"
+      ],
+      "blocked_by": [
+        "CP-008"
+      ],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-29T14:00:00Z",
+      "created_at": "2026-02-25T09:00:00Z",
+      "description": "CI/CD integration."
+    },
+    {
+      "id": "CP-010",
+      "title": "Define secret rotation policy",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "security"
+      ],
+      "assigned_to": "alice",
+      "blocks": [
+        "CP-003"
+      ],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-22T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Policy doc needed before Vault is configured."
+    },
+    {
+      "id": "CP-011",
+      "title": "Build user profile API endpoints",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "backend",
+        "api"
+      ],
+      "assigned_to": "bob",
+      "blocks": [
+        "CP-012"
+      ],
+      "blocked_by": [
+        "CP-005"
+      ],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-28T11:00:00Z",
+      "created_at": "2026-03-10T09:00:00Z",
+      "description": "Profile endpoints need auth to be live first."
+    },
+    {
+      "id": "CP-012",
+      "title": "Build user preferences UI",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "medium",
+      "tags": [
+        "frontend"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [
+        "CP-011"
+      ],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-28T11:00:00Z",
+      "created_at": "2026-03-10T09:00:00Z",
+      "description": "Preferences UI depends on profile API."
+    },
+    {
+      "id": "NOISE-001",
+      "title": "Update marketing copy on landing page",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "marketing"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 1."
+    },
+    {
+      "id": "NOISE-002",
+      "title": "Fix typo in onboarding email template",
+      "status": "done",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "marketing"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 2."
+    },
+    {
+      "id": "NOISE-003",
+      "title": "Add dark mode to settings panel",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "frontend"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 3."
+    },
+    {
+      "id": "NOISE-004",
+      "title": "Write Q2 retrospective doc",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "process"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 4."
+    },
+    {
+      "id": "NOISE-005",
+      "title": "Upgrade eslint config to v9",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "devops"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 5."
+    },
+    {
+      "id": "NOISE-006",
+      "title": "Add CSV export to reporting dashboard",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "frontend",
+        "data"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 6."
+    },
+    {
+      "id": "NOISE-007",
+      "title": "Investigate slow query on analytics table",
+      "status": "in-progress",
+      "priority": "medium",
+      "complexity": "high",
+      "tags": [
+        "backend",
+        "data"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 7."
+    },
+    {
+      "id": "NOISE-008",
+      "title": "Write API documentation for v2 endpoints",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "docs"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 8."
+    },
+    {
+      "id": "NOISE-009",
+      "title": "Add keyboard shortcuts to editor",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "medium",
+      "tags": [
+        "frontend"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 9."
+    },
+    {
+      "id": "NOISE-010",
+      "title": "Resolve Dependabot alerts for stale packages",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "maintenance"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 10."
+    },
+    {
+      "id": "NOISE-011",
+      "title": "A/B test new CTA button color",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "growth"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 11."
+    },
+    {
+      "id": "NOISE-012",
+      "title": "Set up Sentry error tracking",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "devops"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 12."
+    },
+    {
+      "id": "NOISE-013",
+      "title": "Review and merge open PRs older than 2 weeks",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "process"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 13."
+    },
+    {
+      "id": "NOISE-014",
+      "title": "Improve error messages in form validation",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "frontend"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 14."
+    },
+    {
+      "id": "NOISE-015",
+      "title": "Add pagination to search results",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "backend",
+        "frontend"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 15."
+    },
+    {
+      "id": "NOISE-016",
+      "title": "Create Figma component library audit",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "medium",
+      "tags": [
+        "design"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 16."
+    },
+    {
+      "id": "NOISE-017",
+      "title": "Write unit tests for billing module",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "medium",
+      "tags": [
+        "backend",
+        "testing"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 17."
+    },
+    {
+      "id": "NOISE-018",
+      "title": "Optimize image loading in mobile app",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "frontend",
+        "mobile"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 18."
+    },
+    {
+      "id": "NOISE-019",
+      "title": "Archive completed sprint in project tracker",
+      "status": "done",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "process"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 19."
+    },
+    {
+      "id": "NOISE-020",
+      "title": "Update README with new setup instructions",
+      "status": "todo",
+      "priority": "low",
+      "complexity": "low",
+      "tags": [
+        "docs"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 20."
+    },
+    {
+      "id": "NOISE-021",
+      "title": "Add feature flags service integration",
+      "status": "todo",
+      "priority": "medium",
+      "complexity": "medium",
+      "tags": [
+        "backend"
+      ],
+      "assigned_to": "bob",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 21."
+    },
+    {
+      "id": "NOISE-022",
+      "title": "Write postmortem for March 15 incident",
+      "status": "done",
+      "priority": "medium",
+      "complexity": "low",
+      "tags": [
+        "process"
+      ],
+      "assigned_to": "carol",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 22."
+    },
+    {
+      "id": "NOISE-023",
+      "title": "Migrate legacy cron jobs to new scheduler",
+      "status": "todo",
+      "priority": "high",
+      "complexity": "high",
+      "tags": [
+        "backend",
+        "devops"
+      ],
+      "assigned_to": "alice",
+      "blocks": [],
+      "blocked_by": [],
+      "is_critical_path": false,
+      "reopens": 0,
+      "skips": 0,
+      "updated_at": "2026-03-20T09:00:00Z",
+      "created_at": "2026-03-01T09:00:00Z",
+      "description": "Standalone task unrelated to the infrastructure critical path. Noise item 23."
+    }
+  ]
+}
