@@ -668,9 +668,17 @@ def compute_pulse(data, agent_name=None, backlog_path=None):
     # Build ONCE here — pass to everything below
     blocks_map, blocked_by = resolve_blocks(items)
     items_by_id = {i.get("id"): i for i in items}
-    
+    in_progress_per_agent = {
+        aname: sum(
+            1 for i in items
+            if i.get("assigned_to") == aname and i.get("status") == "in-progress"
+        )
+        for aname in agents_cfg
+    }
+
     recommendation = evaluate_tribunal(data, agent=agent_name,
-                                       blocks_map=blocks_map, blocked_by=blocked_by)
+                                       blocks_map=blocks_map, blocked_by=blocked_by,
+                                       in_progress_per_agent=in_progress_per_agent)
     conflicts = detect_conflicts(items)
     rebalancing = compute_workload_rebalancing(items, agents_cfg)
 
@@ -699,7 +707,7 @@ def compute_pulse(data, agent_name=None, backlog_path=None):
             continue
         if agent_name:
             profile = agents_cfg.get(agent_name, {})
-            if compute_agent_affinity(item, agent_name, profile, items_by_id, {}) < 0:
+            if compute_agent_affinity(item, agent_name, profile, items_by_id, in_progress_per_agent) < 0:
                 continue
         startable.append({
             "id": item.get("id"),
@@ -781,7 +789,7 @@ def evaluate_lens_leverage(item, breakdown, blocks_map):
     }
 
 
-def evaluate_lens_agent_fit(item, agent_name, agents_cfg, items_by_id):
+def evaluate_lens_agent_fit(item, agent_name, agents_cfg, items_by_id, in_progress_per_agent):
     """Agent fit: how well matched to the best available agent."""
     score = 0.0
     reasons = []
@@ -789,7 +797,7 @@ def evaluate_lens_agent_fit(item, agent_name, agents_cfg, items_by_id):
 
     if agent_name:
         profile = agents_cfg.get(agent_name, {})
-        affinity = compute_agent_affinity(item, agent_name, profile, items_by_id, {})
+        affinity = compute_agent_affinity(item, agent_name, profile, items_by_id, in_progress_per_agent)
         if affinity > 0:
             score += affinity * 1.5
             item_tags = set(item.get("tags", []))
@@ -808,7 +816,7 @@ def evaluate_lens_agent_fit(item, agent_name, agents_cfg, items_by_id):
     else:
         best_affinity = -float("inf")
         for aname, aprofile in agents_cfg.items():
-            aff = compute_agent_affinity(item, aname, aprofile, items_by_id, {})
+            aff = compute_agent_affinity(item, aname, aprofile, items_by_id, in_progress_per_agent)
             if aff > best_affinity:
                 best_affinity = aff
                 best_agent = aname
@@ -948,7 +956,7 @@ def evaluate_lens_strategic(item, strategic_cfg):
     }
 
 
-def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None):
+def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None, in_progress_per_agent=None):
     """Run the tribunal: every lens evaluates every candidate, then aggregate.
 
     Returns structured verdict with justification and counterfactuals.
@@ -963,6 +971,15 @@ def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None):
     if blocks_map is None or blocked_by is None:
         blocks_map, blocked_by = resolve_blocks(items)
 
+    if in_progress_per_agent is None:
+        in_progress_per_agent = {
+            aname: sum(
+                1 for i in items
+                if i.get("assigned_to") == aname and i.get("status") == "in-progress"
+            )
+            for aname in agents_cfg
+        }
+
     score_results = compute_scores(data, blocks_map=blocks_map, blocked_by=blocked_by)
     breakdowns_by_id = {r["id"]: r["score_breakdown"] for r in score_results}
     scores_by_id = {r["id"]: r["score"] for r in score_results}
@@ -972,7 +989,6 @@ def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None):
     if not candidates:
         return {"picked": None, "shadow_ranking": [], "lenses": [], "candidates_evaluated": 0}
 
-    
     items_by_id = {i.get("id"): i for i in items}
 
     # Evaluate every lens for every candidate
@@ -983,7 +999,7 @@ def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None):
         evaluations[iid] = {
             "urgency": evaluate_lens_urgency(item, breakdown, scoring_cfg),
             "leverage": evaluate_lens_leverage(item, breakdown, blocks_map),
-            "agent_fit": evaluate_lens_agent_fit(item, agent, agents_cfg, items_by_id),
+            "agent_fit": evaluate_lens_agent_fit(item, agent, agents_cfg, items_by_id, in_progress_per_agent),
             "risk": evaluate_lens_risk(item, breakdown, blocks_map, items_by_id),
             "momentum": evaluate_lens_momentum(item, breakdown),
             "strategic": evaluate_lens_strategic(item, strategic_cfg),
@@ -1281,14 +1297,6 @@ def compute_scores(data, blocks_map=None, blocked_by=None):
     }
     startable_threshold = readiness_cfg.get("startable_threshold", 0.70)
     ready_threshold = readiness_cfg.get("ready_threshold", 0.90)
-
-    in_progress_per_agent = {
-        aname: sum(
-            1 for i in items
-            if i.get("assigned_to") == aname and i.get("status") == "in-progress"
-        )
-        for aname in agents_cfg
-    }
 
     results = []
     for idx, item in enumerate(items):
