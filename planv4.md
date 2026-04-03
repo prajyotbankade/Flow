@@ -299,9 +299,9 @@ The server still serves `backlog-board.html` and all existing API routes. Extern
 
 ---
 
-### Task 4: Update SKILL.md
+### Task 4: Update SKILL.md and README.md
 
-**What**: Update the skill's documentation to reflect the new architecture.
+**SKILL.md** — full update to reflect the new architecture:
 
 - Add CLI command reference (mirrors the command surface above)
 - Add setup instructions: `pip install -e .` inside skill directory, then `export BACKLOG_FILE=path/to/backlog.json`
@@ -310,7 +310,14 @@ The server still serves `backlog-board.html` and all existing API routes. Extern
 - Update server launch command: `backlog-server` replaces `python scripts/backlog_server.py`
 - Document which interface to use when: CLI for agents, web board for humans, Claude skill for natural language
 
-**Acceptance**: A new user can follow SKILL.md alone to install, configure, and use all three interfaces.
+**README.md** — targeted updates only:
+
+- Update "Getting Started" / install section to include `pip install -e .` step
+- Update server launch instructions to use `backlog-server` entry point
+- Add one-liner on `BACKLOG_FILE` env var wherever the server is first mentioned
+- No structural changes — README stays as-is, only stale commands get updated
+
+**Acceptance**: A new user can follow SKILL.md alone to install, configure, and use all three interfaces. No README instructions point to the old `python scripts/backlog_server.py` invocation.
 
 ---
 
