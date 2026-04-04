@@ -344,6 +344,147 @@ class BacklogStore:
         self.write(data, expected_version=data.get("version", 0))
         return ready_item
 
+    def ingest_result(self, report: dict) -> dict:
+        """Process a handoff result report and drive the backlog forward.
+
+        Returns a summary dict describing every action taken.
+        Raises ValueError on schema violations or unknown item_id.
+        """
+        # ── Validate schema ───────────────────────────────────────────────────
+        item_id = report.get("item_id")
+        status = report.get("status")
+        summary = report.get("summary", "")
+
+        if not item_id:
+            raise ValueError("result file missing required field: item_id")
+        if status not in ("done", "blocked", "partial"):
+            raise ValueError(
+                f"invalid status {status!r} — must be done, blocked, or partial"
+            )
+
+        # ── Load backlog ──────────────────────────────────────────────────────
+        data = self.read()
+        items = data.setdefault("items", [])
+        statuses = _get_status_config(data)
+
+        target = next((i for i in items if i.get("id") == item_id), None)
+        if target is None:
+            raise ValueError(f"item_id {item_id!r} not found in backlog")
+
+        now = _now_iso()
+        actions: list[str] = []
+
+        # ── Status handling ───────────────────────────────────────────────────
+        if status == "done":
+            # Advance to next lane after current (code-review if present, else done)
+            status_ids = [s.get("id") for s in statuses]
+            current = target.get("status", "backlog")
+            try:
+                current_idx = status_ids.index(current)
+            except ValueError:
+                current_idx = -1
+            # Skip special-cased lanes: discarded, done — find next sensible lane
+            next_lane = "done"
+            for sid in status_ids[current_idx + 1:]:
+                if sid not in ("discarded",):
+                    next_lane = sid
+                    break
+            _apply_lane_transition(target, next_lane, statuses, moved_by="ingest")
+            actions.append(f"advanced item {item_id} to {next_lane!r}")
+
+        else:
+            # blocked or partial — item stays in-progress, open a thread
+            thread_body = (
+                report.get("blocker", summary)
+                if status == "blocked"
+                else summary
+            )
+            thread = {
+                "id": _generate_id(),
+                "waiting_on": "lead",
+                "status": status,
+                "body": thread_body,
+                "created_at": now,
+                "resolved": False,
+            }
+            target.setdefault("threads", []).append(thread)
+            target["updated_at"] = now
+            actions.append(
+                f"opened thread on item {item_id} (waiting_on=lead, status={status})"
+            )
+
+        # ── Discovered items ──────────────────────────────────────────────────
+        new_items: list[dict] = []
+
+        for bug in report.get("bugs_found", []):
+            new_id = _generate_id()
+            new_item = {
+                "id": new_id,
+                "title": bug.get("title", "Untitled bug"),
+                "status": "backlog",
+                "priority_weight": 8,
+                "category": "bug",
+                "description": bug.get("description", ""),
+                "tags": [],
+                "links": [
+                    {
+                        "item_id": item_id,
+                        "type": "discovered-during",
+                        "reason": f"Found while working on {item_id}",
+                    }
+                ],
+                "threads": [],
+                "lane_history": [],
+                "gate_from": 0,
+                "reopen_count": 0,
+                "skip_count": 0,
+                "created_at": now,
+                "updated_at": now,
+            }
+            new_items.append(new_item)
+            actions.append(f"created bug item {new_id!r}: {new_item['title']!r}")
+
+        for fu in report.get("follow_ups", []):
+            new_id = _generate_id()
+            new_item = {
+                "id": new_id,
+                "title": fu.get("title", "Untitled follow-up"),
+                "status": "backlog",
+                "priority_weight": 5,
+                "category": "feature",
+                "description": fu.get("description", ""),
+                "tags": [],
+                "links": [
+                    {
+                        "item_id": item_id,
+                        "type": "follow-up",
+                        "reason": f"Follow-up from {item_id}",
+                    }
+                ],
+                "threads": [],
+                "lane_history": [],
+                "gate_from": 0,
+                "reopen_count": 0,
+                "skip_count": 0,
+                "created_at": now,
+                "updated_at": now,
+            }
+            new_items.append(new_item)
+            actions.append(f"created follow-up item {new_id!r}: {new_item['title']!r}")
+
+        items.extend(new_items)
+
+        self.write(data, expected_version=data.get("version", 0))
+
+        return {
+            "item_id": item_id,
+            "status_applied": status,
+            "next_lane": target.get("status"),
+            "new_items": [{"id": i["id"], "title": i["title"], "category": i["category"]} for i in new_items],
+            "actions": actions,
+            "note": "Tribunal should re-run to recompute scores for affected items.",
+        }
+
     def reorder(self, position: int, new_position: int) -> None:
         """Move item from position to new_position (both 1-based). Adjusts priority order."""
         data = self.read()

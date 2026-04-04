@@ -389,6 +389,296 @@ def board(
         )
 
 
+@app.command()
+@_handle
+def handoff(
+    agent: str = typer.Argument(..., help="Agent name (e.g. backend-dev)"),
+    file: Optional[str] = FILE_OPT,
+    item: Optional[int] = typer.Option(None, "--item", help="Force specific item by position"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print prompt without invoking claude"),
+) -> None:
+    """Assemble a structured work brief and hand it off to claude CLI."""
+    import datetime
+    import shutil
+
+    store = _store(file)
+    data = store.read()
+    backlog_path = store.file_path
+
+    # ── Resolve item ──────────────────────────────────────────────────────────
+    if item is not None:
+        items = data.get("items", [])
+        idx = item - 1
+        if idx < 0 or idx >= len(items):
+            err_console.print(f"[red]Error:[/red] Item #{item} not found.")
+            raise typer.Exit(1)
+        target = items[idx]
+        tribunal_info = None
+        pick_reason = f"Forced via --item {item}"
+    else:
+        # Use compute_pulse to pick top recommendation
+        try:
+            from .server import compute_pulse
+            pulse = compute_pulse(data, agent_name=agent, backlog_path=backlog_path)
+            rec = pulse.get("recommendation", {})
+            picked = rec.get("picked")
+            if not picked:
+                err_console.print("[red]Error:[/red] No ready items available for this agent.")
+                raise typer.Exit(1)
+            target_id = picked.get("item_id")
+            items_by_id = {i.get("id"): i for i in data.get("items", [])}
+            target = items_by_id.get(target_id)
+            if not target:
+                err_console.print(f"[red]Error:[/red] Pulse returned unknown item id {target_id!r}.")
+                raise typer.Exit(1)
+            tribunal_info = rec
+            pick_reason = picked.get("reasoning") or "Tribunal recommendation"
+        except ImportError:
+            # Fallback: pick first ready item
+            ready = [i for i in data.get("items", []) if i.get("status") == "ready"]
+            if not ready:
+                err_console.print("[red]Error:[/red] No ready items in the backlog.")
+                raise typer.Exit(1)
+            target = ready[0]
+            tribunal_info = None
+            pick_reason = "First ready item (pulse unavailable)"
+
+    # ── Load agent persona ────────────────────────────────────────────────────
+    backlog_dir = Path(backlog_path).parent
+    # Walk up to find .claude/agents/
+    persona_text = ""
+    search_dir = backlog_dir
+    for _ in range(5):
+        persona_path = search_dir / ".claude" / "agents" / f"{agent}.md"
+        if persona_path.exists():
+            persona_text = persona_path.read_text(encoding="utf-8")
+            break
+        parent = search_dir.parent
+        if parent == search_dir:
+            break
+        search_dir = parent
+
+    # ── Resolve linked items ──────────────────────────────────────────────────
+    items_by_id = {i.get("id"): i for i in data.get("items", [])}
+    links = target.get("links", [])
+    linked_summaries = []
+    for link in links:
+        linked_id = link.get("item_id", "")
+        linked_item = items_by_id.get(linked_id)
+        if linked_item:
+            linked_summaries.append({
+                "id": linked_id,
+                "title": linked_item.get("title", ""),
+                "status": linked_item.get("status", ""),
+                "type": link.get("type", ""),
+                "reason": link.get("reason", ""),
+            })
+        else:
+            linked_summaries.append({
+                "id": linked_id,
+                "title": "(unknown)",
+                "status": "(unknown)",
+                "type": link.get("type", ""),
+                "reason": link.get("reason", ""),
+            })
+
+    # ── Assemble prompt ───────────────────────────────────────────────────────
+    output_contract = json.dumps({
+        "item_id": target.get("id"),
+        "status": "done | blocked | partial",
+        "summary": "...",
+        "bugs_found": [{"title": "...", "description": "..."}],
+        "follow_ups": [{"title": "...", "description": "..."}],
+        "blocker": "... (only if status=blocked)",
+    }, indent=2)
+
+    lines = []
+    lines.append("# Work Brief")
+    lines.append("")
+    if persona_text:
+        lines.append("## Agent Persona")
+        lines.append(persona_text.strip())
+        lines.append("")
+    lines.append("## Task")
+    lines.append(f"**Title**: {target.get('title', '')}")
+    lines.append(f"**Item ID**: {target.get('id', '')}")
+    lines.append(f"**Status**: {target.get('status', '')}")
+    lines.append(f"**Priority weight**: {target.get('priority_weight', '')}")
+    lines.append(f"**Complexity**: {target.get('complexity', '')}")
+    lines.append(f"**Tags**: {', '.join(target.get('tags', []))}")
+    lines.append("")
+    lines.append("**Description**:")
+    lines.append(target.get("description", "(no description)"))
+    lines.append("")
+
+    if linked_summaries:
+        lines.append("## Linked Items")
+        for ls in linked_summaries:
+            lines.append(f"- [{ls['type']}] **{ls['title']}** (id={ls['id']}, status={ls['status']})")
+            if ls.get("reason"):
+                lines.append(f"  Reason: {ls['reason']}")
+        lines.append("")
+
+    lines.append("## Why This Item Was Picked")
+    lines.append(pick_reason)
+    if tribunal_info:
+        picked_info = tribunal_info.get("picked") or {}
+        lenses = picked_info.get("supporting_lenses", [])
+        if lenses:
+            lines.append("")
+            lines.append("### Lens scores")
+            for lens in lenses:
+                lines.append(f"- **{lens.get('lens', '')}**: weight={lens.get('weight', '')} — {lens.get('argument', '')}")
+    lines.append("")
+
+    lines.append("## Output Contract")
+    lines.append(
+        "When you finish, write ONLY the following JSON to stdout (no extra text before or after):"
+    )
+    lines.append("")
+    lines.append("```json")
+    lines.append(output_contract)
+    lines.append("```")
+    lines.append("")
+    lines.append(
+        "Fields: `item_id` (string), `status` (done|blocked|partial), "
+        "`summary` (string), `bugs_found` (array), `follow_ups` (array), "
+        "`blocker` (string, only if blocked)."
+    )
+
+    prompt = "\n".join(lines)
+
+    if dry_run:
+        console.print(prompt, markup=False)
+        return
+
+    # ── Invoke claude ─────────────────────────────────────────────────────────
+    if not shutil.which("claude"):
+        err_console.print(
+            "[red]Error:[/red] 'claude' CLI not found in PATH. "
+            "Install it or use --dry-run to preview the prompt."
+        )
+        raise typer.Exit(1)
+
+    console.print(f"[dim]Invoking claude for item {target.get('id')} ...[/dim]")
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=True,
+            text=True,
+        )
+    except OSError as e:
+        err_console.print(f"[red]Error:[/red] Failed to run claude: {e}")
+        raise typer.Exit(1)
+
+    raw_output = result.stdout.strip()
+
+    # ── Parse JSON report ─────────────────────────────────────────────────────
+    report = None
+    # Try to extract JSON block if claude wraps in markdown
+    for candidate in [raw_output]:
+        # Strip ```json fences if present
+        stripped = candidate
+        if "```" in stripped:
+            import re
+            m = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, re.DOTALL)
+            if m:
+                stripped = m.group(1)
+        try:
+            report = json.loads(stripped)
+            break
+        except json.JSONDecodeError:
+            pass
+
+    if report is None:
+        err_console.print(
+            "[yellow]Warning:[/yellow] Could not parse JSON report from claude output. "
+            "Saving raw output."
+        )
+        report = {
+            "item_id": target.get("id"),
+            "status": "partial",
+            "summary": "Raw output (JSON parse failed)",
+            "raw_output": raw_output,
+            "bugs_found": [],
+            "follow_ups": [],
+        }
+
+    # ── Save result ───────────────────────────────────────────────────────────
+    results_dir = backlog_dir / "handoff_results"
+    results_dir.mkdir(exist_ok=True)
+    timestamp = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    result_file = results_dir / f"{target.get('id')}_{timestamp}.json"
+    result_file.write_text(json.dumps(report, indent=2), encoding="utf-8")
+
+    console.print(f"[green]Handoff complete.[/green] Result saved to {result_file}")
+    console.print_json(json.dumps(report))
+
+
+@app.command()
+@_handle
+def ingest(
+    result_file: str = typer.Argument(..., help="Path to handoff result JSON file"),
+    file: Optional[str] = FILE_OPT,
+    json_out: bool = JSON_OPT,
+) -> None:
+    """Process a handoff result file and drive the backlog forward automatically."""
+    import re as _re
+
+    result_path = Path(result_file)
+    if not result_path.exists():
+        err_console.print(f"[red]Error:[/red] Result file not found: {result_file}")
+        raise typer.Exit(1)
+
+    try:
+        raw = result_path.read_text(encoding="utf-8")
+    except OSError as e:
+        err_console.print(f"[red]Error:[/red] Cannot read result file: {e}")
+        raise typer.Exit(1)
+
+    # Strip optional markdown fences
+    stripped = raw.strip()
+    if "```" in stripped:
+        m = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", stripped, _re.DOTALL)
+        if m:
+            stripped = m.group(1)
+
+    try:
+        report = json.loads(stripped)
+    except json.JSONDecodeError as e:
+        err_console.print(f"[red]Error:[/red] Result file is not valid JSON: {e}")
+        raise typer.Exit(1)
+
+    store = _store(file)
+    outcome = store.ingest_result(report)
+
+    if json_out:
+        console.print_json(json.dumps(outcome))
+        return
+
+    item_id = outcome["item_id"]
+    status_applied = outcome["status_applied"]
+    next_lane = outcome["next_lane"]
+
+    if status_applied == "done":
+        console.print(
+            f"[green]Ingested[/green] item [cyan]{item_id}[/cyan] — "
+            f"advanced to [bold]{next_lane}[/bold]"
+        )
+    else:
+        console.print(
+            f"[yellow]Ingested[/yellow] item [cyan]{item_id}[/cyan] — "
+            f"stays in [bold]{next_lane}[/bold], thread opened (waiting_on=lead, status={status_applied})"
+        )
+
+    for ni in outcome.get("new_items", []):
+        console.print(
+            f"  [dim]+[/dim] [{ni['category']}] {ni['title']} [dim](id={ni['id']})[/dim]"
+        )
+
+    console.print(f"[dim]{outcome['note']}[/dim]")
+
+
 def main():
     app()
 

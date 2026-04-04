@@ -1,6 +1,86 @@
 {
-  "version": 416,
+  "version": 427,
   "items": [
+    {
+      "id": "f7g8h9i0",
+      "title": "Flow orchestrator — autonomous dev cycle after human approval",
+      "description": "The tribunal brain is state-of-the-art at deciding WHAT to work on. But once work starts, Flow goes blind. Every lane transition requires a human to pull. This item makes Flow active: a persistent orchestrator that understands the full development cycle from the board's lane config and drives work forward autonomously.\n\n**The human contract:**\nHumans do one thing: approve an item to start (`ready`). Everything after that is Flow's responsibility until the item is `done` or hits a blocker that genuinely needs a human decision.\n\n**How it works:**\nFlow runs as a persistent process watching `backlog.json` and `handoff_results/`. On any state change, it:\n1. Reads the board's `config.statuses` — the lane labels are the development cycle\n2. Reasons about what each lane means (coding, review, testing, deploy — whatever the team configured)\n3. Identifies what needs to happen next for every in-flight item\n4. Initiates the right agent for the current lane with full context\n5. Processes the agent's result and advances the item to the next lane\n6. On rejection/blocker: writes a thread, moves item back, re-initiates the responsible agent\n7. On stale items: escalates with context\n\n**Semantic lane understanding:**\nFlow doesn't need explicit config like `qa watches code-review`. It reads the lane label and reasons from it — the same way a human engineer knows what 'code review' means without being told. This means it works for any workflow: `in-progress → QA → staging → done` is understood just as naturally as `in-progress → code-review → done`.\n\n**Agent initiation:**\nWhen an item enters a lane, Flow picks the best-fit agent from `config.agents` using the tribunal's agent_fit lens — skills, workload, history. It invokes them via `backlog handoff` (for work lanes) or `backlog review` (for review lanes), passing full context including what the previous agent did.\n\n**Human re-engagement (only when necessary):**\n- A blocker the agent cannot resolve\n- An item reopened 3+ times (reopen_count threshold)\n- A policy violation that requires a decision\n- No agents available with the right skills\n\nEverything else: Flow handles it.\n\n**Acceptance criteria:**\n- `backlog orchestrate` starts the persistent process\n- Human approves item to `ready` → orchestrator picks it up, assigns agent, invokes handoff — no further human action needed\n- Agent completes → result processed → item advances to next lane → next agent initiated automatically\n- Review agent rejects → thread written → item back to in-progress → original agent re-initiated with rejection context\n- Item reaches terminal lane (`done`) → orchestrator logs completion, surfaces summary\n- Works with any lane config — no hardcoded lane names\n- Human is only re-engaged when genuinely blocked",
+      "status": "in-progress",
+      "category": "feature",
+      "priority_weight": 10,
+      "complexity": "high",
+      "tags": ["orchestrator", "agentic-loop", "core", "autonomous"],
+      "assigned_to": "backend-dev",
+      "created_at": "2026-04-04T00:00:00.000000+00:00",
+      "updated_at": "2026-04-04T01:05:00.000000+00:00",
+      "lane_history": ["backlog", {"lane": "ready", "at": "2026-04-04T01:05:00.000000+00:00", "by": "user"}, {"lane": "in-progress", "at": "2026-04-04T01:05:00.000000+00:00", "by": "backend-dev"}],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "a1b2c3d4",
+          "type": "follow-up",
+          "reason": "Handoff is the execution primitive the orchestrator uses to initiate agents"
+        },
+        {
+          "item_id": "e5f6g7h8",
+          "type": "follow-up",
+          "reason": "Result ingestion is how the orchestrator processes what agents produce and closes the loop"
+        }
+      ]
+    },
+    {
+      "id": "d4e5f6g7",
+      "title": "Enforce review gate regardless of lane config",
+      "description": "Removing a code-review lane from the board config should not silently remove the code review practice. Flow must treat peer review as a hard quality gate — not a lane feature.\n\n**The rule:** Before any item reaches the terminal lane (`done`), a different agent than the one who built it must approve the work. This is enforced by the orchestrator, not by lane config.\n\n**If no review lane exists in config.statuses:**\nThe orchestrator injects an inline review step automatically — picks the best-fit reviewer agent (different from assigned_to), invokes `backlog review`, waits for verdict. The item does not advance to done without a pass. No visible lane is created — this happens transparently in the orchestrator's execution.\n\n**Config:**\n```json\n\"orchestrator\": {\n  \"require_review\": true  // default\n}\n```\nSetting `require_review: false` is allowed but Flow warns at startup:\n> ⚠ require_review is disabled — items will reach done without peer review.\n\n**Reviewer selection:**\nOrchestrator picks the reviewer using the same agent_fit lens as the tribunal — highest skill match, lowest workload, has not worked on this item. If no suitable reviewer exists, item is flagged and human is notified.\n\n**Acceptance criteria:**\n- Item built by backend-dev cannot reach done without a different agent approving\n- Board with no code-review lane still enforces inline review\n- `require_review: false` disables the gate with a loud warning\n- Reviewer is never the same agent who implemented the item\n- No suitable reviewer available → human notified, item paused",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 9,
+      "complexity": "medium",
+      "tags": ["orchestrator", "quality-gate", "review", "core"],
+      "created_at": "2026-04-04T00:10:00.000000+00:00",
+      "updated_at": "2026-04-04T00:10:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "f7g8h9i0",
+          "type": "related",
+          "reason": "Orchestrator is responsible for enforcing this gate at every lane transition"
+        }
+      ]
+    },
+    {
+      "id": "e5f6g7h8x",
+      "title": "Auto mode vs Supervised mode",
+      "description": "Two fundamentally different ways to run Flow — not a feature toggle but a product mode that changes who is in control.\n\n**Supervised mode (default):**\nHuman controls when work starts. Items are refined and moved to `ready` by the human or lead agent with human approval. Once `ready`, the orchestrator takes over — drives execution, manages agents, processes results, handles review. Human re-engages only on genuine blockers or when an agent cannot proceed.\n\nThe human's role: decide what gets started. Not how it gets done.\n\n**Auto mode:**\nLead agent owns the full cycle from backlog to done. It:\n1. Runs tribunal to pick the highest-value item\n2. Refines vague items — reads description, identifies gaps, asks the human targeted questions\n3. Gets answers, completes refinement, moves item to ready\n4. Assigns best-fit agent, initiates handoff\n5. Drives through all lanes including review\n6. Delivers completion summary to human\n\nHuman's role in auto mode: answer questions when the lead agent asks. That's it.\n\n**Config:**\n```json\n\"orchestrator\": {\n  \"mode\": \"supervised\"  // or \"auto\"\n}\n```\n\n**Lead agent in auto mode:**\nThe lead agent is a special role — not a worker, not a reviewer. It reads the full backlog, understands the project context, makes prioritization decisions, and coordinates other agents. Configured in `config.orchestrator.lead_agent`.\n\n**Question protocol in auto mode:**\nWhen the lead agent hits ambiguity during refinement, it does not guess. It surfaces the minimum set of questions needed to proceed — max 2 at a time, most blocking first. Human answers, lead agent resumes. No back-and-forth beyond what's necessary.\n\n**Acceptance criteria:**\n- `config.orchestrator.mode: supervised` — human must move item to ready before orchestrator acts\n- `config.orchestrator.mode: auto` — lead agent picks item, refines, asks human only when stuck, drives to done\n- Mode is visible on the board (status indicator)\n- Switching modes mid-flight does not disrupt in-progress items\n- Auto mode never starts work on an item without completing refinement first",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 9,
+      "complexity": "high",
+      "tags": ["orchestrator", "auto-mode", "core", "lead-agent"],
+      "created_at": "2026-04-04T00:10:00.000000+00:00",
+      "updated_at": "2026-04-04T00:10:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "f7g8h9i0",
+          "type": "related",
+          "reason": "Mode determines how the orchestrator decides when to initiate agents and when to pause for human input"
+        },
+        {
+          "item_id": "d4e5f6g7",
+          "type": "related",
+          "reason": "Both modes must enforce the review gate — auto mode does it transparently, supervised mode does it explicitly"
+        }
+      ]
+    },
     {
       "id": "spg3mz1x",
       "title": "Graph view resets zoom/pan on background poll",
@@ -20,15 +100,16 @@
     {
       "id": "a1b2c3d4",
       "title": "Work brief → agent handoff",
-      "description": "Turn the scored work brief into an actual agent invocation. The brief already exists as a data structure — this makes it executable: structured prompt with task context, linked items, constraints, and expected output format. Claude picks it up and starts working, not just recommending.",
-      "status": "backlog",
+      "description": "Turn the scored work brief into an actual agent invocation via `backlog handoff <agent>` CLI command. The brief already exists via /api/pulse — this makes it executable.\n\n**Mechanism**: Shell out to `claude` CLI subprocess with a structured prompt assembled from the pulse response: task title, description, linked items, scoring rationale, constraints, and agent persona from .claude/agents/<name>.md.\n\n**Structured prompt must include**:\n- Item details (title, description, tags, complexity, priority)\n- Linked items with relationship type and reason\n- Tribunal justification (why this item was picked, lens scores)\n- Agent persona (skills, learnings from .claude/agents/<name>.md)\n- Output contract: agent must produce a JSON completion report on finish\n\n**JSON completion report schema** (stdout, parseable by #3 result ingestion):\n```json\n{\n  \"item_id\": \"a1b2c3d4\",\n  \"status\": \"done\" | \"blocked\" | \"partial\",\n  \"summary\": \"...\",\n  \"bugs_found\": [{\"title\": \"...\", \"description\": \"...\"}],\n  \"follow_ups\": [{\"title\": \"...\", \"description\": \"...\"}],\n  \"blocker\": \"...\" // if status=blocked\n}\n```\n\n**Implementation plan**:\n1. New CLI command: `backlog handoff <agent> [--item <pos>] [--dry-run]`\n2. If --item not specified, use pulse to pick the top recommended item for that agent\n3. Assemble structured prompt from item data + pulse response + agent persona\n4. Shell out: `claude --print '<prompt>'` (non-interactive, capture output)\n5. Parse JSON report from stdout, write to `handoff_results/<item_id>_<timestamp>.json`\n6. On --dry-run, print the assembled prompt without invoking claude\n\n**Acceptance criteria**:\n- `backlog handoff backend-dev` picks top ready item, invokes claude CLI, saves result JSON\n- `backlog handoff backend-dev --dry-run` prints assembled prompt to stdout\n- `backlog handoff backend-dev --item 2` forces item #2 regardless of pulse recommendation\n- Result JSON is valid and matches schema above\n- Errors (claude not found, item not ready, no ready items) give clear messages",
+      "status": "done",
       "category": "feature",
       "priority_weight": 9,
       "complexity": "high",
-      "tags": ["agentic-loop", "core"],
+      "tags": ["agentic-loop", "core", "cli"],
       "created_at": "2026-04-03T22:30:00.000000+00:00",
-      "updated_at": "2026-04-03T22:30:00.000000+00:00",
-      "lane_history": ["backlog"],
+      "updated_at": "2026-04-04T00:45:00.000000+00:00",
+      "assigned_to": "backend-dev-2",
+      "lane_history": ["backlog", "refined", "ready", {"lane": "in-progress", "at": "2026-04-03T23:45:00.000000+00:00", "by": "backend-dev"}, {"lane": "code-review", "at": "2026-04-04T00:30:00.000000+00:00", "by": "backend-dev"}, {"lane": "done", "at": "2026-04-04T00:45:00.000000+00:00", "by": "backend-dev-2"}],
       "gate_from": 0,
       "skip_count": 0,
       "reopen_count": 0,
@@ -43,15 +124,16 @@
     {
       "id": "e5f6g7h8",
       "title": "Agent result ingestion",
-      "description": "When an agent finishes a task, parse its structured completion report and automatically update the backlog: mark item done, add discovered bugs/follow-ups as new items with links, update scores. This closes the agentic loop — Flow drives work, not just tracks it.",
-      "status": "backlog",
+      "description": "When an agent finishes a task, Flow reads its JSON completion report from `handoff_results/` and automatically drives the backlog forward. This is the return path of the agentic loop — without it, handoff is a one-way street.\n\n**Trigger:** Called by the orchestrator immediately after handoff completes. Also works standalone: `backlog ingest <result_file>` for manual or testing use.\n\n**Result schema (defined by handoff):**\n```json\n{\n  \"item_id\": \"a1b2c3d4\",\n  \"status\": \"done\" | \"blocked\" | \"partial\",\n  \"summary\": \"...\",\n  \"bugs_found\": [{\"title\": \"...\", \"description\": \"...\"}],\n  \"follow_ups\": [{\"title\": \"...\", \"description\": \"...\"}],\n  \"blocker\": \"...\"  // if status=blocked\n}\n```\n\n**Status handling:**\n\n`done` → advance item to next lane (code-review if it exists, otherwise inline review gate, then done). Orchestrator initiates reviewer agent.\n\n`blocked` → item stays in-progress. Dev agent opens a thread on the item tagging the lead agent (`waiting_on: \"lead\"`) with the blocker description. Lead agent reads it, either resolves the blocker directly or escalates to human with context. Human only sees it if lead cannot resolve it.\n\n`partial` → item stays in-progress. Dev agent opens a thread tagging lead agent with what was completed and what remains. Lead agent clarifies the gap, updates the item description if needed, and re-initiates the dev agent with full context. Human escalation only if lead cannot determine how to proceed.\n\n**Discovered items (bugs_found + follow_ups):**\n- Each entry becomes a new backlog item appended to the bottom\n- `bugs_found` → category: bug, priority_weight: 8 (default, adjustable)\n- `follow_ups` → category: feature, priority_weight: 5 (default)\n- Both linked back to the originating item with `discovered-during` type and a reason\n- Tribunal re-runs after ingestion so new items are immediately scored and visible in pulse\n\n**Score update:**\nAfter ingestion, re-compute scores for all items affected by the state change — the completed item, any newly created items, and items it was blocking (unblock cascade).\n\n**Acceptance criteria:**\n- `backlog ingest handoff_results/a1b2c3d4_timestamp.json` processes the report correctly\n- `done` → item advances to next lane, reviewer initiated\n- `blocked` → thread opened on item, tagged lead, item stays in-progress\n- `partial` → thread opened on item, tagged lead, item stays in-progress\n- bugs_found and follow_ups become new backlog items with correct links and default scores\n- Tribunal re-runs after ingestion\n- Invalid or missing result file gives a clear error",
+      "status": "done",
       "category": "feature",
       "priority_weight": 9,
       "complexity": "high",
       "tags": ["agentic-loop", "core"],
       "created_at": "2026-04-03T22:30:00.000000+00:00",
-      "updated_at": "2026-04-03T22:30:00.000000+00:00",
-      "lane_history": ["backlog"],
+      "updated_at": "2026-04-04T01:00:00.000000+00:00",
+      "assigned_to": "backend-dev",
+      "lane_history": ["backlog", "refined", {"lane": "ready", "at": "2026-04-04T00:25:00.000000+00:00", "by": "user"}, {"lane": "in-progress", "at": "2026-04-04T00:30:00.000000+00:00", "by": "backend-dev"}, {"lane": "code-review", "at": "2026-04-03T23:59:00.000000+00:00", "by": "backend-dev"}, {"lane": "done", "at": "2026-04-04T01:00:00.000000+00:00", "by": "backend-dev-2"}],
       "gate_from": 0,
       "skip_count": 0,
       "reopen_count": 0,
@@ -59,7 +141,12 @@
         {
           "item_id": "a1b2c3d4",
           "type": "discovered-during",
-          "reason": "Handoff must exist before result ingestion can receive anything back"
+          "reason": "Handoff defines the result schema that ingestion parses"
+        },
+        {
+          "item_id": "f7g8h9i0",
+          "type": "blocks",
+          "reason": "Orchestrator cannot close the loop without result ingestion processing agent outputs"
         }
       ]
     },
@@ -124,6 +211,45 @@
           "reason": "Execution history provides the signal that re-scoring learns from"
         }
       ]
+    },
+    {
+      "id": "b2c3d4e5",
+      "title": "Lane history: track actor on every transition",
+      "description": "Currently lane_history entries are bare strings for early moves (e.g. 'backlog', 'refined', 'ready') with no record of who made the transition or when. Only agent-driven moves include a structured object with `lane`, `at`, and `by` fields.\n\nEvery lane transition — whether done by a human, the CLI, or an agent — should record the same structured format:\n```json\n{\"lane\": \"refined\", \"at\": \"<iso-timestamp>\", \"by\": \"<actor>\"}\n```\n\nActor should be: agent name if known, 'user' for CLI/board moves without an explicit actor, or the authenticated user if auth is added later.\n\nImpact: fixes audit trail gap, enables 'who refined this?' queries, makes execution history (#4) accurate from day one.",
+      "status": "backlog",
+      "category": "bug",
+      "priority_weight": 8,
+      "complexity": "low",
+      "tags": ["core", "audit", "lane-history"],
+      "created_at": "2026-04-03T23:50:00.000000+00:00",
+      "updated_at": "2026-04-03T23:50:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {
+          "item_id": "i9j0k1l2",
+          "type": "related",
+          "reason": "Execution history per item depends on accurate actor-stamped lane transitions"
+        }
+      ]
+    },
+    {
+      "id": "c3d4e5f6",
+      "title": "Code review assignment — who reviews agent work?",
+      "description": "When an agent moves an item to code-review, there is no mechanism to assign a reviewer or notify anyone. The item sits in code-review indefinitely with no owner.\n\nNeeds a solution for:\n1. **Reviewer assignment**: `assigned_to` currently tracks the worker — we need a separate `reviewer` field (or a convention like `assigned_to` transfers on code-review entry)\n2. **Notification / visibility**: reviewer should be surfaced in pulse, board, and CLI show output\n3. **Policy hook**: a policy rule like `on: enter_lane(code-review) → assign_reviewer(lead)` would make this automatic\n\nDecisions needed before refining: does reviewer replace or supplement assigned_to? Is 'lead' a special agent role or just a config value?",
+      "status": "backlog",
+      "category": "feature",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "tags": ["core", "workflow", "code-review"],
+      "created_at": "2026-04-03T23:50:00.000000+00:00",
+      "updated_at": "2026-04-03T23:50:00.000000+00:00",
+      "lane_history": ["backlog"],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0
     },
     {
       "id": "u1v2w3x4",
