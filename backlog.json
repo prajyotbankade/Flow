@@ -1,11 +1,11 @@
 {
-  "version": 429,
+  "version": 433,
   "items": [
     {
       "id": "f7g8h9i0",
       "title": "Flow orchestrator \u2014 autonomous dev cycle after human approval",
       "description": "The tribunal brain is state-of-the-art at deciding WHAT to work on. But once work starts, Flow goes blind. Every lane transition requires a human to pull. This item makes Flow active: a persistent orchestrator that understands the full development cycle from the board's lane config and drives work forward autonomously.\n\n**The human contract:**\nHumans do one thing: approve an item to start (`ready`). Everything after that is Flow's responsibility until the item is `done` or hits a blocker that genuinely needs a human decision.\n\n**How it works:**\nFlow runs as a persistent process watching `backlog.json` and `handoff_results/`. On any state change, it:\n1. Reads the board's `config.statuses` \u2014 the lane labels are the development cycle\n2. Reasons about what each lane means (coding, review, testing, deploy \u2014 whatever the team configured)\n3. Identifies what needs to happen next for every in-flight item\n4. Initiates the right agent for the current lane with full context\n5. Processes the agent's result and advances the item to the next lane\n6. On rejection/blocker: writes a thread, moves item back, re-initiates the responsible agent\n7. On stale items: escalates with context\n\n**Semantic lane understanding:**\nFlow doesn't need explicit config like `qa watches code-review`. It reads the lane label and reasons from it \u2014 the same way a human engineer knows what 'code review' means without being told. This means it works for any workflow: `in-progress \u2192 QA \u2192 staging \u2192 done` is understood just as naturally as `in-progress \u2192 code-review \u2192 done`.\n\n**Agent initiation:**\nWhen an item enters a lane, Flow picks the best-fit agent from `config.agents` using the tribunal's agent_fit lens \u2014 skills, workload, history. It invokes them via `backlog handoff` (for work lanes) or `backlog review` (for review lanes), passing full context including what the previous agent did.\n\n**Human re-engagement (only when necessary):**\n- A blocker the agent cannot resolve\n- An item reopened 3+ times (reopen_count threshold)\n- A policy violation that requires a decision\n- No agents available with the right skills\n\nEverything else: Flow handles it.\n\n**Acceptance criteria:**\n- `backlog orchestrate` starts the persistent process\n- Human approves item to `ready` \u2192 orchestrator picks it up, assigns agent, invokes handoff \u2014 no further human action needed\n- Agent completes \u2192 result processed \u2192 item advances to next lane \u2192 next agent initiated automatically\n- Review agent rejects \u2192 thread written \u2192 item back to in-progress \u2192 original agent re-initiated with rejection context\n- Item reaches terminal lane (`done`) \u2192 orchestrator logs completion, surfaces summary\n- Works with any lane config \u2014 no hardcoded lane names\n- Human is only re-engaged when genuinely blocked",
-      "status": "code-review",
+      "status": "done",
       "category": "feature",
       "priority_weight": 10,
       "complexity": "high",
@@ -34,6 +34,11 @@
           "lane": "code-review",
           "at": "2026-04-03T22:00:00.000000+00:00",
           "by": "backend-dev"
+        },
+        {
+          "lane": "done",
+          "at": "2026-04-04T01:30:00.000000+00:00",
+          "by": "backend-dev-2"
         }
       ],
       "gate_from": 0,
@@ -147,8 +152,8 @@
     },
     {
       "id": "spg3mz1x",
-      "title": "Graph view resets zoom/pan on background poll",
-      "description": "Every background data refresh re-renders the graph diagram and resets the viewport zoom/pan position to fit-to-screen. This makes it impossible to explore a specific area of the graph after zooming in. Should preserve viewport transform state across polls and only reset on explicit user action (e.g. switching away from graph view and back).",
+      "title": "Graph view resets zoom/pan on background poll, same issue on the board when scroll down",
+      "description": "Every background data refresh re-renders the graph diagram and resets the viewport zoom/pan position to fit-to-screen. This makes it impossible to explore a specific area of the graph after zooming in. Should preserve viewport transform state across polls and only reset on explicit user action (e.g. switching away from graph view and back).\n\nWhen viewing long lane, the UI refresh and the user moves back to the top of the page.",
       "status": "backlog",
       "category": "bug",
       "priority_weight": 7,
@@ -158,13 +163,15 @@
         "graph"
       ],
       "created_at": "2026-04-03T22:17:43.760329+00:00",
-      "updated_at": "2026-04-03T22:17:43.760329+00:00",
+      "updated_at": "2026-04-04T02:47:57.076Z",
       "lane_history": [
         "backlog"
       ],
       "gate_from": 0,
       "skip_count": 0,
-      "reopen_count": 0
+      "reopen_count": 0,
+      "assigned_to": null,
+      "notes": ""
     },
     {
       "id": "a1b2c3d4",
@@ -360,13 +367,15 @@
         "code-review"
       ],
       "created_at": "2026-04-03T23:50:00.000000+00:00",
-      "updated_at": "2026-04-03T23:50:00.000000+00:00",
+      "updated_at": "2026-04-04T02:49:53.900Z",
       "lane_history": [
         "backlog"
       ],
       "gate_from": 0,
       "skip_count": 0,
-      "reopen_count": 0
+      "reopen_count": 0,
+      "assigned_to": null,
+      "notes": ""
     },
     {
       "id": "u1v2w3x4",
@@ -388,6 +397,26 @@
       "gate_from": 0,
       "skip_count": 0,
       "reopen_count": 0
+    },
+    {
+      "id": "x4t2h2nd",
+      "title": "Show Item no in the UI when the item is opened",
+      "description": "The Item no for the current item in the details screen is missing",
+      "status": "backlog",
+      "assigned_to": null,
+      "lane_history": [],
+      "gate_from": 0,
+      "threads": [],
+      "links": [],
+      "notes": "",
+      "complexity": null,
+      "category": null,
+      "priority_weight": null,
+      "tags": [],
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-04T02:50:29.259Z",
+      "updated_at": "2026-04-04T02:50:29.259Z"
     }
   ],
   "config": {
