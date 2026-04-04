@@ -14,7 +14,7 @@ import os
 import subprocess
 import sys
 from pathlib import Path
-from typing import Optional
+from typing import List, Optional
 
 import typer
 from rich.console import Console
@@ -677,6 +677,282 @@ def ingest(
         )
 
     console.print(f"[dim]{outcome['note']}[/dim]")
+
+
+# ── Orchestrator helpers ──────────────────────────────────────────────────────
+
+def _select_agent(data: dict, item: dict, exclude: Optional[str] = None) -> Optional[str]:
+    """Pick the best-fit agent from config.agents for an item.
+
+    Scores agents by skill overlap with item tags, penalises agents at their
+    max_active limit, excludes the optional *exclude* agent (for reviewer
+    selection).  Returns None if no suitable agent found.
+    """
+    agents_cfg = data.get("config", {}).get("agents", {})
+    if not agents_cfg:
+        return None
+
+    items = data.get("items", [])
+    in_progress_counts: dict[str, int] = {
+        name: sum(
+            1 for i in items
+            if i.get("assigned_to") == name and i.get("status") == "in-progress"
+        )
+        for name in agents_cfg
+    }
+
+    item_tags = set(t.lower() for t in item.get("tags", []))
+
+    best_agent: Optional[str] = None
+    best_score: float = -1.0
+
+    for name, cfg in agents_cfg.items():
+        if name == exclude:
+            continue
+        max_active = cfg.get("max_active", 2)
+        current = in_progress_counts.get(name, 0)
+        if current >= max_active:
+            continue
+        skills = set(s.lower() for s in cfg.get("skills", []))
+        overlap = len(skills & item_tags)
+        score = overlap - current * 0.1  # prefer idle agents on equal overlap
+        if score > best_score:
+            best_score = score
+            best_agent = name
+
+    return best_agent
+
+
+def _semantic_next_action(
+    statuses: list,
+    current_lane: str,
+    previous_lane: str,
+    assigned_to: str,
+) -> dict:
+    """Ask Claude what to do next, falling back to a heuristic if Claude is absent."""
+    import shutil
+
+    lane_labels = [s.get("label", s.get("id", "")) for s in statuses]
+    if shutil.which("claude"):
+        prompt = (
+            f'Given this workflow: {lane_labels}\n'
+            f'Item is now in lane: "{current_lane}"\n'
+            f'Previous lane: "{previous_lane}"\n'
+            f'Built by: {assigned_to}\n\n'
+            'What should happen next? Reply with JSON:\n'
+            '{"action": "work" | "review" | "done" | "wait", "reason": "..."}'
+        )
+        try:
+            result = subprocess.run(
+                ["claude", "--print", prompt],
+                capture_output=True, text=True, timeout=30,
+            )
+            import re
+            m = re.search(r'\{[^{}]+\}', result.stdout, re.DOTALL)
+            if m:
+                parsed = json.loads(m.group(0))
+                if parsed.get("action") in ("work", "review", "done", "wait"):
+                    return parsed
+        except Exception:
+            pass
+
+    # Heuristic fallback
+    terminal_ids = {s.get("id", "") for s in statuses if s.get("id") in ("done", "discarded")}
+    # Find lanes that suggest review by label
+    review_keywords = ("review", "qa", "test", "staging")
+    current_label = next(
+        (s.get("label", current_lane) for s in statuses if s.get("id") == current_lane),
+        current_lane,
+    ).lower()
+
+    if current_lane in terminal_ids:
+        return {"action": "done", "reason": "Item is in terminal lane"}
+    if any(kw in current_label for kw in review_keywords):
+        return {"action": "review", "reason": f"Lane '{current_lane}' looks like a review lane"}
+    return {"action": "work", "reason": "Default: send to work agent"}
+
+
+def _find_ready_items(data: dict) -> list:
+    return [i for i in data.get("items", []) if i.get("status") == "ready"]
+
+
+def _item_position(data: dict, item_id: str) -> Optional[int]:
+    for idx, i in enumerate(data.get("items", [])):
+        if i.get("id") == item_id:
+            return idx + 1
+    return None
+
+
+def _run_handoff(backlog_file: str, agent: str, pos: int, dry_run: bool) -> None:
+    cmd = ["backlog", "--file", backlog_file, "handoff", agent, "--item", str(pos)]
+    if dry_run:
+        console.print(f"[dim]DRY-RUN would invoke:[/dim] {' '.join(cmd)}")
+    else:
+        subprocess.run(cmd)
+
+
+def _run_ingest(backlog_file: str, result_file: str, dry_run: bool) -> None:
+    cmd = ["backlog", "--file", backlog_file, "ingest", result_file]
+    if dry_run:
+        console.print(f"[dim]DRY-RUN would invoke:[/dim] {' '.join(cmd)}")
+    else:
+        subprocess.run(cmd)
+
+
+def _scan_result_files(backlog_dir: Path) -> List[Path]:
+    results_dir = backlog_dir / "handoff_results"
+    if not results_dir.exists():
+        return []
+    return sorted(results_dir.glob("*.json"))
+
+
+def _orchestrate_tick(
+    backlog_file: str,
+    dry_run: bool,
+    seen_result_files: set,
+    log_prefix: str = "[tick]",
+) -> None:
+    store = BacklogStore(backlog_file)
+    data = store.read()
+    backlog_dir = Path(backlog_file).parent
+    statuses = data.get("config", {}).get("statuses", DEFAULT_STATUSES)
+
+    # 1. Ingest any new result files first (so lane state is fresh for step 2)
+    result_files = _scan_result_files(backlog_dir)
+    for rf in result_files:
+        if str(rf) not in seen_result_files:
+            console.print(f"{log_prefix} new result file → ingest {rf.name}")
+            _run_ingest(backlog_file, str(rf), dry_run)
+            seen_result_files.add(str(rf))
+            if not dry_run:
+                # Re-read after ingest so we see updated lane
+                data = store.read()
+
+    # 2. Check items with waiting_on=lead threads
+    items = data.get("items", [])
+    for item in items:
+        for thread in item.get("threads", []):
+            if thread.get("resolved"):
+                continue
+            if thread.get("waiting_on") == "lead":
+                item_id = item.get("id")
+                pos = _item_position(data, item_id)
+                console.print(
+                    f"{log_prefix} item {item_id} has waiting_on=lead thread — "
+                    "cannot auto-resolve, escalating to user"
+                )
+                if not dry_run:
+                    # Mark as waiting_on=user so it surfaces correctly
+                    thread["waiting_on"] = "user"
+                    store.write(data)
+                console.print(
+                    f"[yellow]NOTIFICATION:[/yellow] Item #{pos} '{item.get('title','?')}' "
+                    "needs user input (thread unresolvable by orchestrator)"
+                )
+
+    # 3. Re-read for fresh state
+    data = store.read()
+    statuses_list = data.get("config", {}).get("statuses", DEFAULT_STATUSES)
+
+    # 4. Handle items that need lane-based action (review / work)
+    items = data.get("items", [])
+    acted = False
+    for item in items:
+        status = item.get("status", "")
+        assigned_to = item.get("assigned_to") or ""
+        item_id = item.get("id")
+        pos = _item_position(data, item_id)
+
+        # Determine previous lane from lane_history
+        history = item.get("lane_history", [])
+        previous_lane = ""
+        if len(history) >= 2:
+            prev = history[-2]
+            previous_lane = prev if isinstance(prev, str) else prev.get("lane", "")
+
+        # Skip if already terminal or waiting
+        terminal_ids = {s.get("id") for s in statuses_list if s.get("id") in ("done", "discarded")}
+        if status in terminal_ids or status in ("backlog", "refined"):
+            continue
+
+        # Determine what the orchestrator should do for this lane
+        decision = _semantic_next_action(statuses_list, status, previous_lane, assigned_to)
+        action = decision.get("action")
+        reason = decision.get("reason", "")
+
+        if action == "done":
+            console.print(f"{log_prefix} item {item_id} is terminal ({status}) — logging completion")
+            continue
+
+        if action == "wait":
+            continue
+
+        if action == "review":
+            agent = _select_agent(data, item, exclude=assigned_to)
+            if not agent:
+                console.print(
+                    f"{log_prefix} item {item_id} in {status} needs review "
+                    "but no suitable reviewer found → notifying user"
+                )
+                continue
+            console.print(
+                f"{log_prefix} item {item_id} in {status} → review handoff {agent} --item {pos}"
+            )
+            _run_handoff(backlog_file, agent, pos, dry_run)
+            acted = True
+            continue
+
+        if action == "work":
+            # Only act on "ready" or lanes explicitly needing work assignment
+            if status == "ready":
+                agent = _select_agent(data, item)
+                if not agent:
+                    console.print(
+                        f"{log_prefix} item {item_id} ready but no suitable agent → notifying user"
+                    )
+                    continue
+                console.print(
+                    f"{log_prefix} found 1 ready item → handoff {agent} --item {pos}"
+                )
+                _run_handoff(backlog_file, agent, pos, dry_run)
+                acted = True
+
+    if not acted and not seen_result_files:
+        pass  # silent clean tick
+
+
+@app.command()
+def orchestrate(
+    file: Optional[str] = FILE_OPT,
+    poll: int = typer.Option(10, "--poll", help="Seconds between ticks"),
+    once: bool = typer.Option(False, "--once", help="Run one tick and exit"),
+    dry_run: bool = typer.Option(False, "--dry-run", help="Print actions without invoking"),
+) -> None:
+    """Persistent orchestrator: drive the dev cycle after human approves items to ready."""
+    import time
+
+    backlog_file = _resolve_file(file)
+    seen_result_files: set = set()
+
+    console.print(
+        f"[bold green]Orchestrator started[/bold green] "
+        f"(file={backlog_file}, poll={poll}s, once={once}, dry_run={dry_run})"
+    )
+
+    tick_count = 0
+    try:
+        while True:
+            tick_count += 1
+            console.print(f"[dim]--- tick {tick_count} ---[/dim]")
+            _orchestrate_tick(backlog_file, dry_run, seen_result_files, log_prefix=f"[tick {tick_count}]")
+            if once:
+                break
+            time.sleep(poll)
+    except KeyboardInterrupt:
+        console.print(
+            f"\n[bold]Orchestrator stopped[/bold] after {tick_count} tick(s). "
+            f"Ingested {len(seen_result_files)} result file(s)."
+        )
 
 
 def main():

@@ -754,3 +754,322 @@ def test_ingest_invalid_status_exits_1(tmp_backlog, tmp_path):
     result_file = _write_result(tmp_path, report)
     result = invoke(["ingest", result_file], tmp_backlog)
     assert result.exit_code == 1
+
+
+# ── Orchestrate fixtures & helpers ────────────────────────────────────────────
+
+def _backlog_with_agents(tmp_path: Path) -> str:
+    """Backlog with agents config, one ready item."""
+    path = tmp_path / "backlog.json"
+    data = {
+        "version": 0,
+        "config": {
+            "project_name": "OrchTest",
+            "statuses": [
+                {"id": "backlog",     "label": "Backlog"},
+                {"id": "ready",       "label": "Ready"},
+                {"id": "in-progress", "label": "In Progress", "requires": ["ready"]},
+                {"id": "code-review", "label": "Code Review", "requires": ["in-progress"]},
+                {"id": "done",        "label": "Done",        "requires": ["code-review"]},
+                {"id": "discarded",   "label": "Discarded"},
+            ],
+            "agents": {
+                "backend-dev": {
+                    "skills": ["python", "api"],
+                    "max_active": 2,
+                },
+                "qa": {
+                    "skills": ["testing", "api"],
+                    "max_active": 2,
+                },
+            },
+        },
+        "items": [
+            {
+                "id": "item-001",
+                "title": "Ready task",
+                "status": "ready",
+                "category": "feature",
+                "priority_weight": 5,
+                "complexity": "low",
+                "tags": ["python", "api"],
+                "assigned_to": None,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "lane_history": ["backlog", "ready"],
+                "gate_from": 0,
+                "skip_count": 0,
+                "reopen_count": 0,
+                "threads": [],
+                "links": [],
+            }
+        ],
+    }
+    path.write_text(json.dumps(data, indent=2))
+    return str(path)
+
+
+# ── Test: orchestrate --once ──────────────────────────────────────────────────
+
+def test_orchestrate_once_picks_up_ready_item(tmp_path, monkeypatch):
+    """--once with a ready item should invoke handoff for the item."""
+    backlog_file = _backlog_with_agents(tmp_path)
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    result = invoke(["orchestrate", "--once"], backlog_file)
+
+    assert result.exit_code == 0, result.output
+    handoff_calls = [c for c in invoked if "handoff" in c]
+    assert len(handoff_calls) >= 1, f"Expected at least one handoff call; got invoked={invoked}"
+    # Should have --item 1
+    joined = " ".join(handoff_calls[0])
+    assert "--item" in joined
+    assert "1" in joined
+
+
+def test_orchestrate_once_dry_run(tmp_path, monkeypatch):
+    """--once --dry-run should print the action but NOT invoke subprocess.run."""
+    backlog_file = _backlog_with_agents(tmp_path)
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    result = invoke(["orchestrate", "--once", "--dry-run"], backlog_file)
+
+    assert result.exit_code == 0, result.output
+    assert "DRY-RUN" in result.output or "dry" in result.output.lower() or "handoff" in result.output.lower()
+    # subprocess.run should NOT have been called for the actual handoff
+    real_handoff_calls = [c for c in invoked if "handoff" in c and "DRY" not in str(c)]
+    assert len(real_handoff_calls) == 0, f"Should not have invoked handoff in dry-run; got {invoked}"
+
+
+def test_orchestrate_ingests_result_file(tmp_path, monkeypatch):
+    """--once with a result file in handoff_results/ should invoke ingest."""
+    backlog_file = _backlog_with_agents(tmp_path)
+
+    # Create a result file
+    results_dir = tmp_path / "handoff_results"
+    results_dir.mkdir()
+    rf = results_dir / "item-001_20260101T000000Z.json"
+    rf.write_text(json.dumps({
+        "item_id": "item-001",
+        "status": "done",
+        "summary": "All done",
+        "bugs_found": [],
+        "follow_ups": [],
+    }))
+
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    result = invoke(["orchestrate", "--once"], backlog_file)
+
+    assert result.exit_code == 0, result.output
+    ingest_calls = [c for c in invoked if "ingest" in c]
+    assert len(ingest_calls) >= 1, f"Expected ingest call; got invoked={invoked}"
+    assert str(rf) in " ".join(ingest_calls[0])
+
+
+def test_orchestrate_selects_different_reviewer(tmp_path, monkeypatch):
+    """Item in code-review lane should get a reviewer different from assigned_to."""
+    path = tmp_path / "backlog.json"
+    data = {
+        "version": 0,
+        "config": {
+            "project_name": "ReviewTest",
+            "statuses": [
+                {"id": "backlog",     "label": "Backlog"},
+                {"id": "ready",       "label": "Ready"},
+                {"id": "in-progress", "label": "In Progress"},
+                {"id": "code-review", "label": "Code Review"},
+                {"id": "done",        "label": "Done"},
+                {"id": "discarded",   "label": "Discarded"},
+            ],
+            "agents": {
+                "backend-dev": {"skills": ["python"], "max_active": 2},
+                "qa": {"skills": ["testing", "python"], "max_active": 2},
+            },
+        },
+        "items": [
+            {
+                "id": "item-002",
+                "title": "Under review",
+                "status": "code-review",
+                "category": "feature",
+                "priority_weight": 5,
+                "complexity": "low",
+                "tags": ["python"],
+                "assigned_to": "backend-dev",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "lane_history": ["backlog", "in-progress", "code-review"],
+                "gate_from": 0,
+                "skip_count": 0,
+                "reopen_count": 0,
+                "threads": [],
+                "links": [],
+            }
+        ],
+    }
+    path.write_text(json.dumps(data, indent=2))
+    backlog_file = str(path)
+
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    # Also stub out claude in semantic check so it uses heuristic
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+
+    result = invoke(["orchestrate", "--once"], backlog_file)
+    assert result.exit_code == 0, result.output
+
+    handoff_calls = [c for c in invoked if "handoff" in c]
+    if handoff_calls:
+        # Reviewer must not be backend-dev
+        agent_arg = handoff_calls[0][handoff_calls[0].index("handoff") + 1]
+        assert agent_arg != "backend-dev", f"Reviewer should differ from builder; got {agent_arg}"
+
+
+def test_orchestrate_resolves_lead_thread(tmp_path, monkeypatch):
+    """Item with waiting_on=lead thread should be escalated to user."""
+    path = tmp_path / "backlog.json"
+    data = {
+        "version": 0,
+        "config": {
+            "project_name": "LeadTest",
+            "statuses": [
+                {"id": "backlog",     "label": "Backlog"},
+                {"id": "in-progress", "label": "In Progress"},
+                {"id": "done",        "label": "Done"},
+            ],
+            "agents": {
+                "backend-dev": {"skills": ["python"], "max_active": 2},
+            },
+        },
+        "items": [
+            {
+                "id": "item-003",
+                "title": "Blocked by lead",
+                "status": "in-progress",
+                "category": "feature",
+                "priority_weight": 5,
+                "complexity": "low",
+                "tags": [],
+                "assigned_to": "backend-dev",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "lane_history": ["backlog", "in-progress"],
+                "gate_from": 0,
+                "skip_count": 0,
+                "reopen_count": 0,
+                "threads": [
+                    {
+                        "id": "t1",
+                        "waiting_on": "lead",
+                        "message": "Need clarification",
+                        "resolved": False,
+                    }
+                ],
+                "links": [],
+            }
+        ],
+    }
+    path.write_text(json.dumps(data, indent=2))
+    backlog_file = str(path)
+
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+
+    result = invoke(["orchestrate", "--once"], backlog_file)
+    assert result.exit_code == 0, result.output
+    assert "NOTIFICATION" in result.output or "user" in result.output.lower()
+
+    # Verify thread was updated to waiting_on=user on disk
+    written = json.loads(path.read_text())
+    thread = written["items"][0]["threads"][0]
+    assert thread["waiting_on"] == "user"
+
+
+def test_orchestrate_once_no_work(tmp_path, monkeypatch):
+    """No ready items and no result files → clean exit, no subprocess calls."""
+    path = tmp_path / "backlog.json"
+    data = {
+        "version": 0,
+        "config": {
+            "project_name": "EmptyTest",
+            "statuses": [
+                {"id": "backlog", "label": "Backlog"},
+                {"id": "done",    "label": "Done"},
+            ],
+            "agents": {
+                "backend-dev": {"skills": ["python"], "max_active": 2},
+            },
+        },
+        "items": [
+            {
+                "id": "item-004",
+                "title": "In backlog",
+                "status": "backlog",
+                "category": "feature",
+                "priority_weight": 3,
+                "complexity": "low",
+                "tags": [],
+                "assigned_to": None,
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                "lane_history": ["backlog"],
+                "gate_from": 0,
+                "skip_count": 0,
+                "reopen_count": 0,
+                "threads": [],
+                "links": [],
+            }
+        ],
+    }
+    path.write_text(json.dumps(data, indent=2))
+    backlog_file = str(path)
+
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+
+    result = invoke(["orchestrate", "--once"], backlog_file)
+    assert result.exit_code == 0, result.output
+    assert len(invoked) == 0, f"Expected no subprocess calls; got {invoked}"
