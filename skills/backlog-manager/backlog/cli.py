@@ -806,6 +806,31 @@ def _scan_result_files(backlog_dir: Path) -> List[Path]:
     return sorted(results_dir.glob("*.json"))
 
 
+def _review_gate_satisfied(item: dict) -> bool:
+    """Return True if a different agent has already reviewed this item.
+
+    Heuristic: lane_history contains at least one entry with a 'by' field
+    that differs from item['assigned_to'].
+    """
+    assigned_to = item.get("assigned_to") or ""
+    for entry in item.get("lane_history", []):
+        if isinstance(entry, dict):
+            by = entry.get("by", "")
+            if by and by != assigned_to:
+                return True
+    return False
+
+
+def _has_review_lane(statuses: list) -> bool:
+    """Return True if any configured lane label suggests a review step."""
+    review_keywords = ("review", "qa", "test", "staging")
+    for s in statuses:
+        label = s.get("label", s.get("id", "")).lower()
+        if any(kw in label for kw in review_keywords):
+            return True
+    return False
+
+
 def _orchestrate_tick(
     backlog_file: str,
     dry_run: bool,
@@ -916,6 +941,38 @@ def _orchestrate_tick(
                 )
                 _run_handoff(backlog_file, agent, pos, dry_run)
                 acted = True
+            elif status == "in-progress":
+                # ── Review gate: inject inline review if no review lane exists ──
+                require_review = data.get("config", {}).get("orchestrator", {}).get(
+                    "require_review", True
+                )
+                if require_review and not _review_gate_satisfied(item) and not _has_review_lane(statuses_list):
+                    reviewer = _select_agent(data, item, exclude=assigned_to)
+                    if reviewer:
+                        console.print(
+                            f"{log_prefix} item {item_id} approaching done — "
+                            f"no review lane exists, injecting inline review via {reviewer}"
+                        )
+                        _run_handoff(backlog_file, reviewer, pos, dry_run)
+                        acted = True
+                    else:
+                        console.print(
+                            f"{log_prefix} item {item_id} approaching done — "
+                            "no review lane and no suitable reviewer → notifying user"
+                        )
+                        if not dry_run:
+                            item.setdefault("threads", []).append({
+                                "id": f"review-gate-{item_id}",
+                                "waiting_on": "user",
+                                "body": "Review gate: no suitable reviewer agent available.",
+                                "resolved": False,
+                            })
+                            store.write(data)
+                        console.print(
+                            f"[yellow]NOTIFICATION:[/yellow] Item #{pos} "
+                            f"'{item.get('title','?')}' needs peer review but no "
+                            "reviewer is available — human input required"
+                        )
 
     if not acted and not seen_result_files:
         pass  # silent clean tick
@@ -933,6 +990,20 @@ def orchestrate(
 
     backlog_file = _resolve_file(file)
     seen_result_files: set = set()
+
+    # Startup: warn if require_review is explicitly disabled
+    try:
+        _startup_data = BacklogStore(backlog_file).read()
+        _require_review = _startup_data.get("config", {}).get("orchestrator", {}).get(
+            "require_review", True
+        )
+        if _require_review is False:
+            console.print(
+                "[yellow]Warning:[/yellow]  require_review is disabled — "
+                "items will reach done without peer review."
+            )
+    except Exception:
+        pass
 
     console.print(
         f"[bold green]Orchestrator started[/bold green] "

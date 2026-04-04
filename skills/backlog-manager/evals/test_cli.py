@@ -1073,3 +1073,250 @@ def test_orchestrate_once_no_work(tmp_path, monkeypatch):
     result = invoke(["orchestrate", "--once"], backlog_file)
     assert result.exit_code == 0, result.output
     assert len(invoked) == 0, f"Expected no subprocess calls; got {invoked}"
+
+
+# ── Test: review gate ─────────────────────────────────────────────────────────
+
+def _backlog_approaching_done(tmp_path: Path, *, with_review_lane: bool, reviewer_agent: str = "qa") -> str:
+    """Item in-progress on a board with no review lane, assigned_to backend-dev, no prior review.
+
+    The orchestrator's heuristic will return action=work for in-progress status,
+    and the review gate check intercepts it before dispatching a work handoff.
+    """
+    statuses = [
+        {"id": "backlog",     "label": "Backlog"},
+        {"id": "ready",       "label": "Ready"},
+        {"id": "in-progress", "label": "In Progress"},
+        {"id": "done",        "label": "Done"},
+        {"id": "discarded",   "label": "Discarded"},
+    ]
+    if with_review_lane:
+        statuses.insert(3, {"id": "code-review", "label": "Code Review"})
+
+    agents = {
+        "backend-dev": {"skills": ["python", "api"], "max_active": 1},
+    }
+    if reviewer_agent:
+        agents[reviewer_agent] = {"skills": ["testing", "python"], "max_active": 2}
+
+    path = tmp_path / "backlog.json"
+    data = {
+        "version": 0,
+        "config": {
+            "project_name": "GateTest",
+            "statuses": statuses,
+            "agents": agents,
+        },
+        "items": [
+            {
+                "id": "item-gate",
+                "title": "Gate test item",
+                "status": "in-progress",
+                "category": "feature",
+                "priority_weight": 5,
+                "complexity": "low",
+                "tags": ["python"],
+                "assigned_to": "backend-dev",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                # lane_history has no entry by a different agent
+                "lane_history": [
+                    "backlog",
+                    {"lane": "in-progress", "at": "2026-01-01T01:00:00+00:00", "by": "backend-dev"},
+                ],
+                "gate_from": 0,
+                "skip_count": 0,
+                "reopen_count": 0,
+                "threads": [],
+                "links": [],
+            }
+        ],
+    }
+    path.write_text(json.dumps(data, indent=2))
+    return str(path)
+
+
+def test_review_gate_injected_when_no_review_lane(tmp_path, monkeypatch):
+    """Item approaching done with no review lane and unreviewed → inline review injected."""
+    backlog_file = _backlog_approaching_done(tmp_path, with_review_lane=False, reviewer_agent="qa")
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    result = invoke(["orchestrate", "--once"], backlog_file)
+    assert result.exit_code == 0, result.output
+
+    # A handoff for the reviewer must have been triggered
+    handoff_calls = [c for c in invoked if "handoff" in c]
+    assert len(handoff_calls) >= 1, f"Expected inline review handoff; got invoked={invoked}"
+    # Reviewer must not be backend-dev
+    agent_in_cmd = handoff_calls[0][handoff_calls[0].index("handoff") + 1]
+    assert agent_in_cmd != "backend-dev"
+    # Log message must mention injecting inline review
+    assert "inline review" in result.output.lower() or "injecting" in result.output.lower()
+
+
+def test_review_gate_satisfied_if_reviewed(tmp_path, monkeypatch):
+    """Item in-progress where a different agent already appears in lane_history → no inline review."""
+    path = tmp_path / "backlog.json"
+    data = {
+        "version": 0,
+        "config": {
+            "project_name": "ReviewSatisfied",
+            "statuses": [
+                {"id": "backlog",     "label": "Backlog"},
+                {"id": "in-progress", "label": "In Progress"},
+                {"id": "done",        "label": "Done"},
+            ],
+            "agents": {
+                "backend-dev": {"skills": ["python"], "max_active": 2},
+                "qa": {"skills": ["testing"], "max_active": 2},
+            },
+        },
+        "items": [
+            {
+                "id": "item-reviewed",
+                "title": "Already reviewed",
+                "status": "in-progress",
+                "category": "feature",
+                "priority_weight": 5,
+                "complexity": "low",
+                "tags": [],
+                "assigned_to": "backend-dev",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                # qa appeared in history — gate satisfied
+                "lane_history": [
+                    "backlog",
+                    {"lane": "in-progress", "at": "2026-01-01T01:00:00+00:00", "by": "backend-dev"},
+                    {"lane": "in-progress", "at": "2026-01-01T02:00:00+00:00", "by": "qa"},
+                ],
+                "gate_from": 0,
+                "skip_count": 0,
+                "reopen_count": 0,
+                "threads": [],
+                "links": [],
+            }
+        ],
+    }
+    path.write_text(json.dumps(data, indent=2))
+    backlog_file = str(path)
+
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    result = invoke(["orchestrate", "--once"], backlog_file)
+    assert result.exit_code == 0, result.output
+
+    # No *inline review* handoff should be triggered — gate is already satisfied.
+    # (The orchestrator may still dispatch a normal work handoff for the in-progress item,
+    # which is correct behaviour; we only assert no review-gate injection.)
+    assert "inline review" not in result.output.lower()
+    assert "injecting" not in result.output.lower()
+
+
+def test_review_gate_disabled_warns(tmp_path, monkeypatch):
+    """require_review: false in config → startup prints warning, no gate enforced."""
+    path = tmp_path / "backlog.json"
+    data = {
+        "version": 0,
+        "config": {
+            "project_name": "GateDisabled",
+            "orchestrator": {"require_review": False},
+            "statuses": [
+                {"id": "backlog",     "label": "Backlog"},
+                {"id": "in-progress", "label": "In Progress"},
+                {"id": "done",        "label": "Done"},
+            ],
+            "agents": {
+                "backend-dev": {"skills": ["python"], "max_active": 2},
+                "qa": {"skills": ["testing"], "max_active": 2},
+            },
+        },
+        "items": [
+            {
+                "id": "item-nogate",
+                "title": "No gate item",
+                "status": "in-progress",
+                "category": "feature",
+                "priority_weight": 5,
+                "complexity": "low",
+                "tags": [],
+                "assigned_to": "backend-dev",
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "updated_at": "2026-01-01T00:00:00+00:00",
+                # No peer review in history — but gate is disabled
+                "lane_history": [
+                    "backlog",
+                    {"lane": "in-progress", "at": "2026-01-01T01:00:00+00:00", "by": "backend-dev"},
+                ],
+                "gate_from": 0,
+                "skip_count": 0,
+                "reopen_count": 0,
+                "threads": [],
+                "links": [],
+            }
+        ],
+    }
+    path.write_text(json.dumps(data, indent=2))
+    backlog_file = str(path)
+
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    result = invoke(["orchestrate", "--once"], backlog_file)
+    assert result.exit_code == 0, result.output
+
+    # Warning must appear in output
+    assert "require_review" in result.output and "disabled" in result.output.lower()
+
+    # Gate is disabled — no review handoff should be triggered
+    handoff_calls = [c for c in invoked if "handoff" in c]
+    assert len(handoff_calls) == 0, f"Gate disabled — no handoff expected; got {invoked}"
+
+
+def test_review_gate_no_reviewer_available_notifies_user(tmp_path, monkeypatch):
+    """No suitable reviewer agent → item paused, waiting_on=user, NOTIFICATION printed."""
+    # Only backend-dev configured — no other agent can review
+    backlog_file = _backlog_approaching_done(tmp_path, with_review_lane=False, reviewer_agent=None)
+    invoked: list = []
+
+    def fake_run(cmd, **kwargs):
+        invoked.append(cmd)
+        class R:
+            returncode = 0
+        return R()
+
+    monkeypatch.setattr("backlog.cli.subprocess.run", fake_run)
+    result = invoke(["orchestrate", "--once"], backlog_file)
+    assert result.exit_code == 0, result.output
+
+    # No handoff should be triggered
+    handoff_calls = [c for c in invoked if "handoff" in c]
+    assert len(handoff_calls) == 0, f"No reviewer available — expected no handoff; got {invoked}"
+
+    # NOTIFICATION must be printed
+    assert "NOTIFICATION" in result.output or "human" in result.output.lower()
+
+    # Thread with waiting_on=user must be written to disk
+    written = json.loads(Path(backlog_file).read_text())
+    item = written["items"][0]
+    user_threads = [t for t in item.get("threads", []) if t.get("waiting_on") == "user"]
+    assert len(user_threads) >= 1, "Expected a waiting_on=user thread on the item"

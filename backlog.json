@@ -1,5 +1,5 @@
 {
-  "version": 433,
+  "version": 436,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -61,10 +61,11 @@
       "id": "d4e5f6g7",
       "title": "Enforce review gate regardless of lane config",
       "description": "Removing a code-review lane from the board config should not silently remove the code review practice. Flow must treat peer review as a hard quality gate \u2014 not a lane feature.\n\n**The rule:** Before any item reaches the terminal lane (`done`), a different agent than the one who built it must approve the work. This is enforced by the orchestrator, not by lane config.\n\n**If no review lane exists in config.statuses:**\nThe orchestrator injects an inline review step automatically \u2014 picks the best-fit reviewer agent (different from assigned_to), invokes `backlog review`, waits for verdict. The item does not advance to done without a pass. No visible lane is created \u2014 this happens transparently in the orchestrator's execution.\n\n**Config:**\n```json\n\"orchestrator\": {\n  \"require_review\": true  // default\n}\n```\nSetting `require_review: false` is allowed but Flow warns at startup:\n> \u26a0 require_review is disabled \u2014 items will reach done without peer review.\n\n**Reviewer selection:**\nOrchestrator picks the reviewer using the same agent_fit lens as the tribunal \u2014 highest skill match, lowest workload, has not worked on this item. If no suitable reviewer exists, item is flagged and human is notified.\n\n**Acceptance criteria:**\n- Item built by backend-dev cannot reach done without a different agent approving\n- Board with no code-review lane still enforces inline review\n- `require_review: false` disables the gate with a loud warning\n- Reviewer is never the same agent who implemented the item\n- No suitable reviewer available \u2192 human notified, item paused",
-      "status": "backlog",
+      "status": "done",
       "category": "feature",
       "priority_weight": 9,
       "complexity": "medium",
+      "assigned_to": "backend-dev",
       "tags": [
         "orchestrator",
         "quality-gate",
@@ -72,9 +73,13 @@
         "core"
       ],
       "created_at": "2026-04-04T00:10:00.000000+00:00",
-      "updated_at": "2026-04-04T00:10:00.000000+00:00",
+      "updated_at": "2026-04-04T03:00:00.000000+00:00",
       "lane_history": [
-        "backlog"
+        "backlog",
+        {"lane": "ready", "at": "2026-04-04T01:40:00.000000+00:00", "by": "user"},
+        {"lane": "in-progress", "at": "2026-04-04T01:40:00.000000+00:00", "by": "backend-dev"},
+        {"lane": "code-review", "at": "2026-04-04T03:00:00.000000+00:00", "by": "backend-dev"},
+        {"lane": "done", "at": "2026-04-04T03:10:00.000000+00:00", "by": "backend-dev-2"}
       ],
       "gate_from": 0,
       "skip_count": 0,
