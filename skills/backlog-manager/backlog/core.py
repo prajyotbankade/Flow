@@ -403,6 +403,16 @@ class BacklogStore:
         now = _now_iso()
         actions: list[str] = []
 
+        # ── Resolve inline-review sentinel thread if present ─────────────────
+        # The orchestrator writes a sentinel thread when it dispatches an inline
+        # review. Resolving it here tells the orchestrator the review cycle is
+        # complete and prevents it from dispatching another review on the next tick.
+        sentinel_id = f"inline-review-{item_id}"
+        for thread in target.get("threads", []):
+            if thread.get("id") == sentinel_id and not thread.get("resolved"):
+                thread["resolved"] = True
+                actions.append(f"resolved inline-review sentinel thread for {item_id}")
+
         # ── Status handling ───────────────────────────────────────────────────
         if status == "done":
             # Advance to next lane after current (code-review if present, else done)

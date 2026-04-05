@@ -1085,12 +1085,30 @@ def _orchestrate_tick(
                     "require_review", True
                 )
                 if require_review and not _review_gate_satisfied(item) and not _has_review_lane(statuses_list):
+                    sentinel_id = f"inline-review-{item_id}"
+                    threads = item.get("threads", [])
+                    review_in_flight = any(
+                        t.get("id") == sentinel_id and not t.get("resolved")
+                        for t in threads
+                    )
+                    if review_in_flight:
+                        continue  # already dispatched, wait for result
                     reviewer = _select_agent(data, item, exclude=assigned_to)
                     if reviewer:
                         console.print(
                             f"{log_prefix} item {item_id} approaching done — "
                             f"no review lane exists, injecting inline review via {reviewer}"
                         )
+                        if not dry_run:
+                            from .core import _now_iso
+                            item.setdefault("threads", []).append({
+                                "id": sentinel_id,
+                                "topic": "inline-review-dispatched",
+                                "waiting_on": "agent",
+                                "body": f"Inline review dispatched to {reviewer} at {_now_iso()}.",
+                                "resolved": False,
+                            })
+                            store.write(data)
                         _run_handoff(backlog_file, reviewer, pos, dry_run)
                         acted = True
                     else:
@@ -1099,13 +1117,15 @@ def _orchestrate_tick(
                             "no review lane and no suitable reviewer → notifying user"
                         )
                         if not dry_run:
-                            item.setdefault("threads", []).append({
-                                "id": f"review-gate-{item_id}",
-                                "waiting_on": "user",
-                                "body": "Review gate: no suitable reviewer agent available.",
-                                "resolved": False,
-                            })
-                            store.write(data)
+                            no_reviewer_id = f"review-gate-{item_id}"
+                            if not any(t.get("id") == no_reviewer_id for t in threads):
+                                item.setdefault("threads", []).append({
+                                    "id": no_reviewer_id,
+                                    "waiting_on": "user",
+                                    "body": "Review gate: no suitable reviewer agent available.",
+                                    "resolved": False,
+                                })
+                                store.write(data)
                         console.print(
                             f"[yellow]NOTIFICATION:[/yellow] Item #{pos} "
                             f"'{item.get('title','?')}' needs peer review but no "

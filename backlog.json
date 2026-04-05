@@ -1,5 +1,5 @@
 {
-  "version": 440,
+  "version": 443,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -289,8 +289,8 @@
     {
       "id": "m3n4o5p6",
       "title": "Cold-start UX",
-      "description": "A new user clones Flow and has no backlog.json, no context, no idea what to say. What happens? This item covers the first-time experience: guided setup, example prompts, empty-state messaging on the board, and making the first 'add item' feel natural. The product is only as good as its day-1 experience.",
-      "status": "backlog",
+      "description": "A new user clones Flow and has no backlog.json, no context, no idea what to say. This item covers the full day-1 experience across CLI and board.\n\n**`backlog init` output:**\nCurrently prints nothing after creating the file. Should print a concise 'what's next' guide:\n```\nCreated backlog.json\n\nNext steps:\n  backlog add \"Your first task\"          # add an item\n  backlog board                           # open the visual board\n  backlog list                            # view your backlog\n```\n\n**Board empty state:**\nWhen `items` is empty, replace the blank columns with a welcome panel:\n- Brief one-liner: what Flow is\n- 3 copy-ready commands: `backlog add`, `backlog board`, `backlog orchestrate`\n- A note pointing to README for full setup\n\nDo NOT render fake example cards — that would be confusing when the board is shared with real agents.\n\n**Board: no agents configured warning:**\nIf `config.agents` is empty and the board is opened, show a dismissible banner in the Settings panel:\n> No agents configured — assignment intelligence is disabled. Add agents in Settings or edit backlog.json.\n\n**Acceptance criteria:**\n- `backlog init` prints a next-steps guide after creating the file\n- Empty board shows a welcome panel instead of empty columns\n- Welcome panel has copy-ready commands, no fake data\n- Settings panel surfaces 'no agents' warning when config.agents is empty\n- All text is concise — onboarding should feel light, not overwhelming",
+      "status": "ready",
       "category": "feature",
       "priority_weight": 8,
       "complexity": "medium",
@@ -299,9 +299,11 @@
         "onboarding"
       ],
       "created_at": "2026-04-03T22:30:00.000000+00:00",
-      "updated_at": "2026-04-03T22:30:00.000000+00:00",
+      "updated_at": "2026-04-05T00:00:00.000000+00:00",
       "lane_history": [
-        "backlog"
+        {"lane": "backlog", "at": "2026-04-03T22:30:00.000000+00:00", "by": "unknown"},
+        {"lane": "refined", "at": "2026-04-05T00:00:00.000000+00:00", "by": "user"},
+        {"lane": "ready", "at": "2026-04-05T00:00:00.000000+00:00", "by": "user"}
       ],
       "gate_from": 0,
       "skip_count": 0,
@@ -397,19 +399,50 @@
     {
       "id": "z1a2b3c4",
       "title": "Review gate fires repeatedly on long-running in-progress items",
-      "description": "The review gate check runs on every orchestrator tick for any in-progress item with no prior peer review. If an inline review handoff fails silently (claude not responding, agent errors), the gate dispatches another review on the next tick — creating duplicate handoffs.\n\nFix: track whether an inline review has already been dispatched. Options:\n- Add a flag to the item (e.g. `inline_review_dispatched: true`)\n- Write a thread with a unique topic ID like `inline-review-dispatched` and check for its presence before dispatching\n- Check `handoff_results/` for an existing result file for this item before dispatching\n\nThe thread approach is cleanest — it's visible on the board and explains what the orchestrator did.",
-      "status": "backlog",
+      "description": "The review gate check in `_orchestrate_tick` (cli.py) fires on every tick for any `in-progress` item where `not _review_gate_satisfied(item) and not _has_review_lane(statuses_list)`. If the inline review handoff fails silently, the next tick dispatches another one — creating duplicate handoffs and burning agent capacity.\n\n**Fix:** Write a sentinel thread on the item when an inline review is dispatched, and check for it before dispatching again.\n\nSentinel thread schema:\n```json\n{\n  \"id\": \"inline-review-<item_id>\",\n  \"topic\": \"inline-review-dispatched\",\n  \"waiting_on\": \"agent\",\n  \"body\": \"Inline review dispatched to <reviewer> at <timestamp>.\",\n  \"resolved\": false\n}\n```\n\nBefore dispatching:\n1. Check if any thread with `id == f'inline-review-{item_id}'` and `resolved == False` exists\n2. If yes → skip (review already in flight)\n3. If no → dispatch handoff, write the sentinel thread\n\nWhen the review result comes back and is ingested, the ingest path must resolve this thread (set `resolved: true`) so the gate knows the review cycle is complete.\n\n**Acceptance criteria:**\n- Second tick does not dispatch a second inline review if the first is still in flight\n- Sentinel thread is visible on the board (explains what happened)\n- Sentinel thread is resolved when ingest processes the review result\n- Works correctly when `require_review: false` — gate is skipped entirely, no sentinel written",
+      "status": "done",
       "category": "bug",
       "priority_weight": 7,
       "complexity": "low",
       "tags": ["orchestrator", "review-gate"],
+      "assigned_to": "backend-dev",
       "created_at": "2026-04-04T03:10:00.000000+00:00",
-      "updated_at": "2026-04-04T03:10:00.000000+00:00",
-      "lane_history": ["backlog"],
+      "updated_at": "2026-04-05T00:30:00.000000+00:00",
+      "lane_history": [
+        {"lane": "backlog", "at": "2026-04-04T03:10:00.000000+00:00", "by": "unknown"},
+        {"lane": "refined", "at": "2026-04-05T00:00:00.000000+00:00", "by": "user"},
+        {"lane": "ready", "at": "2026-04-05T00:00:00.000000+00:00", "by": "user"},
+        {"lane": "in-progress", "at": "2026-04-05T00:05:00.000000+00:00", "by": "backend-dev"},
+        {"lane": "code-review", "at": "2026-04-05T00:20:00.000000+00:00", "by": "backend-dev"},
+        {"lane": "done", "at": "2026-04-05T00:30:00.000000+00:00", "by": "backend-dev-2"}
+      ],
       "gate_from": 0,
       "skip_count": 0,
       "reopen_count": 0,
       "links": [{"item_id": "d4e5f6g7", "type": "discovered-during", "reason": "Found during review gate implementation — gate has no idempotency guard"}]
+    },
+    {
+      "id": "bu7wympg",
+      "title": "Orchestrator observability",
+      "description": "When `backlog orchestrate` is running, there is no way to see what it's doing from the board. An item can sit in-progress for hours with no signal about whether the orchestrator is actively managing it or has silently stalled.\n\n**Heartbeat file:**\nThe orchestrator writes `.orchestrator_state.json` (alongside `backlog.json`) atomically on each tick:\n```json\n{\n  \"running\": true,\n  \"mode\": \"supervised\",\n  \"last_tick\": \"<ISO UTC>\",\n  \"items_in_flight\": [\"<item_id>\", ...],\n  \"pending_result_files\": 2\n}\n```\nWritten on every tick, not at startup. Absence of the file (or `last_tick` older than 2× poll interval) means the orchestrator is not running.\n\n**API endpoint:**\n`GET /api/orchestrator/status` — server reads `.orchestrator_state.json` and augments with stuck item detection:\n```json\n{\n  \"running\": true,\n  \"mode\": \"supervised\",\n  \"last_tick\": \"<ISO UTC>\",\n  \"last_tick_age_seconds\": 8,\n  \"items_in_flight\": [...],\n  \"pending_result_files\": 2,\n  \"stuck_items\": [{\"id\": \"...\", \"title\": \"...\", \"stuck_minutes\": 45}]\n}\n```\n\n**Stuck item detection (server-side):**\nAn item is stuck if: status is `in-progress`, `updated_at` is older than `config.orchestrator.stuck_threshold_minutes` (default 30), and no unresolved thread with `waiting_on: agent` exists (which would mean a handoff is legitimately in-flight).\n\n**Board UI:**\n- Header pill: `● Orchestrator running` (green) / `○ Orchestrator stopped` (grey), shows last tick age\n- Card badge on stuck items: `⚠ stuck 45m`\n- Polls `/api/orchestrator/status` on the same 5s interval as the board refresh\n\n**Acceptance criteria:**\n- Heartbeat file written atomically on every tick\n- `GET /api/orchestrator/status` returns correct state when running and when stopped\n- Board header shows running/stopped indicator with last tick age\n- Stuck items get a visual badge after threshold\n- `stuck_threshold_minutes` configurable, defaults to 30",
+      "status": "ready",
+      "category": "feature",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "tags": ["orchestrator", "observability", "board", "ux"],
+      "created_at": "2026-04-04T04:45:00.000000+00:00",
+      "updated_at": "2026-04-05T00:00:00.000000+00:00",
+      "lane_history": [
+        {"lane": "backlog", "at": "2026-04-04T04:45:00.000000+00:00", "by": "user"},
+        {"lane": "refined", "at": "2026-04-05T00:00:00.000000+00:00", "by": "user"},
+        {"lane": "ready", "at": "2026-04-05T00:00:00.000000+00:00", "by": "user"}
+      ],
+      "gate_from": 0,
+      "skip_count": 0,
+      "reopen_count": 0,
+      "links": [
+        {"item_id": "f7g8h9i0", "type": "related", "reason": "Orchestrator needs observability surface to be production-ready"}
+      ]
     },
     {
       "id": "u1v2w3x4",
