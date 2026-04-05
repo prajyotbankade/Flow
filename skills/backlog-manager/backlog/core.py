@@ -67,6 +67,29 @@ def _extract_lane(entry) -> str:
     return entry.get("lane") if isinstance(entry, dict) else entry
 
 
+def _normalize_lane_history(items: list) -> None:
+    """Normalize bare-string lane_history entries to structured dicts in-place.
+
+    Old format: ["backlog", "refined", ...]
+    New format: [{"lane": "backlog", "at": <iso>, "by": <actor>}, ...]
+
+    Bare strings written before structured tracking was in place are converted
+    to {"lane": <value>, "at": null, "by": "unknown"} so callers always see
+    a consistent schema.
+    """
+    for item in items:
+        history = item.get("lane_history")
+        if not isinstance(history, list):
+            continue
+        normalized = []
+        for entry in history:
+            if isinstance(entry, str):
+                normalized.append({"lane": entry, "at": None, "by": "unknown"})
+            else:
+                normalized.append(entry)
+        item["lane_history"] = normalized
+
+
 def validate_lane_transition(item: dict, new_status: str, statuses: list) -> tuple[bool, str | None]:
     """Check if moving item to new_status satisfies gate rules.
 
@@ -161,14 +184,20 @@ class BacklogStore:
     # ── Read / Write ──────────────────────────────────────────────────────────
 
     def read(self) -> dict:
-        """Read and parse backlog.json. Returns empty starter if file does not exist."""
+        """Read and parse backlog.json. Returns empty starter if file does not exist.
+
+        Normalizes bare-string lane_history entries to structured dicts so all
+        callers (CLI, server, board) always see a consistent schema.
+        """
         try:
             with open(self.file_path, "r") as f:
-                return json.load(f)
+                data = json.load(f)
         except FileNotFoundError:
             return dict(STARTER_BACKLOG)
         except json.JSONDecodeError as e:
             raise ValueError(f"backlog.json is corrupted: {e}")
+        _normalize_lane_history(data.get("items", []))
+        return data
 
     def write(self, data: dict, expected_version: int | None = None) -> None:
         """Atomically write data to backlog.json, incrementing the version.

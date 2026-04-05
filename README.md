@@ -294,6 +294,11 @@ Define agent capabilities in `config.agents` for intelligent assignment:
 
 ```json
 "agents": {
+  "lead-dev": {
+    "role": "lead",
+    "skills": ["python", "api"],
+    "max_active": 1
+  },
   "worker-auth": {
     "skills": ["auth", "backend", "security"],
     "max_active": 3,
@@ -307,7 +312,35 @@ Define agent capabilities in `config.agents` for intelligent assignment:
 }
 ```
 
+`"role": "lead"` designates the agent that drives the full dev cycle in auto mode. Exactly one agent may have this role.
+
 Also configurable from the board's Settings modal.
+
+### Orchestrator
+
+`backlog orchestrate` is a persistent process that drives the dev cycle after items are ready:
+
+```bash
+backlog orchestrate                # supervised mode — acts on ready+ items only
+backlog orchestrate --mode auto    # auto mode — lead agent picks, refines, and starts work
+backlog orchestrate --once         # single tick and exit (useful for testing)
+backlog orchestrate --dry-run      # print planned actions without invoking agents
+```
+
+**Supervised mode (default):** Human moves items to `ready`. Orchestrator picks up from there — assigns agents, drives through all lanes including review, processes results.
+
+**Auto mode:** Lead agent continuously picks the highest-priority unstarted item, assesses whether it's actionable, and either moves it to `ready` (orchestrator picks it up immediately) or asks the human targeted questions via a thread. Loops until stopped (`Ctrl+C`).
+
+**Orchestrator config:**
+
+```json
+"orchestrator": {
+  "mode": "supervised",
+  "require_review": true
+}
+```
+
+`require_review: true` (default) — every item must be reviewed by a different agent before reaching done, even if no code-review lane is configured. Set to `false` with caution — a warning is printed at startup.
 
 ### Scoring Weights
 

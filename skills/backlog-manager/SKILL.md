@@ -128,6 +128,12 @@ backlog edit 3 --priority-weight 9 --category bug --tags "auth,backend" --assign
 backlog init                          # create starter backlog.json
 backlog board                         # launch web board (port 8089)
 backlog board --port 9000             # custom port
+
+backlog orchestrate                   # supervised mode (default): acts on ready+ items
+backlog orchestrate --mode auto       # auto mode: lead agent refines + starts items autonomously
+backlog orchestrate --poll 30         # tick interval in seconds (default 10)
+backlog orchestrate --once            # single tick and exit
+backlog orchestrate --dry-run         # print actions without invoking agents
 ```
 
 **Exit codes:** `0` success · `1` gate violation / not found / validation error · `2` version conflict (re-read and retry)
@@ -282,6 +288,33 @@ Evaluates eligible items through 6 weighted lenses. Access via `/api/pulse` (pre
 
 Use `?commit=true` on `/api/recommend` to store decisions for outcome tracking.
 
+### Orchestrator
+
+`backlog orchestrate` is a persistent process that drives the dev cycle forward. It runs in two modes:
+
+**Supervised (default):** Orchestrator only acts on `ready`+ items. Human controls when work starts by moving items to `ready`. Orchestrator handles execution, review, and result ingestion from there.
+
+**Auto:** A designated lead agent continuously picks the highest-priority `backlog`/`refined` item, assesses whether it's actionable (via Claude), and either moves it to `ready` or opens a refinement thread (`waiting_on: "user"`) with at most 2 blocking questions. Human answers questions; lead agent resumes. Items already waiting for human input are skipped.
+
+**Config:**
+```json
+"orchestrator": {
+  "mode": "supervised",     // "supervised" (default) or "auto"
+  "require_review": true    // false disables peer review gate (logged warning at startup)
+}
+```
+
+**Lead agent:** Set `"role": "lead"` on exactly one agent in `config.agents`. Required for auto mode; validated at startup. Zero or multiple leads → hard error with names listed.
+
+```json
+"agents": {
+  "lead-dev": { "role": "lead", "skills": ["python", "api"], "max_active": 1 },
+  "worker-a":  { "skills": ["python", "api"], "max_active": 2 }
+}
+```
+
+**Honesty rule (both modes):** Agents must stop and ask the human rather than guess when context is insufficient. Autonomy does not mean guessing.
+
 ### Assignment Intelligence
 
 - +2 per tag match (item `tags` ∩ agent `skills`)
@@ -324,7 +357,7 @@ max_active: <int>
 
 Each status can have `requires: [lane_ids]` — item must have passed through those lanes (from `gate_from` onward) before entering. Backward moves always allowed.
 
-- `lane_history`: append-only. Format: `{"lane": "<old_status>", "at": "<ISO UTC>", "by": "<actor>"}`. `by` = `"user"` or `"backlog-manager"`.
+- `lane_history`: append-only. Format: `{"lane": "<old_status>", "at": "<ISO UTC>", "by": "<actor>"}`. `by` = agent name, `"user"`, or `"unknown"` (legacy entries). Bare-string entries from older data are normalized to `{"lane": ..., "at": null, "by": "unknown"}` on every read — callers always see structured dicts.
 - `gate_from`: watermark index. On backward move: append current lane, set `gate_from = len(lane_history)`.
 - Before any forward move: verify target's `requires` against `lane_history[gate_from:]`. If missing: "Can't move to X — requires Y first."
 - Server enforces gates (HTTP 422). Check client-side too.

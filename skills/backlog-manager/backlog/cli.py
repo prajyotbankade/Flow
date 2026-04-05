@@ -681,6 +681,144 @@ def ingest(
 
 # ── Orchestrator helpers ──────────────────────────────────────────────────────
 
+
+def _get_lead_agent(data: dict) -> Optional[tuple]:
+    """Return (name, cfg) of the agent with role='lead', or None if none configured.
+
+    Raises SystemExit with a clear message if more than one agent has role='lead'
+    — ambiguity in who is lead would cause unpredictable orchestrator behavior.
+    """
+    agents_cfg = data.get("config", {}).get("agents", {})
+    leads = [(name, cfg) for name, cfg in agents_cfg.items() if cfg.get("role") == "lead"]
+    if len(leads) > 1:
+        names = ", ".join(name for name, _ in leads)
+        err_console.print(
+            f"[red]Error:[/red] Multiple agents configured as lead: {names}\n"
+            "Exactly one agent may have role='lead'. "
+            "Update config.agents in backlog.json and restart."
+        )
+        raise typer.Exit(1)
+    return leads[0] if leads else None
+
+
+def _get_orchestrator_mode(data: dict, mode_override: Optional[str] = None) -> str:
+    """Return orchestrator mode: 'supervised' (default) or 'auto'."""
+    if mode_override:
+        return mode_override
+    return data.get("config", {}).get("orchestrator", {}).get("mode", "supervised")
+
+
+def _auto_refine_tick(
+    backlog_file: str,
+    lead_name: str,
+    dry_run: bool,
+    log_prefix: str = "[auto]",
+) -> None:
+    """Auto mode: lead agent picks the highest-priority unstarted item and either
+    moves it to ready (if actionable) or opens a thread asking the human blocking
+    questions (max 2, most important first).
+
+    Items already waiting for human input (waiting_on='user' unresolved thread)
+    are skipped — we don't pile on more questions.
+    """
+    import shutil
+
+    store = BacklogStore(backlog_file)
+    data = store.read()
+    items = data.get("items", [])
+
+    # Candidate: highest-priority item in backlog or refined that isn't blocked waiting for human
+    candidate = None
+    for item in items:
+        status = item.get("status", "")
+        if status not in ("backlog", "refined"):
+            continue
+        # Skip if there's already an unresolved thread waiting on the user
+        threads = item.get("threads", [])
+        if any(t.get("waiting_on") == "user" and not t.get("resolved") for t in threads):
+            continue
+        candidate = item
+        break
+
+    if not candidate:
+        return  # Nothing to refine right now
+
+    item_id = candidate.get("id")
+    pos = _item_position(data, item_id)
+    title = candidate.get("title", "")
+    description = candidate.get("description", "")
+
+    console.print(f"{log_prefix} auto mode — assessing item #{pos} '{title}'")
+
+    if not shutil.which("claude"):
+        console.print(f"{log_prefix} claude not found — cannot assess refinement, skipping")
+        return
+
+    prompt = (
+        f"You are a lead agent reviewing a backlog item to decide if it is ready to start.\n\n"
+        f"Item title: {title}\n"
+        f"Item description:\n{description or '(no description)'}\n\n"
+        f"Is this item actionable as written? "
+        f"Could an agent pick it up and complete it without needing clarification?\n\n"
+        f"If YES: reply with JSON: {{\"ready\": true}}\n"
+        f"If NO: reply with JSON: {{\"ready\": false, \"questions\": [\"<most blocking question>\", \"<second most blocking question>\"]}} "
+        f"(include at most 2 questions, most blocking first)"
+    )
+
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=True, text=True, timeout=60,
+        )
+        import re
+        m = re.search(r'\{.*?\}', result.stdout, re.DOTALL)
+        if not m:
+            console.print(f"{log_prefix} could not parse Claude response for item #{pos}, skipping")
+            return
+        parsed = json.loads(m.group(0))
+    except Exception as e:
+        console.print(f"{log_prefix} error assessing item #{pos}: {e}, skipping")
+        return
+
+    if parsed.get("ready"):
+        console.print(f"{log_prefix} item #{pos} is actionable → moving to ready")
+        if not dry_run:
+            try:
+                store.move_item(pos, "ready", moved_by=lead_name)
+            except Exception as e:
+                console.print(f"{log_prefix} could not move item #{pos} to ready: {e}")
+    else:
+        questions = parsed.get("questions", [])
+        if not questions:
+            console.print(f"{log_prefix} Claude said not ready but gave no questions for #{pos}, skipping")
+            return
+        question_text = "\n".join(f"- {q}" for q in questions[:2])
+        console.print(
+            f"{log_prefix} item #{pos} needs clarification — opening thread with "
+            f"{len(questions[:2])} question(s)"
+        )
+        if not dry_run:
+            data2 = store.read()
+            items2 = data2.get("items", [])
+            target = next((i for i in items2 if i.get("id") == item_id), None)
+            if target is not None:
+                from .core import _now_iso, _generate_id
+                target.setdefault("threads", []).append({
+                    "id": _generate_id(),
+                    "topic": "Refinement questions from lead agent",
+                    "waiting_on": "user",
+                    "body": f"To start this item, I need answers to:\n{question_text}",
+                    "created_at": _now_iso(),
+                    "resolved": False,
+                })
+                target["updated_at"] = _now_iso()
+                store.write(data2, expected_version=data2.get("version", 0))
+        console.print(
+            f"[yellow]NOTIFICATION:[/yellow] Item #{pos} '{title}' needs your input "
+            f"before it can start. Questions added as a thread."
+        )
+
+
 def _select_agent(data: dict, item: dict, exclude: Optional[str] = None) -> Optional[str]:
     """Pick the best-fit agent from config.agents for an item.
 
@@ -984,30 +1122,68 @@ def orchestrate(
     poll: int = typer.Option(10, "--poll", help="Seconds between ticks"),
     once: bool = typer.Option(False, "--once", help="Run one tick and exit"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print actions without invoking"),
+    mode: Optional[str] = typer.Option(
+        None, "--mode",
+        help="Orchestrator mode: 'supervised' (default) or 'auto'. Overrides config.",
+    ),
 ) -> None:
-    """Persistent orchestrator: drive the dev cycle after human approves items to ready."""
+    """Persistent orchestrator: drive the dev cycle after human approves items to ready.
+
+    Modes:
+      supervised (default) — human moves items to ready; orchestrator drives execution from there.
+      auto                 — lead agent picks, refines, and starts items autonomously;
+                             asks human only when context is insufficient.
+    """
     import time
 
     backlog_file = _resolve_file(file)
     seen_result_files: set = set()
 
-    # Startup: warn if require_review is explicitly disabled
+    # ── Startup checks ────────────────────────────────────────────────────────
     try:
         _startup_data = BacklogStore(backlog_file).read()
-        _require_review = _startup_data.get("config", {}).get("orchestrator", {}).get(
-            "require_review", True
+    except Exception as e:
+        err_console.print(f"[red]Error reading backlog:[/red] {e}")
+        raise typer.Exit(1)
+
+    orch_mode = _get_orchestrator_mode(_startup_data, mode)
+    if orch_mode not in ("supervised", "auto"):
+        err_console.print(
+            f"[red]Error:[/red] Unknown orchestrator mode '{orch_mode}'. "
+            "Must be 'supervised' or 'auto'."
         )
-        if _require_review is False:
-            console.print(
-                "[yellow]Warning:[/yellow]  require_review is disabled — "
-                "items will reach done without peer review."
+        raise typer.Exit(1)
+
+    # Validate lead agent when auto mode is requested
+    lead_name: Optional[str] = None
+    if orch_mode == "auto":
+        lead_entry = _get_lead_agent(_startup_data)
+        if lead_entry is None:
+            err_console.print(
+                "[red]Error:[/red] Auto mode requires a lead agent. "
+                "Set role='lead' on exactly one agent in config.agents."
             )
-    except Exception:
-        pass
+            raise typer.Exit(1)
+        lead_name = lead_entry[0]
+        console.print(f"[bold green]Auto mode[/bold green] — lead agent: {lead_name}")
+    else:
+        # Still validate if a lead is configured — catch misconfigurations early
+        try:
+            _get_lead_agent(_startup_data)
+        except SystemExit:
+            raise
+
+    orch_cfg = _startup_data.get("config", {}).get("orchestrator", {})
+    require_review = orch_cfg.get("require_review", True)
+    if require_review is False:
+        console.print(
+            "[yellow]Warning:[/yellow]  require_review is disabled — "
+            "items will reach done without peer review."
+        )
 
     console.print(
         f"[bold green]Orchestrator started[/bold green] "
-        f"(file={backlog_file}, poll={poll}s, once={once}, dry_run={dry_run})"
+        f"(mode={orch_mode}, file={backlog_file}, poll={poll}s, once={once}, dry_run={dry_run})"
     )
 
     tick_count = 0
@@ -1015,6 +1191,11 @@ def orchestrate(
         while True:
             tick_count += 1
             console.print(f"[dim]--- tick {tick_count} ---[/dim]")
+            if orch_mode == "auto" and lead_name:
+                _auto_refine_tick(
+                    backlog_file, lead_name, dry_run,
+                    log_prefix=f"[tick {tick_count}][auto]",
+                )
             _orchestrate_tick(backlog_file, dry_run, seen_result_files, log_prefix=f"[tick {tick_count}]")
             if once:
                 break
