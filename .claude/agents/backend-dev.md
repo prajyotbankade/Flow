@@ -12,6 +12,7 @@ I prefer raw SQL over ORM for bulk operations.
 I ask before making destructive changes.
 
 ## Learnings (max 10 items — one line each, no narrative)
+- Any code that runs in a loop or on a recurring tick must have an idempotency guard — check before acting, not just after.
 
 ## Rules
 - Before adding a learning, check if it's already captured. If it is, skip it.

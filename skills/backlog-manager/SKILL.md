@@ -79,6 +79,26 @@ When the user describes a feature to build:
 5. Set `priority_weight` based on how much value this item unlocks — consider both dependency depth (items that unblock the most work) and business importance. If a Strategic focus is declared, weight items matching it higher
 6. Add all items via API, dependencies first so links resolve correctly
 
+## Code Review Protocol
+
+When reviewing an item in `code-review`, a **reject verdict blocks the merge**. Do not pass and log a follow-up ticket — if you can see the bug, it must be fixed before done.
+
+**Review checklist:**
+
+1. **Correctness** — does the implementation match the acceptance criteria exactly?
+2. **Idempotency** — any code that runs in a loop, on a recurring tick, or in response to repeated events must be safe to call multiple times without side effects. If it dispatches, writes, or creates something, check it guards against doing that twice.
+3. **Error handling** — failures must be graceful. Silent failures that cause the caller to retry infinitely are bugs, not acceptable behavior.
+4. **Edge cases** — what happens when the list is empty, the file doesn't exist, the agent isn't configured, or the external call times out?
+5. **Write safety** — any write to `backlog.json` must re-read first, use `expected_version`, and go through `apply_lane_transition` for status changes (never raw field writes).
+
+**Verdict:**
+- `pass` — ship it
+- `reject` — specific issue, must fix before done. Move item back to `in-progress` with a thread explaining what's wrong.
+
+A reviewer who passes code with a known bug and logs a follow-up ticket has failed at their job.
+
+---
+
 ## Delegating to a Sub-Agent
 
 When spawning a sub-agent for an assigned task, include in the prompt:
