@@ -1,5 +1,5 @@
 {
-  "version": 443,
+  "version": 444,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -524,6 +524,20 @@
         "preferred_complexity": [
           "low",
           "medium"
+        ]
+      },
+      "reviewer": {
+        "skills": [
+          "python",
+          "api",
+          "testing",
+          "review"
+        ],
+        "max_active": 3,
+        "preferred_complexity": [
+          "low",
+          "medium",
+          "high"
         ]
       }
     }
