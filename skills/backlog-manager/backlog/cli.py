@@ -396,8 +396,13 @@ def handoff(
     file: Optional[str] = FILE_OPT,
     item: Optional[int] = typer.Option(None, "--item", help="Force specific item by position"),
     dry_run: bool = typer.Option(False, "--dry-run", help="Print prompt without invoking claude"),
+    review: bool = typer.Option(False, "--review", help="Review mode: prompt asks for pass/reject verdict, not work completion"),
 ) -> None:
-    """Assemble a structured work brief and hand it off to claude CLI."""
+    """Assemble a structured work brief and hand it off to claude CLI.
+
+    Use --review when handing off to a reviewer agent — the prompt and output
+    contract change to ask for a code review verdict instead of work completion.
+    """
     import datetime
     import shutil
 
@@ -483,27 +488,48 @@ def handoff(
             })
 
     # ── Assemble prompt ───────────────────────────────────────────────────────
-    output_contract = json.dumps({
-        "item_id": target.get("id"),
-        "status": "done | blocked | partial",
-        "summary": "...",
-        "bugs_found": [{"title": "...", "description": "..."}],
-        "follow_ups": [{"title": "...", "description": "..."}],
-        "blocker": "... (only if status=blocked)",
-    }, indent=2)
+    item_id = target.get("id", "")
+
+    if review:
+        output_contract = json.dumps({
+            "item_id": item_id,
+            "verdict": "pass | reject",
+            "summary": "...",
+            "issues": [{"description": "...", "severity": "blocker | warning"}],
+        }, indent=2)
+    else:
+        output_contract = json.dumps({
+            "item_id": item_id,
+            "status": "done | blocked | partial",
+            "summary": "...",
+            "bugs_found": [{"title": "...", "description": "..."}],
+            "follow_ups": [{"title": "...", "description": "..."}],
+            "blocker": "... (only if status=blocked)",
+        }, indent=2)
 
     lines = []
-    lines.append("# Work Brief")
+    lines.append("# Review Brief" if review else "# Work Brief")
     lines.append("")
     if persona_text:
         lines.append("## Agent Persona")
         lines.append(persona_text.strip())
         lines.append("")
-    lines.append("## Task")
+
+    if review:
+        lines.append("## Your Role")
+        lines.append(
+            "You are the code reviewer for this item. Read the description and acceptance "
+            "criteria carefully. Your job is to decide: is this item shippable as described?\n"
+            "- `pass` — implementation is correct, complete, and safe to merge\n"
+            "- `reject` — you found a real issue that must be fixed before done\n\n"
+            "Do not pass and log a follow-up for a known bug. If you can see it, block it."
+        )
+        lines.append("")
+
+    lines.append("## Item")
     lines.append(f"**Title**: {target.get('title', '')}")
-    lines.append(f"**Item ID**: {target.get('id', '')}")
+    lines.append(f"**Item ID**: {item_id}")
     lines.append(f"**Status**: {target.get('status', '')}")
-    lines.append(f"**Priority weight**: {target.get('priority_weight', '')}")
     lines.append(f"**Complexity**: {target.get('complexity', '')}")
     lines.append(f"**Tags**: {', '.join(target.get('tags', []))}")
     lines.append("")
@@ -519,17 +545,18 @@ def handoff(
                 lines.append(f"  Reason: {ls['reason']}")
         lines.append("")
 
-    lines.append("## Why This Item Was Picked")
-    lines.append(pick_reason)
-    if tribunal_info:
-        picked_info = tribunal_info.get("picked") or {}
-        lenses = picked_info.get("supporting_lenses", [])
-        if lenses:
-            lines.append("")
-            lines.append("### Lens scores")
-            for lens in lenses:
-                lines.append(f"- **{lens.get('lens', '')}**: weight={lens.get('weight', '')} — {lens.get('argument', '')}")
-    lines.append("")
+    if not review:
+        lines.append("## Why This Item Was Picked")
+        lines.append(pick_reason)
+        if tribunal_info:
+            picked_info = tribunal_info.get("picked") or {}
+            lenses = picked_info.get("supporting_lenses", [])
+            if lenses:
+                lines.append("")
+                lines.append("### Lens scores")
+                for lens in lenses:
+                    lines.append(f"- **{lens.get('lens', '')}**: weight={lens.get('weight', '')} — {lens.get('argument', '')}")
+        lines.append("")
 
     lines.append("## Output Contract")
     lines.append(
@@ -540,11 +567,17 @@ def handoff(
     lines.append(output_contract)
     lines.append("```")
     lines.append("")
-    lines.append(
-        "Fields: `item_id` (string), `status` (done|blocked|partial), "
-        "`summary` (string), `bugs_found` (array), `follow_ups` (array), "
-        "`blocker` (string, only if blocked)."
-    )
+    if review:
+        lines.append(
+            "Fields: `item_id` (string), `verdict` (pass|reject), "
+            "`summary` (string), `issues` (array — empty on pass, blockers listed on reject)."
+        )
+    else:
+        lines.append(
+            "Fields: `item_id` (string), `status` (done|blocked|partial), "
+            "`summary` (string), `bugs_found` (array), `follow_ups` (array), "
+            "`blocker` (string, only if blocked)."
+        )
 
     prompt = "\n".join(lines)
 
@@ -819,12 +852,21 @@ def _auto_refine_tick(
         )
 
 
-def _select_agent(data: dict, item: dict, exclude: Optional[str] = None) -> Optional[str]:
+def _select_agent(
+    data: dict,
+    item: dict,
+    exclude: Optional[str] = None,
+    for_review: bool = False,
+) -> Optional[str]:
     """Pick the best-fit agent from config.agents for an item.
 
     Scores agents by skill overlap with item tags, penalises agents at their
     max_active limit, excludes the optional *exclude* agent (for reviewer
-    selection).  Returns None if no suitable agent found.
+    selection).
+
+    When for_review=True, agents with role='reviewer' are preferred — they get
+    a +10 score bonus to ensure they win over generalist agents unless at capacity.
+    Returns None if no suitable agent found.
     """
     agents_cfg = data.get("config", {}).get("agents", {})
     if not agents_cfg:
@@ -854,6 +896,8 @@ def _select_agent(data: dict, item: dict, exclude: Optional[str] = None) -> Opti
         skills = set(s.lower() for s in cfg.get("skills", []))
         overlap = len(skills & item_tags)
         score = overlap - current * 0.1  # prefer idle agents on equal overlap
+        if for_review and cfg.get("role") == "reviewer":
+            score += 10  # reviewer agent wins by default unless at capacity
         if score > best_score:
             best_score = score
             best_agent = name
@@ -921,8 +965,10 @@ def _item_position(data: dict, item_id: str) -> Optional[int]:
     return None
 
 
-def _run_handoff(backlog_file: str, agent: str, pos: int, dry_run: bool) -> None:
+def _run_handoff(backlog_file: str, agent: str, pos: int, dry_run: bool, review: bool = False) -> None:
     cmd = ["backlog", "--file", backlog_file, "handoff", agent, "--item", str(pos)]
+    if review:
+        cmd.append("--review")
     if dry_run:
         console.print(f"[dim]DRY-RUN would invoke:[/dim] {' '.join(cmd)}")
     else:
@@ -1051,7 +1097,7 @@ def _orchestrate_tick(
             continue
 
         if action == "review":
-            agent = _select_agent(data, item, exclude=assigned_to)
+            agent = _select_agent(data, item, exclude=assigned_to, for_review=True)
             if not agent:
                 console.print(
                     f"{log_prefix} item {item_id} in {status} needs review "
@@ -1061,7 +1107,7 @@ def _orchestrate_tick(
             console.print(
                 f"{log_prefix} item {item_id} in {status} → review handoff {agent} --item {pos}"
             )
-            _run_handoff(backlog_file, agent, pos, dry_run)
+            _run_handoff(backlog_file, agent, pos, dry_run, review=True)
             acted = True
             continue
 
@@ -1093,7 +1139,7 @@ def _orchestrate_tick(
                     )
                     if review_in_flight:
                         continue  # already dispatched, wait for result
-                    reviewer = _select_agent(data, item, exclude=assigned_to)
+                    reviewer = _select_agent(data, item, exclude=assigned_to, for_review=True)
                     if reviewer:
                         console.print(
                             f"{log_prefix} item {item_id} approaching done — "
@@ -1109,7 +1155,7 @@ def _orchestrate_tick(
                                 "resolved": False,
                             })
                             store.write(data)
-                        _run_handoff(backlog_file, reviewer, pos, dry_run)
+                        _run_handoff(backlog_file, reviewer, pos, dry_run, review=True)
                         acted = True
                     else:
                         console.print(

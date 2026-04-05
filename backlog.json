@@ -1,5 +1,5 @@
 {
-  "version": 444,
+  "version": 445,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -527,6 +527,7 @@
         ]
       },
       "reviewer": {
+        "role": "reviewer",
         "skills": [
           "python",
           "api",

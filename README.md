@@ -314,6 +314,8 @@ Define agent capabilities in `config.agents` for intelligent assignment:
 
 `"role": "lead"` designates the agent that drives the full dev cycle in auto mode. Exactly one agent may have this role.
 
+`"role": "reviewer"` designates the dedicated code review agent. The orchestrator prefers it for all review handoffs. Its persona file (`.claude/agents/reviewer.md`) carries persistent learnings about what to catch.
+
 Also configurable from the board's Settings modal.
 
 ### Orchestrator

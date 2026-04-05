@@ -149,6 +149,9 @@ backlog init                          # create starter backlog.json
 backlog board                         # launch web board (port 8089)
 backlog board --port 9000             # custom port
 
+backlog handoff reviewer --item 3 --review   # review handoff: pass/reject verdict
+backlog handoff backend-dev --item 3         # work handoff: done/blocked/partial
+
 backlog orchestrate                   # supervised mode (default): acts on ready+ items
 backlog orchestrate --mode auto       # auto mode: lead agent refines + starts items autonomously
 backlog orchestrate --poll 30         # tick interval in seconds (default 10)
@@ -325,6 +328,8 @@ Use `?commit=true` on `/api/recommend` to store decisions for outcome tracking.
 ```
 
 **Lead agent:** Set `"role": "lead"` on exactly one agent in `config.agents`. Required for auto mode; validated at startup. Zero or multiple leads → hard error with names listed.
+
+**Reviewer agent:** Set `"role": "reviewer"` on the designated code review agent. When the orchestrator dispatches a review handoff, `_select_agent` gives this agent a +10 score bonus so it wins over generalist agents unless at capacity.
 
 ```json
 "agents": {
