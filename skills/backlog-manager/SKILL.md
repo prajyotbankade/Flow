@@ -91,9 +91,21 @@ When reviewing an item in `code-review`, a **reject verdict blocks the merge**. 
 4. **Edge cases** — what happens when the list is empty, the file doesn't exist, the agent isn't configured, or the external call times out?
 5. **Write safety** — any write to `backlog.json` must re-read first, use `expected_version`, and go through `apply_lane_transition` for status changes (never raw field writes).
 
+**Severity tiers** — classify every finding before issuing a verdict:
+- **blocker** — must fix before merge (correctness bug, security issue, data loss, broken contract)
+- **important** — real pain if it ships; gets a follow-up thread but does not block
+- **nit** — style/naming/minor inconsistency; mentioned once, never blocks
+
 **Verdict:**
-- `pass` — ship it
-- `reject` — specific issue, must fix before done. Move item back to `in-progress` with a thread explaining what's wrong.
+- `pass` — zero blockers. Important issues and nits are noted in the review artifact and follow-up threads.
+- `reject:<blocker summary>` — one or more blockers found. Move item back to `in-progress` with a thread listing only the blockers and exactly what must change.
+
+**Review artifact** — write `handoff_results/review_<item_id>_<timestamp>.md` after every review (pass or reject):
+```
+# Review: <item title>
+**Item**: #N  **Verdict**: pass | reject  **Reviewer**: reviewer  **Timestamp**: <ISO>
+## Blockers / ## Important / ## Nits / ## Praise   (omit empty sections)
+```
 
 A reviewer who passes code with a known bug and logs a follow-up ticket has failed at their job.
 
