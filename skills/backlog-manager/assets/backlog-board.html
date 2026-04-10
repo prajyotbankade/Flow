@@ -29,6 +29,15 @@
     .header-left { display: flex; gap: 8px; align-items: center; }
     .header-right { display: flex; gap: 8px; align-items: center; margin-left: auto; }
     .sync-indicator { font-size: 11px; color: #9ca3af; }
+    .orch-pill {
+      font-size: 11px; border-radius: 6px; padding: 3px 8px;
+      display: flex; align-items: center; gap: 4px; cursor: default;
+    }
+    .orch-pill.running { background: #dcfce7; color: #166534; }
+    .orch-pill.stopped { background: #f3f4f6; color: #9ca3af; }
+    .orch-pill .orch-dot { font-size: 8px; }
+    .orch-pill .orch-age { font-size: 10px; opacity: 0.7; }
+    .badge-stuck { background: #fef3c7; color: #92400e; border: 1px solid #f59e0b; font-size: 10px; }
     .board-toolbar {
       display: flex; align-items: center; gap: 8px;
       padding: 10px 20px; background: #f8f9fb; border-bottom: 1px solid #e5e7eb;
@@ -311,6 +320,51 @@
       box-shadow: 0 0 0 3px rgba(59,130,246,0.08);
     }
 
+    /* Staged Actions */
+    .staged-section { margin-top: 12px; }
+    .staged-action-item {
+      background: #fffbeb;
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 8px;
+      border-left: 3px solid #f59e0b;
+    }
+    .staged-action-item.approved { border-left-color: #10b981; background: #f0fdf4; }
+    .staged-action-item.rejected { border-left-color: #ef4444; background: #fef2f2; }
+    .staged-action-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 4px;
+    }
+    .staged-action-type {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      padding: 2px 6px;
+      border-radius: 4px;
+      background: #fef3c7;
+      color: #92400e;
+    }
+    .staged-action-item.approved .staged-action-type { background: #d1fae5; color: #047857; }
+    .staged-action-item.rejected .staged-action-type { background: #fee2e2; color: #991b1b; }
+    .staged-action-desc { font-size: 13px; color: #374151; margin-bottom: 4px; }
+    .staged-action-meta { font-size: 11px; color: #9ca3af; }
+    .staged-action-btns { display: flex; gap: 4px; }
+    .staged-action-btns button {
+      font-size: 11px;
+      padding: 2px 10px;
+      border-radius: 4px;
+      border: 1px solid #d1d5db;
+      background: #fff;
+      cursor: pointer;
+    }
+    .staged-action-btns .approve-btn:hover { background: #d1fae5; border-color: #a7f3d0; }
+    .staged-action-btns .reject-btn:hover { background: #fee2e2; border-color: #fca5a5; }
+    .badge-staged { background: #fef3c7; color: #92400e; }
+
     /* Threads */
     .threads-section { margin-top: 12px; }
     .thread-item {
@@ -424,6 +478,90 @@
 
     /* Empty state */
     .empty-state { text-align: center; padding: 20px 12px; color: #c0c4cc; font-size: 12px; }
+
+    /* Welcome panel — shown when backlog has zero items */
+    .welcome-panel {
+      max-width: 520px;
+      margin: 80px auto 0;
+      padding: 36px 40px;
+      background: #fff;
+      border-radius: 14px;
+      box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+      text-align: center;
+    }
+    .welcome-panel h2 {
+      font-size: 20px;
+      font-weight: 700;
+      color: #1a1a2e;
+      margin-bottom: 6px;
+    }
+    .welcome-panel .welcome-subtitle {
+      font-size: 13px;
+      color: #6b7280;
+      margin-bottom: 24px;
+    }
+    .welcome-panel .welcome-commands {
+      text-align: left;
+      background: #f8f9fb;
+      border-radius: 8px;
+      padding: 16px 20px;
+      margin-bottom: 20px;
+    }
+    .welcome-panel .welcome-cmd {
+      font-family: 'SFMono-Regular', Consolas, 'Liberation Mono', Menlo, monospace;
+      font-size: 13px;
+      color: #1e293b;
+      padding: 5px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      gap: 12px;
+    }
+    .welcome-panel .welcome-cmd code {
+      background: none;
+      white-space: nowrap;
+    }
+    .welcome-panel .welcome-cmd .cmd-desc {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      font-size: 12px;
+      color: #9ca3af;
+      white-space: nowrap;
+    }
+    .welcome-panel .welcome-footer {
+      font-size: 12px;
+      color: #9ca3af;
+    }
+    .welcome-panel .welcome-footer a {
+      color: #3b82f6;
+      text-decoration: none;
+    }
+    .welcome-panel .welcome-footer a:hover { text-decoration: underline; }
+
+    /* Dismissible info banner */
+    .info-banner {
+      background: #fef9c3;
+      border: 1px solid #fde68a;
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #92400e;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+    .info-banner .banner-dismiss {
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 16px;
+      color: #92400e;
+      padding: 0 4px;
+      line-height: 1;
+      opacity: 0.7;
+    }
+    .info-banner .banner-dismiss:hover { opacity: 1; }
 
     /* ── Toast notification ── */
     .toast {
@@ -965,6 +1103,7 @@
       <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Item</button>
     </div>
     <div class="header-right">
+      <span class="orch-pill stopped" id="orch-pill" title="Orchestrator status"></span>
       <span class="user-indicator" id="user-display" title="Git user identity"></span>
       <span class="sync-indicator" id="sync-status">Synced</span>
       <button class="team-btn" onclick="openTeams()" title="View Team">&#x1F465; Team <span class="team-count" id="team-count">0</span></button>
@@ -1079,6 +1218,10 @@
           <div class="form-group">
             <label>Notes</label>
             <textarea id="item-notes" rows="2" placeholder="Additional notes..."></textarea>
+          </div>
+          <div class="staged-section" id="staged-section" style="display:none;">
+            <label style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.3px;">Staged Actions</label>
+            <div id="staged-actions-list"></div>
           </div>
           <div class="threads-section" id="threads-section">
             <label style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.3px;">Threads</label>
@@ -1287,6 +1430,8 @@
     let scoreData = {};  // {item_id: {score, score_breakdown, recommended_agent, recommended_model}}
     let recommendData = null;  // Tribunal recommendation result
     let graphData = null;   // Phase 3: dependency graph + conflicts + rebalancing
+    let orchStatus = null;  // orchestrator heartbeat status
+    let stuckItemIds = {};  // {item_id: stuck_minutes}
     let sortByScore = false;
     let viewMode = 'kanban'; // 'kanban' | 'graph'
 
@@ -1417,6 +1562,43 @@
       } catch(e) { /* graph is optional */ }
     }
 
+    async function loadOrchStatus() {
+      try {
+        const res = await fetch('/api/orchestrator/status');
+        if (!res.ok) return;
+        orchStatus = await res.json();
+        stuckItemIds = {};
+        (orchStatus.stuck_items || []).forEach(s => { stuckItemIds[s.id] = s.stuck_minutes; });
+        updateOrchPill();
+      } catch(e) { /* orchestrator status is optional */ }
+    }
+
+    function updateOrchPill() {
+      const pill = document.getElementById('orch-pill');
+      if (!orchStatus) {
+        pill.className = 'orch-pill stopped';
+        pill.innerHTML = '&#9675; Orchestrator stopped';
+        pill.title = 'No heartbeat file found';
+        return;
+      }
+      if (orchStatus.running) {
+        const age = orchStatus.last_tick_age_seconds;
+        const ageLabel = age != null ? (age < 60 ? age + 's ago' : Math.round(age / 60) + 'm ago') : '';
+        pill.className = 'orch-pill running';
+        pill.innerHTML = '<span class="orch-dot">&#9679;</span> Orchestrator running'
+          + (ageLabel ? ' <span class="orch-age">(' + ageLabel + ')</span>' : '');
+        pill.title = 'Mode: ' + (orchStatus.mode || 'unknown')
+          + ', in-flight: ' + (orchStatus.items_in_flight || []).length;
+      } else {
+        const age = orchStatus.last_tick_age_seconds;
+        const ageLabel = age != null ? (age < 60 ? age + 's ago' : Math.round(age / 60) + 'm ago') : '';
+        pill.className = 'orch-pill stopped';
+        pill.innerHTML = '&#9675; Orchestrator stopped'
+          + (ageLabel ? ' <span class="orch-age">(last: ' + ageLabel + ')</span>' : '');
+        pill.title = 'Last tick too old or heartbeat missing';
+      }
+    }
+
     async function loadBacklog() {
       try {
         const res = await fetch('/api/backlog');
@@ -1428,6 +1610,7 @@
           name ? `${name} — Flow Board` : 'Flow Board';
         await loadScores();
         await loadGraphData();
+        await loadOrchStatus();
         renderBoard();
         populateAssigneeDropdown();
         setSyncStatus('Synced');
@@ -1504,6 +1687,22 @@
     function renderBoard() {
       const board = document.getElementById('board');
       board.innerHTML = '';
+
+      // Show welcome panel when backlog has no items
+      if (!backlog.items || backlog.items.length === 0) {
+        board.innerHTML = `
+          <div class="welcome-panel">
+            <h2>Welcome to Flow</h2>
+            <p class="welcome-subtitle">A backlog manager with built-in work intelligence. Get started from your terminal.</p>
+            <div class="welcome-commands">
+              <div class="welcome-cmd"><code>backlog add "Your first task"</code><span class="cmd-desc">add an item</span></div>
+              <div class="welcome-cmd"><code>backlog board</code><span class="cmd-desc">open this board</span></div>
+              <div class="welcome-cmd"><code>backlog orchestrate</code><span class="cmd-desc">auto-assign work</span></div>
+            </div>
+            <p class="welcome-footer">See the <a href="https://github.com/anthropics/flow#readme" target="_blank" rel="noopener">README</a> for full setup and configuration.</p>
+          </div>`;
+        return;
+      }
 
       statuses.forEach(statusDef => {
         const statusId = statusDef.id;
@@ -1605,6 +1804,10 @@
       if (openQ > 0) {
         meta += `<span class="badge badge-question">\u26a0 ${openQ}Q</span>`;
       }
+      const pendingStaged = (item.staged_actions || []).filter(a => a.status === 'pending').length;
+      if (pendingStaged > 0) {
+        meta += `<span class="badge badge-staged">\u23f3 ${pendingStaged} staged</span>`;
+      }
       const forwardLinkCount = (item.links || []).length;
       const reverseLinkCount = getReverseLinkCount(item.id);
       const totalLinkCount = forwardLinkCount + reverseLinkCount;
@@ -1630,6 +1833,11 @@
       if (conflictInfo) {
         card.classList.add('has-conflict');
         meta += `<span class="badge badge-conflict" title="${esc(conflictInfo.description)}">⚡ conflict</span>`;
+      }
+      // Stuck indicator (orchestrator observability)
+      const stuckMin = stuckItemIds[item.id];
+      if (stuckMin != null) {
+        meta += `<span class="badge badge-stuck" title="No progress for ${stuckMin}m">&#9888; stuck ${stuckMin}m</span>`;
       }
       const dateFmt = { month: '2-digit', day: '2-digit', year: '2-digit', hour: 'numeric', minute: '2-digit' };
       const created = new Date(item.created_at).toLocaleString('en-US', dateFmt);
@@ -1877,6 +2085,8 @@
       document.getElementById('item-assigned').value = '';
       document.getElementById('item-notes').value = '';
       pendingLinks = [];
+      document.getElementById('staged-section').style.display = 'none';
+      document.getElementById('staged-actions-list').innerHTML = '';
       document.getElementById('threads-list').innerHTML = '';
       document.getElementById('new-thread-topic').value = '';
       document.getElementById('new-link-type').value = '';
@@ -1918,6 +2128,7 @@
       // Show tabs for existing items
       document.getElementById('modal-tabs').style.display = 'flex';
       switchModalTab('details');
+      renderStagedActions(item.staged_actions || []);
       renderThreads(item.threads || []);
       renderLinks(item);
       renderHistory(item);
@@ -2342,6 +2553,77 @@
       renderBoard();
       populateAssigneeDropdown();
       applyFilters();
+    }
+
+    // ── Staged Actions ──
+    function renderStagedActions(actions) {
+      const section = document.getElementById('staged-section');
+      const list = document.getElementById('staged-actions-list');
+      if (!actions || actions.length === 0) {
+        section.style.display = 'none';
+        list.innerHTML = '';
+        return;
+      }
+      section.style.display = 'block';
+      list.innerHTML = actions.map((a, i) => {
+        const statusClass = a.status === 'approved' ? 'approved' : a.status === 'rejected' ? 'rejected' : '';
+        const isPending = a.status === 'pending';
+        const contextSummary = a.context && Object.keys(a.context).length > 0
+          ? Object.entries(a.context).map(([k, v]) => `${esc(k)}: ${esc(String(v))}`).join(', ')
+          : '';
+        const resolvedInfo = !isPending
+          ? `<div class="staged-action-meta">${esc(a.status)} by ${esc(a.resolved_by || '?')} at ${a.resolved_at || '?'}${a.reject_reason ? ' — ' + esc(a.reject_reason) : ''}</div>`
+          : '';
+        return `
+          <div class="staged-action-item ${statusClass}">
+            <div class="staged-action-header">
+              <span class="staged-action-type">${esc(a.type)}</span>
+              ${isPending ? `
+                <div class="staged-action-btns">
+                  <button class="approve-btn" onclick="approveStagedAction(${i})">Approve</button>
+                  <button class="reject-btn" onclick="rejectStagedAction(${i})">Reject</button>
+                </div>
+              ` : ''}
+            </div>
+            <div class="staged-action-desc">${esc(a.description)}</div>
+            ${contextSummary ? `<div class="staged-action-meta">${contextSummary}</div>` : ''}
+            <div class="staged-action-meta">Staged by ${esc(a.staged_by || '?')} at ${a.staged_at || '?'}</div>
+            ${resolvedInfo}
+          </div>
+        `;
+      }).join('');
+    }
+
+    function approveStagedAction(index) {
+      if (!editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item || !item.staged_actions || !item.staged_actions[index]) return;
+      const action = item.staged_actions[index];
+      if (action.status !== 'pending') return;
+      action.status = 'approved';
+      action.resolved_at = new Date().toISOString();
+      action.resolved_by = currentUser.name || 'board';
+      item.updated_at = new Date().toISOString();
+      renderStagedActions(item.staged_actions);
+      saveBacklog();
+      renderBoard();
+    }
+
+    function rejectStagedAction(index) {
+      if (!editingItemId) return;
+      const item = backlog.items.find(i => i.id === editingItemId);
+      if (!item || !item.staged_actions || !item.staged_actions[index]) return;
+      const action = item.staged_actions[index];
+      if (action.status !== 'pending') return;
+      const reason = prompt('Rejection reason (optional):');
+      action.status = 'rejected';
+      action.resolved_at = new Date().toISOString();
+      action.resolved_by = currentUser.name || 'board';
+      action.reject_reason = reason || null;
+      item.updated_at = new Date().toISOString();
+      renderStagedActions(item.staged_actions);
+      saveBacklog();
+      renderBoard();
     }
 
     // ── Threads ──
@@ -2932,11 +3214,25 @@
     let settingsAgents = {};
     let settingsScoring = {};
 
+    let noAgentsBannerDismissed = false;
+
+    function dismissNoAgentsBanner() {
+      noAgentsBannerDismissed = true;
+      const el = document.getElementById('no-agents-banner');
+      if (el) el.remove();
+    }
+
     function renderSettingsAgents() {
       const container = document.getElementById('settings-agents-list');
       const agents = settingsAgents;
       if (!Object.keys(agents).length) {
-        container.innerHTML = '<div style="color:#9ca3af;font-size:12px;padding:8px 0;">No agents configured yet.</div>';
+        const bannerHtml = !noAgentsBannerDismissed
+          ? `<div class="info-banner" id="no-agents-banner">
+               <span>No agents configured — assignment intelligence is disabled. Add agents below or edit backlog.json.</span>
+               <button class="banner-dismiss" onclick="dismissNoAgentsBanner()" title="Dismiss">&times;</button>
+             </div>`
+          : '';
+        container.innerHTML = bannerHtml + '<div style="color:#9ca3af;font-size:12px;padding:8px 0;">No agents configured yet.</div>';
         return;
       }
       container.innerHTML = Object.entries(agents).map(([name, profile]) => `

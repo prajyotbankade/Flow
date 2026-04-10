@@ -13,6 +13,8 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import List, Optional
 
@@ -157,6 +159,15 @@ def _print_item(item: dict, position: int, as_json: bool = False) -> None:
     threads = item.get("threads", [])
     if threads:
         console.print(f"  Threads:    {len(threads)} ({sum(1 for t in threads if not t.get('resolved'))} unresolved)")
+    staged_actions = item.get("staged_actions", [])
+    pending = [a for a in staged_actions if a.get("status") == "pending"]
+    if staged_actions:
+        console.print(f"  Staged:     {len(staged_actions)} action(s) ({len(pending)} pending)")
+        for a in pending:
+            console.print(
+                f"    [yellow]PENDING[/yellow] [{a.get('type','')}] {a.get('description','')} "
+                f"(id={a.get('id','')}, by={a.get('staged_by','')})"
+            )
     history = item.get("lane_history", [])
     if history:
         console.print(f"  History:    {len(history)} lane transition(s)")
@@ -364,6 +375,11 @@ def init_cmd(
     store = BacklogStore(path)
     store.init()
     console.print(f"[green]Created[/green] {store.file_path}")
+    console.print()
+    console.print("[bold]Next steps:[/bold]")
+    console.print('  backlog add "Your first task"          [dim]# add an item[/dim]')
+    console.print("  backlog board                           [dim]# open the visual board[/dim]")
+    console.print("  backlog list                            [dim]# view your backlog[/dim]")
 
 
 @app.command()
@@ -712,6 +728,80 @@ def ingest(
     console.print(f"[dim]{outcome['note']}[/dim]")
 
 
+# ── Staged actions (two-stage approval gate) ─────────────────────────────────
+
+
+@app.command()
+@_handle
+def staged(
+    position: int = typer.Argument(..., help="Item number"),
+    file: Optional[str] = FILE_OPT,
+    json_out: bool = JSON_OPT,
+) -> None:
+    """List pending staged actions for an item."""
+    store = _store(file)
+    _, item = store.get_item(position)
+    actions = [a for a in item.get("staged_actions", []) if a.get("status") == "pending"]
+
+    if json_out:
+        console.print_json(json.dumps(actions))
+        return
+
+    if not actions:
+        console.print(f"[dim]No pending staged actions for item #{position}.[/dim]")
+        return
+
+    table = Table(box=box.SIMPLE, show_header=True)
+    table.add_column("Action ID", style="cyan")
+    table.add_column("Type")
+    table.add_column("Description")
+    table.add_column("Staged By")
+    table.add_column("Staged At", style="dim")
+    for a in actions:
+        table.add_row(
+            a.get("id", ""),
+            a.get("type", ""),
+            a.get("description", ""),
+            a.get("staged_by", ""),
+            a.get("staged_at", ""),
+        )
+    console.print(f"\n[bold]Pending staged actions for item #{position}[/bold]")
+    console.print(table)
+
+
+@app.command()
+@_handle
+def approve(
+    position: int = typer.Argument(..., help="Item number"),
+    action_id: str = typer.Argument(..., help="Staged action ID"),
+    file: Optional[str] = FILE_OPT,
+) -> None:
+    """Approve a pending staged action."""
+    store = _store(file)
+    action = store.approve_action(position, action_id, approved_by="cli")
+    console.print(
+        f"[green]Approved[/green] action [cyan]{action_id}[/cyan] "
+        f"({action.get('type', '')}: {action.get('description', '')})"
+    )
+
+
+@app.command()
+@_handle
+def reject(
+    position: int = typer.Argument(..., help="Item number"),
+    action_id: str = typer.Argument(..., help="Staged action ID"),
+    reason: Optional[str] = typer.Option(None, "--reason", "-r", help="Rejection reason"),
+    file: Optional[str] = FILE_OPT,
+) -> None:
+    """Reject a pending staged action."""
+    store = _store(file)
+    action = store.reject_action(position, action_id, rejected_by="cli", reason=reason)
+    msg = f"[red]Rejected[/red] action [cyan]{action_id}[/cyan] ({action.get('type', '')})"
+    if reason:
+        msg += f" — reason: {reason}"
+    console.print(msg)
+
+
 # ── Orchestrator helpers ──────────────────────────────────────────────────────
 
 
@@ -1015,6 +1105,31 @@ def _has_review_lane(statuses: list) -> bool:
     return False
 
 
+def _write_heartbeat(
+    backlog_file: str,
+    mode: str,
+    items_in_flight: List[str],
+    pending_result_files: int,
+) -> None:
+    """Write .orchestrator_state.json atomically (tmp + rename) next to the backlog file."""
+    state_path = Path(backlog_file).parent / ".orchestrator_state.json"
+    state = {
+        "running": True,
+        "mode": mode,
+        "last_tick": datetime.now(timezone.utc).isoformat(),
+        "items_in_flight": items_in_flight,
+        "pending_result_files": pending_result_files,
+    }
+    dir_path = str(state_path.parent)
+    try:
+        fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=dir_path)
+        with os.fdopen(fd, "w") as f:
+            json.dump(state, f, indent=2)
+        os.replace(tmp_path, str(state_path))
+    except OSError:
+        pass  # best-effort; don't crash the orchestrator over a heartbeat write
+
+
 def _orchestrate_tick(
     backlog_file: str,
     dry_run: bool,
@@ -1082,6 +1197,15 @@ def _orchestrate_tick(
         # Skip if already terminal or waiting
         terminal_ids = {s.get("id") for s in statuses_list if s.get("id") in ("done", "discarded")}
         if status in terminal_ids or status in ("backlog", "refined"):
+            continue
+
+        # Skip if item has pending staged actions (two-stage approval gate)
+        if BacklogStore.has_pending_staged_actions(item):
+            pending_count = sum(1 for a in item.get("staged_actions", []) if a.get("status") == "pending")
+            console.print(
+                f"{log_prefix} item {item_id} has {pending_count} pending staged action(s) — "
+                "blocked until resolved"
+            )
             continue
 
         # Determine what the orchestrator should do for this lane
@@ -1263,6 +1387,18 @@ def orchestrate(
                     log_prefix=f"[tick {tick_count}][auto]",
                 )
             _orchestrate_tick(backlog_file, dry_run, seen_result_files, log_prefix=f"[tick {tick_count}]")
+            # Write heartbeat after each tick
+            if not dry_run:
+                try:
+                    tick_data = BacklogStore(backlog_file).read()
+                    in_flight = [
+                        i["id"] for i in tick_data.get("items", [])
+                        if i.get("status") == "in-progress"
+                    ]
+                    pending = len(_scan_result_files(Path(backlog_file).parent)) - len(seen_result_files)
+                    _write_heartbeat(backlog_file, orch_mode, in_flight, max(pending, 0))
+                except Exception:
+                    pass  # best-effort
             if once:
                 break
             time.sleep(poll)

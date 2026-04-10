@@ -524,6 +524,80 @@ class BacklogStore:
             "note": "Tribunal should re-run to recompute scores for affected items.",
         }
 
+    # ── Staged actions (two-stage approval gate) ────────────────────────────
+
+    def stage_action(
+        self,
+        position: int,
+        action_type: str,
+        description: str,
+        context: dict,
+        staged_by: str,
+    ) -> dict:
+        """Stage an external/irreversible action on an item. Returns the new staged action."""
+        data, item = self.get_item(position)
+        action = {
+            "id": _generate_id(),
+            "type": action_type,
+            "description": description,
+            "context": context,
+            "staged_at": _now_iso(),
+            "staged_by": staged_by,
+            "status": "pending",
+            "resolved_at": None,
+            "resolved_by": None,
+            "reject_reason": None,
+        }
+        item.setdefault("staged_actions", []).append(action)
+        item["updated_at"] = _now_iso()
+        self.write(data, expected_version=data.get("version", 0))
+        return action
+
+    def approve_action(self, position: int, action_id: str, approved_by: str) -> dict:
+        """Approve a pending staged action. Returns the updated action."""
+        data, item = self.get_item(position)
+        for action in item.get("staged_actions", []):
+            if action.get("id") == action_id:
+                if action.get("status") != "pending":
+                    raise ValueError(
+                        f"Action {action_id} is already {action.get('status')}, cannot approve."
+                    )
+                action["status"] = "approved"
+                action["resolved_at"] = _now_iso()
+                action["resolved_by"] = approved_by
+                item["updated_at"] = _now_iso()
+                self.write(data, expected_version=data.get("version", 0))
+                return action
+        raise ItemNotFoundError(f"Staged action {action_id} not found on item #{position}.")
+
+    def reject_action(
+        self, position: int, action_id: str, rejected_by: str, reason: str | None = None
+    ) -> dict:
+        """Reject a pending staged action. Returns the updated action."""
+        data, item = self.get_item(position)
+        for action in item.get("staged_actions", []):
+            if action.get("id") == action_id:
+                if action.get("status") != "pending":
+                    raise ValueError(
+                        f"Action {action_id} is already {action.get('status')}, cannot reject."
+                    )
+                action["status"] = "rejected"
+                action["resolved_at"] = _now_iso()
+                action["resolved_by"] = rejected_by
+                action["reject_reason"] = reason
+                item["updated_at"] = _now_iso()
+                self.write(data, expected_version=data.get("version", 0))
+                return action
+        raise ItemNotFoundError(f"Staged action {action_id} not found on item #{position}.")
+
+    @staticmethod
+    def has_pending_staged_actions(item: dict) -> bool:
+        """Return True if the item has any staged actions with status='pending'."""
+        for action in item.get("staged_actions", []):
+            if action.get("status") == "pending":
+                return True
+        return False
+
     def reorder(self, position: int, new_position: int) -> None:
         """Move item from position to new_position (both 1-based). Adjusts priority order."""
         data = self.read()

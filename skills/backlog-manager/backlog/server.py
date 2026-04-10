@@ -28,6 +28,7 @@ API:
     GET  /api/policies/log         Recent policy fire history (optional ?limit=N)
     GET  /api/policies/evaluate    Manually trigger policy evaluation
     GET  /api/policies/suggestions LLM-generated rule suggestions based on patterns
+    GET  /api/orchestrator/status  Orchestrator heartbeat, stuck detection
 """
 
 import argparse
@@ -1635,6 +1636,18 @@ class BacklogHandler(BaseHTTPRequestHandler):
             self._serve_policy_evaluate()
         elif parsed.path == "/api/policies/suggestions":
             self._serve_policy_suggestions()
+        elif parsed.path.startswith("/api/items/") and parsed.path.endswith("/staged"):
+            # GET /api/items/<id>/staged — list staged actions
+            parts = parsed.path.split("/")
+            if len(parts) == 5:
+                item_id = parts[3]
+                params = parse_qs(parsed.query)
+                status_filter = params.get("status", [None])[0]
+                self._list_staged_actions(item_id, status_filter)
+            else:
+                self.send_error(404)
+        elif parsed.path == "/api/orchestrator/status":
+            self._serve_orchestrator_status()
         elif parsed.path in ("/favicon.ico", "/apple-touch-icon.png", "/robots.txt"):
             self.send_response(204)
             self.end_headers()
@@ -1645,6 +1658,22 @@ class BacklogHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if parsed.path == "/api/backlog":
             self._save_backlog()
+        elif parsed.path.startswith("/api/items/") and "/staged/" in parsed.path:
+            # PUT /api/items/<id>/staged/<action_id>/approve or /reject
+            parts = parsed.path.split("/")
+            # Expected: ['', 'api', 'items', '<id>', 'staged', '<action_id>', 'approve|reject']
+            if len(parts) == 7 and parts[5]:
+                item_id = parts[3]
+                action_id = parts[5]
+                verb = parts[6]
+                if verb == "approve":
+                    self._approve_staged_action(item_id, action_id)
+                elif verb == "reject":
+                    self._reject_staged_action(item_id, action_id)
+                else:
+                    self.send_error(404)
+            else:
+                self.send_error(404)
         elif parsed.path.startswith("/api/items/"):
             item_id = parsed.path.split("/api/items/")[1]
             self._update_item(item_id)
@@ -1661,6 +1690,12 @@ class BacklogHandler(BaseHTTPRequestHandler):
             if len(parts) == 5:
                 item_id = parts[3]
                 self._add_signal(item_id)
+                return
+        if parsed.path.startswith("/api/items/") and parsed.path.endswith("/stage"):
+            parts = parsed.path.split("/")
+            if len(parts) == 5:
+                item_id = parts[3]
+                self._stage_action(item_id)
                 return
         if parsed.path == "/api/policies":
             self._create_policy()
@@ -1692,6 +1727,83 @@ class BacklogHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps(GIT_USER).encode())
+
+    def _serve_orchestrator_status(self):
+        """Read .orchestrator_state.json and augment with stuck detection."""
+        backlog_dir = Path(self.backlog_file).parent
+        state_path = backlog_dir / ".orchestrator_state.json"
+
+        # Read heartbeat file
+        try:
+            with open(state_path, "r") as f:
+                state = json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError):
+            self._json_response(200, {
+                "running": False,
+                "mode": None,
+                "last_tick": None,
+                "last_tick_age_seconds": None,
+                "items_in_flight": [],
+                "pending_result_files": 0,
+                "stuck_items": [],
+            })
+            return
+
+        # Compute age and running status
+        last_tick = state.get("last_tick")
+        age_seconds = None
+        running = False
+        if last_tick:
+            try:
+                tick_dt = datetime.fromisoformat(last_tick)
+                age_seconds = (datetime.now(timezone.utc) - tick_dt).total_seconds()
+                running = age_seconds < 300  # 5 minutes grace
+            except (ValueError, TypeError):
+                pass
+
+        # Stuck detection: in-progress items older than threshold with no waiting_on=agent thread
+        stuck_items = []
+        try:
+            data = read_backlog(self.backlog_file)
+            orch_cfg = data.get("config", {}).get("orchestrator", {})
+            threshold_minutes = orch_cfg.get("stuck_threshold_minutes", 30)
+            now = datetime.now(timezone.utc)
+            for item in data.get("items", []):
+                if item.get("status") != "in-progress":
+                    continue
+                updated_at = item.get("updated_at")
+                if not updated_at:
+                    continue
+                try:
+                    updated_dt = datetime.fromisoformat(updated_at)
+                    age_min = (now - updated_dt).total_seconds() / 60
+                except (ValueError, TypeError):
+                    continue
+                if age_min < threshold_minutes:
+                    continue
+                has_agent_thread = any(
+                    t.get("waiting_on") == "agent" and not t.get("resolved")
+                    for t in item.get("threads", [])
+                )
+                if has_agent_thread:
+                    continue
+                stuck_items.append({
+                    "id": item["id"],
+                    "title": item.get("title", ""),
+                    "stuck_minutes": round(age_min),
+                })
+        except Exception:
+            pass  # best-effort
+
+        self._json_response(200, {
+            "running": running,
+            "mode": state.get("mode"),
+            "last_tick": last_tick,
+            "last_tick_age_seconds": round(age_seconds) if age_seconds is not None else None,
+            "items_in_flight": state.get("items_in_flight", []),
+            "pending_result_files": state.get("pending_result_files", 0),
+            "stuck_items": stuck_items,
+        })
 
     def _serve_backlog(self, agent=None):
         try:
@@ -2085,6 +2197,128 @@ class BacklogHandler(BaseHTTPRequestHandler):
             data["version"] = data.get("version", 0) + 1
             atomic_write(self.backlog_file, data)
         self._json_response(201, {"status": "ok", "signal": signal, "version": data["version"]})
+
+    # ── Staged actions (two-stage approval gate) ────────────────────────────
+
+    def _find_item_position(self, item_id):
+        """Return (data, 1-based position) for item_id, or (None, None)."""
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError:
+            return None, None
+        for idx, item in enumerate(data.get("items", [])):
+            if item.get("id") == item_id:
+                return data, idx + 1
+        return data, None
+
+    def _list_staged_actions(self, item_id, status_filter=None):
+        try:
+            data = read_backlog(self.backlog_file)
+        except ValueError as e:
+            self._json_error(500, str(e))
+            return
+        item = next((i for i in data.get("items", []) if i.get("id") == item_id), None)
+        if not item:
+            self._json_error(404, f"Item {item_id} not found")
+            return
+        actions = item.get("staged_actions", [])
+        if status_filter:
+            actions = [a for a in actions if a.get("status") == status_filter]
+        self._json_response(200, {"item_id": item_id, "staged_actions": actions})
+
+    def _stage_action(self, item_id):
+        content_length = int(self.headers.get("Content-Length", 0))
+        if content_length > MAX_BODY_SIZE:
+            self._json_error(413, "Request body too large")
+            return
+        body = self.rfile.read(content_length)
+        try:
+            incoming = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._json_error(400, f"Invalid JSON: {e}")
+            return
+        action_type = incoming.get("type", "").strip()
+        description = incoming.get("description", "").strip()
+        staged_by = incoming.get("staged_by", "").strip()
+        context = incoming.get("context", {})
+        if not action_type or not description:
+            self._json_error(400, "type and description are required")
+            return
+        if not staged_by:
+            self._json_error(400, "staged_by is required")
+            return
+
+        with write_lock:
+            _, position = self._find_item_position(item_id)
+            if position is None:
+                self._json_error(404, f"Item {item_id} not found")
+                return
+            try:
+                store = BacklogStore(self.backlog_file)
+                action = store.stage_action(position, action_type, description, context, staged_by)
+            except (ConflictError, ItemNotFoundError) as e:
+                self._json_error(409 if isinstance(e, ConflictError) else 404, str(e))
+                return
+        self._json_response(201, {"status": "ok", "staged_action": action})
+
+    def _approve_staged_action(self, item_id, action_id):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length) if content_length else b"{}"
+        try:
+            incoming = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._json_error(400, f"Invalid JSON: {e}")
+            return
+        approved_by = incoming.get("approved_by", "").strip()
+        if not approved_by:
+            self._json_error(400, "approved_by is required")
+            return
+
+        with write_lock:
+            _, position = self._find_item_position(item_id)
+            if position is None:
+                self._json_error(404, f"Item {item_id} not found")
+                return
+            try:
+                store = BacklogStore(self.backlog_file)
+                action = store.approve_action(position, action_id, approved_by)
+            except ItemNotFoundError as e:
+                self._json_error(404, str(e))
+                return
+            except (ConflictError, ValueError) as e:
+                self._json_error(409 if isinstance(e, ConflictError) else 422, str(e))
+                return
+        self._json_response(200, {"status": "ok", "staged_action": action})
+
+    def _reject_staged_action(self, item_id, action_id):
+        content_length = int(self.headers.get("Content-Length", 0))
+        body = self.rfile.read(content_length) if content_length else b"{}"
+        try:
+            incoming = json.loads(body)
+        except json.JSONDecodeError as e:
+            self._json_error(400, f"Invalid JSON: {e}")
+            return
+        rejected_by = incoming.get("rejected_by", "").strip()
+        if not rejected_by:
+            self._json_error(400, "rejected_by is required")
+            return
+        reason = incoming.get("reason", "").strip() or None
+
+        with write_lock:
+            _, position = self._find_item_position(item_id)
+            if position is None:
+                self._json_error(404, f"Item {item_id} not found")
+                return
+            try:
+                store = BacklogStore(self.backlog_file)
+                action = store.reject_action(position, action_id, rejected_by, reason)
+            except ItemNotFoundError as e:
+                self._json_error(404, str(e))
+                return
+            except (ConflictError, ValueError) as e:
+                self._json_error(409 if isinstance(e, ConflictError) else 422, str(e))
+                return
+        self._json_response(200, {"status": "ok", "staged_action": action})
 
     def _json_response(self, status, obj):
         self.send_response(status)
