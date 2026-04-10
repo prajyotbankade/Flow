@@ -13,6 +13,25 @@ __pycache__/
 # Eval workspace (dev artifacts)
 backlog-manager-workspace/
 
+# code-review-graph (local graph DB)
+.code-review-graph/
+
+# MCP / Claude local config
+.mcp.json
+.claude/settings.json
+.claude/skills/
+
+# Build artifacts
+*.egg-info/
+.venv-cli/
+
+# Runtime state
+policies.json
+policy_log.json
+
+# Eval results
+skills/backlog-manager/evals/results/
+
 # Eval / benchmark artifacts
 flow_env/
 .deepeval/

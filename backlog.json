@@ -1,5 +1,5 @@
 {
-  "version": 459,
+  "version": 466,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -185,7 +185,7 @@
       "id": "b2c3d4e5",
       "title": "Two-stage approval gate for external actions",
       "description": "Before any irreversible side effect (posting to GitHub, deploying, sending messages, merging), Flow must stage the action and surface it for inspection. Nothing executes until an explicit /approve. Pattern: stage \u2192 inspect \u2192 approve/reject.\n\n**Why**: Flow currently has no gate before external actions. An agent can post a PR comment, trigger a deploy, or merge \u2014 all without a human checkpoint. This adds that checkpoint as a first-class primitive.\n\n**Acceptance criteria:**\n- Any action tagged as external/irreversible is staged, not immediately executed\n- Staged action is surfaced to the user with full context (what, where, why)\n- /approve executes it; /reject discards it with optional reason\n- Orchestrator treats a staged action the same as a blocker \u2014 work pauses until resolved\n- Works for GitHub actions, deploys, and any future external integrations",
-      "status": "in-progress",
+      "status": "done",
       "category": "feature",
       "priority_weight": 9,
       "complexity": "medium",
@@ -197,7 +197,7 @@
       ],
       "assigned_to": "backend-dev",
       "created_at": "2026-04-05T00:00:00.000000+00:00",
-      "updated_at": "2026-04-10T18:30:58.061699+00:00",
+      "updated_at": "2026-04-10T21:00:19.938450+00:00",
       "lane_history": [
         {
           "lane": "backlog",
@@ -217,6 +217,16 @@
         {
           "lane": "ready",
           "at": "2026-04-10T18:30:58.061538+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-10T21:00:19.844169+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-10T21:00:19.938263+00:00",
           "by": "cli"
         }
       ],
@@ -410,7 +420,7 @@
       "id": "m3n4o5p6",
       "title": "Cold-start UX",
       "description": "A new user clones Flow and has no backlog.json, no context, no idea what to say. This item covers the full day-1 experience across CLI and board.\n\n**`backlog init` output:**\nCurrently prints nothing after creating the file. Should print a concise 'what's next' guide:\n```\nCreated backlog.json\n\nNext steps:\n  backlog add \"Your first task\"          # add an item\n  backlog board                           # open the visual board\n  backlog list                            # view your backlog\n```\n\n**Board empty state:**\nWhen `items` is empty, replace the blank columns with a welcome panel:\n- Brief one-liner: what Flow is\n- 3 copy-ready commands: `backlog add`, `backlog board`, `backlog orchestrate`\n- A note pointing to README for full setup\n\nDo NOT render fake example cards \u2014 that would be confusing when the board is shared with real agents.\n\n**Board: no agents configured warning:**\nIf `config.agents` is empty and the board is opened, show a dismissible banner in the Settings panel:\n> No agents configured \u2014 assignment intelligence is disabled. Add agents in Settings or edit backlog.json.\n\n**Acceptance criteria:**\n- `backlog init` prints a next-steps guide after creating the file\n- Empty board shows a welcome panel instead of empty columns\n- Welcome panel has copy-ready commands, no fake data\n- Settings panel surfaces 'no agents' warning when config.agents is empty\n- All text is concise \u2014 onboarding should feel light, not overwhelming",
-      "status": "in-progress",
+      "status": "done",
       "category": "feature",
       "priority_weight": 8,
       "complexity": "medium",
@@ -419,7 +429,7 @@
         "onboarding"
       ],
       "created_at": "2026-04-03T22:30:00.000000+00:00",
-      "updated_at": "2026-04-10T18:30:59.485070+00:00",
+      "updated_at": "2026-04-10T21:00:20.805203+00:00",
       "lane_history": [
         {
           "lane": "backlog",
@@ -439,6 +449,16 @@
         {
           "lane": "ready",
           "at": "2026-04-10T18:30:59.484844+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-10T21:00:20.718406+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-10T21:00:20.805032+00:00",
           "by": "cli"
         }
       ],
@@ -628,7 +648,7 @@
       "id": "bu7wympg",
       "title": "Orchestrator observability",
       "description": "When `backlog orchestrate` is running, there is no way to see what it's doing from the board. An item can sit in-progress for hours with no signal about whether the orchestrator is actively managing it or has silently stalled.\n\n**Heartbeat file:**\nThe orchestrator writes `.orchestrator_state.json` (alongside `backlog.json`) atomically on each tick:\n```json\n{\n  \"running\": true,\n  \"mode\": \"supervised\",\n  \"last_tick\": \"<ISO UTC>\",\n  \"items_in_flight\": [\"<item_id>\", ...],\n  \"pending_result_files\": 2\n}\n```\nWritten on every tick, not at startup. Absence of the file (or `last_tick` older than 2\u00d7 poll interval) means the orchestrator is not running.\n\n**API endpoint:**\n`GET /api/orchestrator/status` \u2014 server reads `.orchestrator_state.json` and augments with stuck item detection:\n```json\n{\n  \"running\": true,\n  \"mode\": \"supervised\",\n  \"last_tick\": \"<ISO UTC>\",\n  \"last_tick_age_seconds\": 8,\n  \"items_in_flight\": [...],\n  \"pending_result_files\": 2,\n  \"stuck_items\": [{\"id\": \"...\", \"title\": \"...\", \"stuck_minutes\": 45}]\n}\n```\n\n**Stuck item detection (server-side):**\nAn item is stuck if: status is `in-progress`, `updated_at` is older than `config.orchestrator.stuck_threshold_minutes` (default 30), and no unresolved thread with `waiting_on: agent` exists (which would mean a handoff is legitimately in-flight).\n\n**Board UI:**\n- Header pill: `\u25cf Orchestrator running` (green) / `\u25cb Orchestrator stopped` (grey), shows last tick age\n- Card badge on stuck items: `\u26a0 stuck 45m`\n- Polls `/api/orchestrator/status` on the same 5s interval as the board refresh\n\n**Acceptance criteria:**\n- Heartbeat file written atomically on every tick\n- `GET /api/orchestrator/status` returns correct state when running and when stopped\n- Board header shows running/stopped indicator with last tick age\n- Stuck items get a visual badge after threshold\n- `stuck_threshold_minutes` configurable, defaults to 30",
-      "status": "in-progress",
+      "status": "done",
       "category": "feature",
       "priority_weight": 8,
       "complexity": "medium",
@@ -639,7 +659,7 @@
         "ux"
       ],
       "created_at": "2026-04-04T04:45:00.000000+00:00",
-      "updated_at": "2026-04-10T18:31:00.203065+00:00",
+      "updated_at": "2026-04-10T21:00:21.650822+00:00",
       "lane_history": [
         {
           "lane": "backlog",
@@ -659,6 +679,16 @@
         {
           "lane": "ready",
           "at": "2026-04-10T18:31:00.202895+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-10T21:00:21.565109+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-10T21:00:21.650646+00:00",
           "by": "cli"
         }
       ],
@@ -731,7 +761,13 @@
         "schema"
       ],
       "description": "After #4 merges: add staged_actions to schema.md Item type, document new CLI commands (staged, approve, reject), new API endpoints (POST /api/items/<id>/stage, GET /api/items/<id>/staged, PUT approve/reject), and orchestrator blocker behavior. Update README feature list and schema tree.",
-      "links": [{"item_id": "b2c3d4e5", "type": "follow-up", "reason": "Docs update after staged actions feature lands"}],
+      "links": [
+        {
+          "item_id": "b2c3d4e5",
+          "type": "follow-up",
+          "reason": "Docs update after staged actions feature lands"
+        }
+      ],
       "threads": [],
       "lane_history": [],
       "gate_from": 0,
@@ -752,7 +788,13 @@
         "evals"
       ],
       "description": "After #4 merges: add test_cli.py tests for backlog staged, backlog approve, backlog reject commands. Test orchestrator treats pending staged actions as blocker. Optionally add evals.json NL scenario for 'stage this action before executing'.",
-      "links": [{"item_id": "b2c3d4e5", "type": "follow-up", "reason": "Test coverage after staged actions feature lands"}],
+      "links": [
+        {
+          "item_id": "b2c3d4e5",
+          "type": "follow-up",
+          "reason": "Test coverage after staged actions feature lands"
+        }
+      ],
       "threads": [],
       "lane_history": [],
       "gate_from": 0,
@@ -774,7 +816,13 @@
         "ux"
       ],
       "description": "After #9 merges: update test_init_creates_backlog_file to verify next-steps guide output. Check evals.json #5 (empty backlog) expectations still hold with new board empty state.",
-      "links": [{"item_id": "m3n4o5p6", "type": "follow-up", "reason": "Test coverage after cold-start UX feature lands"}],
+      "links": [
+        {
+          "item_id": "m3n4o5p6",
+          "type": "follow-up",
+          "reason": "Test coverage after cold-start UX feature lands"
+        }
+      ],
       "threads": [],
       "lane_history": [],
       "gate_from": 0,
@@ -796,7 +844,13 @@
         "orchestrator"
       ],
       "description": "After #14 merges: document GET /api/orchestrator/status endpoint, .orchestrator_state.json schema, config.orchestrator.stuck_threshold_minutes config field. Update README with observability feature section.",
-      "links": [{"item_id": "bu7wympg", "type": "follow-up", "reason": "Docs update after orchestrator observability feature lands"}],
+      "links": [
+        {
+          "item_id": "bu7wympg",
+          "type": "follow-up",
+          "reason": "Docs update after orchestrator observability feature lands"
+        }
+      ],
       "threads": [],
       "lane_history": [],
       "gate_from": 0,
@@ -818,7 +872,13 @@
         "orchestrator"
       ],
       "description": "After #14 merges: add test_cli.py tests for heartbeat file writing (atomic, correct schema), stuck item detection logic, orchestrator status API. Optionally add evals.json NL scenario for 'is the orchestrator running'.",
-      "links": [{"item_id": "bu7wympg", "type": "follow-up", "reason": "Test coverage after orchestrator observability feature lands"}],
+      "links": [
+        {
+          "item_id": "bu7wympg",
+          "type": "follow-up",
+          "reason": "Test coverage after orchestrator observability feature lands"
+        }
+      ],
       "threads": [],
       "lane_history": [],
       "gate_from": 0,
@@ -826,6 +886,29 @@
       "skip_count": 0,
       "created_at": "2026-04-10T18:34:25.021047+00:00",
       "updated_at": "2026-04-10T18:34:25.021047+00:00"
+    },
+    {
+      "id": "oym0khty",
+      "title": "Agent work lands on feature branches with PR \u2014 reviewer merges to main",
+      "status": "backlog",
+      "priority_weight": 9,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "orchestrator",
+        "workflow",
+        "agents",
+        "git"
+      ],
+      "description": "Currently agents work in worktrees that get cleaned up, losing all changes. Redesign the agent workflow so each agent:\n\n1. Creates a feature branch (e.g. feat/item-4-approval-gate)\n2. Commits their work on that branch before finishing\n3. Opens a PR (or leaves the branch ready for review)\n4. The reviewer agent reviews the PR/branch \u2014 not just the backlog item\n5. On pass, the reviewer (or orchestrator) merges to main\n6. On reject, the branch stays open with review comments for the agent to address\n\nThis replaces the current pattern where worktree agents lose their work on completion. It also gives the reviewer actual diffs to review instead of reading code in-place.\n\n**Acceptance criteria:**\n- Agent prompts include branch creation + commit instructions\n- Each agent's work is preserved on a named branch after completion\n- Reviewer can diff the branch against main to review changes\n- Orchestrator handles merge after review passes\n- Works with both parallel and sequential agent workflows\n- No more lost work from worktree cleanup",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-10T21:03:00.791958+00:00",
+      "updated_at": "2026-04-10T21:03:00.791958+00:00"
     }
   ],
   "config": {
