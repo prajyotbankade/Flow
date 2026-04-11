@@ -1,5 +1,5 @@
 {
-  "version": 466,
+  "version": 468,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -909,6 +909,29 @@
       "skip_count": 0,
       "created_at": "2026-04-10T21:03:00.791958+00:00",
       "updated_at": "2026-04-10T21:03:00.791958+00:00"
+    },
+    {
+      "id": "0zhf9apl",
+      "title": "Bake Superpowers methodology into agent personas",
+      "status": "backlog",
+      "priority": "high",
+      "priority_weight": 9,
+      "complexity": "medium",
+      "category": "enhancement",
+      "tags": [
+        "agents",
+        "process",
+        "methodology"
+      ],
+      "description": "Extract key practices from obra/superpowers skills and embed them into .claude/agents/*.md persona files. Three skills to incorporate: (1) test-driven-development \u2014 RED-GREEN-REFACTOR enforcement, no production code without failing test first, delete code written before tests. Add to backend-dev and frontend-dev. (2) systematic-debugging \u2014 4-phase root cause process (investigate \u2192 pattern analysis \u2192 hypothesis \u2192 fix), no fixes without root cause, stop after 3 failed fixes and question architecture. Add to all agents. (3) verification-before-completion \u2014 evidence before claims, run verification commands before any completion claim, never trust agent self-reports. Add to all agents and strengthen reviewer's checklist. Do NOT install superpowers as a plugin \u2014 it conflicts with Flow's orchestration layer. Cherry-pick methodology only.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-10T21:29:40.041777+00:00",
+      "updated_at": "2026-04-10T21:37:10.314463+00:00"
     }
   ],
   "config": {

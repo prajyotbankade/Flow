@@ -48,7 +48,7 @@ from urllib.parse import urlparse, parse_qs
 import math
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
-ASSETS_DIR = SCRIPT_DIR.parent / "assets"
+ASSETS_DIR = SCRIPT_DIR.parent / "backlog" / "assets"
 
 # Lock to serialize writes — prevents race conditions between concurrent requests
 write_lock = threading.Lock()
@@ -1267,6 +1267,8 @@ def compute_freshness(updated_at_str, scoring_cfg):
     """Compute freshness score component from updated_at timestamp."""
     try:
         updated = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
     except (ValueError, AttributeError):
         return 0.0
     now = datetime.now(timezone.utc)

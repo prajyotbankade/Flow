@@ -56,7 +56,7 @@ from .core import (
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
-ASSETS_DIR = SCRIPT_DIR.parent / "assets"
+ASSETS_DIR = SCRIPT_DIR / "assets"
 
 write_lock = threading.Lock()
 MAX_BODY_SIZE = 10 * 1024 * 1024
@@ -500,6 +500,8 @@ def resolve_blocks(items):
 def compute_freshness(updated_at_str, scoring_cfg):
     try:
         updated = datetime.fromisoformat(updated_at_str.replace("Z", "+00:00"))
+        if updated.tzinfo is None:
+            updated = updated.replace(tzinfo=timezone.utc)
     except (ValueError, AttributeError):
         return 0.0
     now = datetime.now(timezone.utc)

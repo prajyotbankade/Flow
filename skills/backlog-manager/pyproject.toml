@@ -20,5 +20,8 @@ backlog-server = "backlog.server:main"
 where = ["."]
 include = ["backlog*"]
 
+[tool.setuptools.package-data]
+backlog = ["assets/*.html"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
