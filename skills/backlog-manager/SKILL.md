@@ -15,6 +15,7 @@ Invoke this skill when the user:
 Invoke proactively (without being asked) when:
 - You've just finished a task and the user hasn't given you a new one → generate a work brief and offer to pick up the top-scored item
 - You discover bugs, tech debt, or follow-ups while working → add them to the backlog and link them to the source task
+- An item enters or is already in `code-review` status (after any write, or when scanning the backlog) → for each `code-review` item with no unresolved `review-dispatched` sentinel thread: (1) run `backlog handoff reviewer --item N --review`, (2) immediately run `backlog ingest <result_file>` on the file it prints ("Result saved to …"). Do not wait for the user to ask. The ingest step is what actually advances the item to `done` (pass) or back to `in-progress` (reject) — skipping it leaves the item stuck in `code-review`.
 
 ---
 

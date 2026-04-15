@@ -386,6 +386,22 @@ class BacklogStore:
 
         if not item_id:
             raise ValueError("result file missing required field: item_id")
+
+        # Translate review verdict format (pass|reject) into work format (done|blocked)
+        verdict = report.get("verdict")
+        if verdict is not None and status is None:
+            if verdict == "pass":
+                status = "done"
+            elif verdict == "reject":
+                status = "blocked"
+                # Use issues list as the blocker description if no explicit blocker field
+                if not report.get("blocker"):
+                    issues = report.get("issues", [])
+                    blockers = [i.get("description", "") for i in issues if i.get("severity") == "blocker"]
+                    report["blocker"] = "; ".join(blockers) if blockers else summary
+            else:
+                raise ValueError(f"invalid verdict {verdict!r} — must be pass or reject")
+
         if status not in ("done", "blocked", "partial"):
             raise ValueError(
                 f"invalid status {status!r} — must be done, blocked, or partial"
@@ -432,7 +448,7 @@ class BacklogStore:
             actions.append(f"advanced item {item_id} to {next_lane!r}")
 
         else:
-            # blocked or partial — item stays in-progress, open a thread
+            # blocked or partial — open a thread; review rejects also move back to in-progress
             thread_body = (
                 report.get("blocker", summary)
                 if status == "blocked"
@@ -451,6 +467,11 @@ class BacklogStore:
             actions.append(
                 f"opened thread on item {item_id} (waiting_on=lead, status={status})"
             )
+            # A review reject (verdict=reject) moves the item back to in-progress so the
+            # developer can address the blockers before re-submitting for review.
+            if report.get("verdict") == "reject" and target.get("status") == "code-review":
+                _apply_lane_transition(target, "in-progress", statuses, moved_by="ingest")
+                actions.append(f"moved item {item_id} back to 'in-progress' (review rejected)")
 
         # ── Discovered items ──────────────────────────────────────────────────
         new_items: list[dict] = []
