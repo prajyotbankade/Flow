@@ -164,7 +164,7 @@ Signal trust weights used in readiness computation:
 
 | Type | Weight | Trust Level |
 |------|--------|-------------|
-| `spec_written` | +10% | Medium — intent artifact |
+| `spec_written` | +10% | Medium — intent artifact; set by the skill at any `→ ready` gate |
 | `file_created` | +10% | Medium — code artifact |
 | `design_approved` | +15% | Medium — design gate |
 | `test_passed` | +20% | High — downstream gate |
@@ -239,6 +239,7 @@ A record of an item moving through a lane. Appended to `lane_history` every time
 - First status is always `backlog` — the entry point for new items
 - `discarded` is a special terminal lane: items can be moved there from **any** lane, bypassing all gate rules. Discarded items can always be restored to any other lane (treated as a backward move — resets `gate_from`).
 - An item with unresolved threads (resolved is false) should not be marked `ready`
+- Before moving any item to `ready` (from any prior status), the skill requires a written spec (acceptance criteria, failure modes, edge cases). The `spec_written` signal is set by the skill (source: `"backlog-manager"`) when the spec is captured. The gate is bypassed if either the signal or a `## Spec` block already exists in the description. This is a skill-level soft gate, not a server-enforced lane rule.
 - Threads with `waiting_on: "agent"` indicate the user has explicitly tagged the agent for a response
 - After responding to a tagged thread, set `waiting_on` to `"user"` or `null`
 - IDs are 8-character alphanumeric strings (e.g., `a1b2c3d4`)

@@ -255,7 +255,18 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 **Complete** — `status: done`. Add brief completion note. Offer next item from ready queue.
 
-**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. User decides `ready`. Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null.
+**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. When moving to `ready`, the spec gate applies (see below). Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null.
+
+**Spec gate (any `→ ready` move):** Before moving any item to `ready` — regardless of its current status — check two things: (1) does a `spec_written` signal exist on the item, or (2) does the item description already contain a `## Spec` block? If either is true, the gate passes — proceed with the `ready` move. If neither exists, surface these three questions and wait for answers before proceeding:
+1. *Acceptance criteria* — What does done look like exactly? How will you verify it?
+2. *Failure modes* — What happens when this goes wrong? Silent fail, throw, or retry? What does the caller see?
+3. *Edge cases* — What are the boundary conditions? (empty inputs, missing files, timeouts, concurrent writes, unexpected state)
+
+Embed the answers as a `## Spec` block appended to the item description, then set the signal: `POST /api/items/<id>/signal {"type": "spec_written", "source": "backlog-manager", "description": "Spec captured at ready gate"}`. Then proceed with the `ready` move.
+
+If the item is reopened and returns to `ready` later, the existing signal or `## Spec` block satisfies the gate — do not re-ask the questions or overwrite the spec.
+
+If the user says "just mark it ready" without answering — acknowledge the risk and ask once more. Do not skip silently. Unspecced items are a leading cause of review rejects and reopens: the reviewer has no ground truth to check against.
 
 **Block** — Open thread, `waiting_on: "user"`, move back to `backlog`. Notify user.
 
@@ -296,7 +307,7 @@ Signal types (additive):
 
 | Type | Trust | Meaning |
 |---|---|---|
-| `spec_written` | +10% | Design intent documented |
+| `spec_written` | +10% | Spec captured at ready gate (acceptance criteria, failure modes, edge cases) — set by the skill during Refine |
 | `file_created` | +10% | Code artifact exists |
 | `design_approved` | +15% | Design gate passed |
 | `test_passed` | +20% | Downstream gate cleared |

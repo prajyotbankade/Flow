@@ -1,5 +1,5 @@
 {
-  "version": 468,
+  "version": 486,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -500,7 +500,7 @@
       ]
     },
     {
-      "id": "b2c3d4e5",
+      "id": "e95qlwvp",
       "title": "Lane history: track actor on every transition",
       "description": "Currently lane_history entries are bare strings for early moves (e.g. 'backlog', 'refined', 'ready') with no record of who made the transition or when. Only agent-driven moves include a structured object with `lane`, `at`, and `by` fields.\n\nEvery lane transition \u2014 whether done by a human, the CLI, or an agent \u2014 should record the same structured format:\n```json\n{\"lane\": \"refined\", \"at\": \"<iso-timestamp>\", \"by\": \"<actor>\"}\n```\n\nActor: agent name if known, `\"user\"` for CLI/board moves without an explicit actor.\n\n**Implementation:**\n- `apply_lane_transition` in core.py already writes structured format \u2014 no change needed there\n- Fix the write path: any place that appends bare strings to `lane_history` directly (bypassing `apply_lane_transition`) must be updated\n- Lazy normalization at read-time: when serializing items for the API or board, normalize bare strings to `{\"lane\": \"<value>\", \"at\": null, \"by\": \"unknown\"}` \u2014 no migration command needed\n- `_extract_lane` already handles both formats for gate enforcement\n\n**Acceptance criteria:**\n- All new transitions write structured format regardless of caller path\n- API responses normalize bare strings \u2014 board never sees raw strings\n- Existing bare-string entries in backlog.json do not cause errors\n- `who moved #3 to refined?` is answerable from lane_history",
       "status": "done",
@@ -932,6 +932,346 @@
       "skip_count": 0,
       "created_at": "2026-04-10T21:29:40.041777+00:00",
       "updated_at": "2026-04-10T21:37:10.314463+00:00"
+    },
+    {
+      "id": "j1pa09p0",
+      "title": "backlog doctor CLI command \u2014 validate install health",
+      "status": "backlog",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "enhancement",
+      "tags": [
+        "cli",
+        "dx"
+      ],
+      "description": "Add a 'backlog doctor' command that checks: (1) assets directory exists and contains backlog-board.html, (2) all timestamps in backlog.json parse without naive/aware conflicts, (3) backlog.json schema is valid (required fields, valid statuses, link integrity). Outputs a pass/fail checklist so users can self-diagnose install issues instead of debugging manually.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-11T22:26:50.823514+00:00",
+      "updated_at": "2026-04-11T22:26:50.823514+00:00"
+    },
+    {
+      "id": "azg969v5",
+      "title": "Enrich Flow's internal skills with engineering doctrine",
+      "status": "discarded",
+      "priority": "high",
+      "priority_weight": 6,
+      "complexity": "medium",
+      "tags": [
+        "skills",
+        "dx",
+        "docs"
+      ],
+      "description": "Flow's .claude/skills/ (review-changes, debug-issue, refactor-safely, explore-codebase) tell the agent which tools to run but lack engineering doctrine \u2014 what to look for, what 'good enough' means, approval criteria, anti-patterns. Gap identified vs addyosmani/agent-skills: our skills are tool-invocation scripts; his are senior-engineer playbooks. Missing coverage: spec-driven-development, TDD, security-and-hardening, performance-optimization, shipping-and-launch, deprecation-and-migration, documentation-and-ADRs, CI/CD. Enrich existing skills with checklists and criteria, and add the missing SDLC phase skills.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-13T03:37:10.875586+00:00",
+          "by": "cli"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:33:48.740429+00:00",
+      "updated_at": "2026-04-13T03:37:10.875760+00:00"
+    },
+    {
+      "id": "aohu0ie2",
+      "title": "Add spec-driven-development skill",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx"
+      ],
+      "description": "Flow's orchestrator starts coding with no spec discipline \u2014 agents guess requirements. Add a .claude/skills/spec-driven-development.md that enforces spec-before-code: PRD structure, acceptance criteria format, unknowns surfacing, and how to block the agent from coding until spec is approved. Should integrate with backlog refinement phase.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:37:22.057723+00:00",
+      "updated_at": "2026-04-13T03:37:22.057723+00:00"
+    },
+    {
+      "id": "y0l83zmb",
+      "title": "Add shipping-and-launch skill",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx"
+      ],
+      "description": "Flow has a review gate but no rollout discipline. Add a .claude/skills/shipping-and-launch.md covering staged deploys, feature flags, rollback criteria, launch checklists, and what 'done' means in production vs done in code-review.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:37:28.337399+00:00",
+      "updated_at": "2026-04-13T03:37:28.337399+00:00"
+    },
+    {
+      "id": "qyx5um1x",
+      "title": "Enrich review-changes skill with five-axis doctrine",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx",
+        "code-review"
+      ],
+      "description": "review-changes.md currently only lists which graph tools to run. Enrich it with: five review axes (correctness, readability, architecture, security, performance), approval standard (what 'good enough' means), anti-patterns checklist, and explicit merge/reject criteria. Based on addyosmani/agent-skills code-review-and-quality.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:37:45.159679+00:00",
+      "updated_at": "2026-04-13T03:37:45.159679+00:00"
+    },
+    {
+      "id": "hoi29snc",
+      "title": "Enrich debug-issue skill with triage doctrine",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx",
+        "debugging"
+      ],
+      "description": "debug-issue.md only lists graph tool invocations. Enrich with: stop-the-line rule, structured triage checklist (reproduce \u2192 isolate \u2192 fix \u2192 guard), reproducibility decision trees, and non-reproducible bug handling. Based on addyosmani/agent-skills debugging-and-error-recovery.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:37:53.495935+00:00",
+      "updated_at": "2026-04-13T03:37:53.495935+00:00"
+    },
+    {
+      "id": "xcf7gt5k",
+      "title": "Enrich backlog-manager decomposition with task-sizing doctrine",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx",
+        "backlog"
+      ],
+      "description": "Backlog decomposition guidance is thin on what makes a good atomic task. Enrich SKILL.md decomposition section with: task sizing rules (one agent, one session), dependency graph mapping, explicit parallel vs sequential identification, acceptance criteria format, and how to spot over-decomposition. Based on addyosmani/agent-skills planning-and-task-breakdown.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:38:00.760503+00:00",
+      "updated_at": "2026-04-13T03:38:00.760503+00:00"
+    },
+    {
+      "id": "33jo2pi0",
+      "title": "Add test-driven-development skill",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx",
+        "testing"
+      ],
+      "description": "No TDD forcing function exists in Flow. Add a .claude/skills/test-driven-development.md with red/green/refactor discipline, test-first contract, what counts as a passing test vs a passing suite, and how agents should gate implementation on failing tests first.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:39:10.804877+00:00",
+      "updated_at": "2026-04-13T03:39:10.804877+00:00"
+    },
+    {
+      "id": "40g0e4z7",
+      "title": "Add security-and-hardening skill",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx",
+        "security"
+      ],
+      "description": "Zero security gates exist anywhere in Flow's pipeline. Add a .claude/skills/security-and-hardening.md covering threat modeling, OWASP top 10 checks, input validation, secret handling, and a security review checklist agents must run before moving to code-review lane.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:39:10.893990+00:00",
+      "updated_at": "2026-04-13T03:39:10.893990+00:00"
+    },
+    {
+      "id": "j9ipfkw6",
+      "title": "Enrich refactor-safely and explore-codebase skills with doctrine",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 4,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx"
+      ],
+      "description": "refactor-safely.md and explore-codebase.md are thin tool-invocation scripts like review-changes was. Enrich both: refactor-safely needs safety criteria, when-not-to-refactor rules, and scope creep guards; explore-codebase needs guidance on what to look for when navigating unfamiliar code.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:45:11.787554+00:00",
+      "updated_at": "2026-04-13T03:45:11.787554+00:00"
+    },
+    {
+      "id": "1r0wa1b9",
+      "title": "Add source-driven-development skill",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "skills",
+        "dx"
+      ],
+      "description": "Flow agents sometimes hallucinate APIs or guess at interfaces. Add a .claude/skills/source-driven-development.md enforcing: read the source before coding, never assume function signatures, verify imports exist, check actual return types. Directly addresses a known failure mode in agent-written code.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-13T03:45:11.880665+00:00",
+      "updated_at": "2026-04-13T03:45:11.880665+00:00"
+    },
+    {
+      "id": "rmc3w82c",
+      "title": "Spec gate before ready \u2014 enforce written spec on refined \u2192 ready transition",
+      "status": "done",
+      "priority": "high",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "tags": [
+        "skill",
+        "refinement",
+        "spec",
+        "workflow"
+      ],
+      "description": "Before an item can move from refined \u2192 ready, require a written spec covering: (1) acceptance criteria \u2014 what does done look like exactly, (2) failure modes \u2014 what happens when it goes wrong, (3) edge cases \u2014 empty inputs, missing files, timeouts, concurrent writes. The spec answers are embedded into the item description and the spec_written readiness signal (+10%) is set automatically. This gives the existing signal real weight instead of being opt-in noise. The skill's Refine operation should drive this: when the user resolves the last thread and says 'mark ready', if no spec exists yet, surface the three questions above before allowing the transition. Goal: no item enters the execution queue without someone having written down what done actually looks like.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-15T23:46:30.177141+00:00",
+          "by": "cli"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-15T23:42:09.712829+00:00",
+      "updated_at": "2026-04-15T23:46:30.177308+00:00"
+    },
+    {
+      "id": "rhrq1j58",
+      "title": "Behavioral contracts in refinement \u2014 capture failure modes and semantics before work starts",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 7,
+      "complexity": "low",
+      "tags": [
+        "skill",
+        "refinement",
+        "spec",
+        "workflow"
+      ],
+      "description": "During the Refine operation, surface structured questions that capture semantic context beyond a plain description: (1) failure modes \u2014 what does failure look like and how should it be handled? silent fail? throw? retry? (2) performance expectations \u2014 any latency, throughput, or size constraints? (3) retry semantics \u2014 is this operation idempotent? safe to retry on failure? (4) behavioral contracts \u2014 what invariants must hold before and after? These answers become part of the item description as a 'Contracts' block before work starts. This means the implementing agent receives not just 'what to build' but 'how it must behave under stress'. Links to #35 (spec gate) \u2014 contracts are part of the spec. Without this, agents implement the happy path and leave failure behavior undefined, which surfaces as bugs in code review.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-15T23:42:20.330597+00:00",
+      "updated_at": "2026-04-15T23:42:20.330597+00:00"
+    },
+    {
+      "id": "ky8ra2a7",
+      "title": "Socratic code review \u2014 generate senior-engineer questions before running checklist",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 7,
+      "complexity": "low",
+      "tags": [
+        "skill",
+        "code-review",
+        "workflow"
+      ],
+      "description": "Upgrade the Code Review Protocol in SKILL.md: before running the static checklist (correctness, idempotency, error handling, edge cases, write safety), first generate the questions a skeptical senior engineer would ask about this specific implementation. The questions are derived from the item's acceptance criteria, behavioral contracts, and the actual code \u2014 not from a generic template. The reviewer then answers each question in the review artifact. This makes review item-context-aware rather than checklist-mechanical. Example: for a concurrent write operation the generated questions might be 'What happens if two agents pick this item simultaneously?' and 'Is the version check atomic with the write?' \u2014 questions the static checklist would not surface. The static checklist remains as a floor, but the Socratic questions are the ceiling. This is particularly valuable for catching assumptions the implementer made that were never written down in the spec.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-15T23:42:34.301801+00:00",
+      "updated_at": "2026-04-15T23:42:34.301801+00:00"
+    },
+    {
+      "id": "uto3a3bf",
+      "title": "Flywheel closure on complete \u2014 capture learnings that feed back into future specs",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 6,
+      "complexity": "low",
+      "tags": [
+        "skill",
+        "workflow",
+        "learning",
+        "persona"
+      ],
+      "description": "When marking an item done, the Complete operation should require one closing step before finishing: the completing agent answers two questions \u2014 (1) 'What was surprising about this implementation?' and (2) 'What would you spec differently if you started again?' The answer goes directly into the agent's Learnings in their persona file (.claude/agents/<name>.md). This closes the loop: spec \u2192 work \u2192 review \u2192 learning \u2192 better specs next time. Currently the loop is broken \u2014 persona Learnings exist but nothing forces agents to write back from completed work. Without explicit closure, every cycle starts fresh. The flywheel only spins if this step is mandatory, not optional. Note: if the answer is 'nothing was surprising', that is a valid answer and takes 5 seconds \u2014 the prompt cost is low, the compounding value is high.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-15T23:42:57.506346+00:00",
+      "updated_at": "2026-04-15T23:42:57.506346+00:00"
     }
   ],
   "config": {

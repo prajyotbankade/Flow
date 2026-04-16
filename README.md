@@ -141,6 +141,7 @@ backlog.json
     ├── tags[]         # Free-form tags for skill matching (e.g., "auth", "frontend")
     ├── reopen_count   # Auto-incremented when moved back from done
     ├── skip_count     # Tracks how many times item was passed over
+    ├── readiness_signals[]  # Artifact evidence (spec_written, pr_merged, etc.)
     ├── threads[]      # Refinement Q&A
     ├── links[]        # Connections to related items (type + reason)
     ├── lane_history[] + gate_from  # Audit trail + rule engine
@@ -156,6 +157,8 @@ Lanes can require items to have passed through specific prior lanes before enter
 ```
 
 An item can't be marked Done unless it's been through Code Review. Moving backward resets the watermark — the item must re-earn gates on its new journey.
+
+**Spec gate** — a complementary soft gate enforced at the skill level: before any item moves to `ready` (from any prior status), the skill requires a written spec covering acceptance criteria, failure modes, and edge cases. Answers are embedded in the item description as a `## Spec` block and the `spec_written` readiness signal (+10% readiness) is set by the skill. The gate is bypassed if either the signal or a `## Spec` block already exists — so reopened items that return to `ready` don't get re-questioned. Unlike lane gate rules (which are structural), the spec gate is semantic — it ensures the work is understood before it enters the execution queue. Items that skip the spec are a leading cause of review rejects and reopens.
 
 ### Concurrency
 
