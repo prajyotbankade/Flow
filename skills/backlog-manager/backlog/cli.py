@@ -506,6 +506,12 @@ def handoff(
     # ── Assemble prompt ───────────────────────────────────────────────────────
     item_id = target.get("id", "")
 
+    # Build branch slug: title lowercased, spaces→hyphens, max 40 chars, alphanumeric+hyphens only
+    import re as _re
+    _slug_raw = target.get("title", "").lower().replace(" ", "-")
+    _slug_clean = _re.sub(r"[^a-z0-9\-]", "", _slug_raw)[:40].strip("-")
+    branch_name = f"feat/item-{item_id}-{_slug_clean}"
+
     if review:
         output_contract = json.dumps({
             "item_id": item_id,
@@ -521,6 +527,7 @@ def handoff(
             "bugs_found": [{"title": "...", "description": "..."}],
             "follow_ups": [{"title": "...", "description": "..."}],
             "blocker": "... (only if status=blocked)",
+            "branch_name": branch_name,
         }, indent=2)
 
     lines = []
@@ -573,6 +580,29 @@ def handoff(
                 for lens in lenses:
                     lines.append(f"- **{lens.get('lens', '')}**: weight={lens.get('weight', '')} — {lens.get('argument', '')}")
         lines.append("")
+        lines.append("## Git Instructions")
+        lines.append(f"1. At the start of your work, create branch `{branch_name}` from the current HEAD.")
+        lines.append(f"   ```")
+        lines.append(f"   git checkout -b {branch_name}")
+        lines.append(f"   ```")
+        lines.append(f"2. Do all work on that branch — do NOT commit to main.")
+        lines.append(f"3. Before finishing, commit everything with:")
+        lines.append(f"   ```")
+        lines.append(f"   git add -A && git commit -m \"feat(item-{item_id}): {target.get('title', '')}\"")
+        lines.append(f"   ```")
+        lines.append(f"4. Do NOT push — commits stay local.")
+        lines.append("")
+
+    if review:
+        item_branch = target.get("metadata", {}).get("branch_name", branch_name)
+        lines.append("## Branch")
+        lines.append(f"Branch: `{item_branch}`")
+        lines.append("")
+        lines.append(
+            "Check out this branch and read the full implementation. "
+            "Do not limit yourself to the diff — navigate the code as a senior engineer would."
+        )
+        lines.append("")
 
     lines.append("## Output Contract")
     lines.append(
@@ -592,7 +622,8 @@ def handoff(
         lines.append(
             "Fields: `item_id` (string), `status` (done|blocked|partial), "
             "`summary` (string), `bugs_found` (array), `follow_ups` (array), "
-            "`blocker` (string, only if blocked)."
+            "`blocker` (string, only if blocked), "
+            f"`branch_name` (string — the branch you worked on, must be `{branch_name}`)."
         )
 
     prompt = "\n".join(lines)
@@ -709,10 +740,12 @@ def ingest(
     status_applied = outcome["status_applied"]
     next_lane = outcome["next_lane"]
 
+    branch_name_out = outcome.get("branch_name")
     if status_applied == "done":
+        branch_note = f" (branch: {branch_name_out})" if branch_name_out else ""
         console.print(
             f"[green]Ingested[/green] item [cyan]{item_id}[/cyan] — "
-            f"advanced to [bold]{next_lane}[/bold]"
+            f"advanced to [bold]{next_lane}[/bold]{branch_note}"
         )
     else:
         console.print(
@@ -1142,15 +1175,194 @@ def _orchestrate_tick(
     statuses = data.get("config", {}).get("statuses", DEFAULT_STATUSES)
 
     # 1. Ingest any new result files first (so lane state is fresh for step 2)
+    import re as _re
     result_files = _scan_result_files(backlog_dir)
     for rf in result_files:
-        if str(rf) not in seen_result_files:
-            console.print(f"{log_prefix} new result file → ingest {rf.name}")
+        if str(rf) in seen_result_files:
+            continue
+        console.print(f"{log_prefix} new result file → ingest {rf.name}")
+        seen_result_files.add(str(rf))
+
+        if dry_run:
+            console.print(f"[dim]DRY-RUN would ingest:[/dim] {rf}")
+            continue
+
+        # Parse the result file directly so we can inspect verdict/status
+        try:
+            raw = rf.read_text(encoding="utf-8").strip()
+            if "```" in raw:
+                m = _re.search(r"```(?:json)?\s*(\{.*?\})\s*```", raw, _re.DOTALL)
+                if m:
+                    raw = m.group(1)
+            report = json.loads(raw)
+        except Exception as e:
+            console.print(f"{log_prefix} [yellow]Warning:[/yellow] could not parse {rf.name}: {e} — falling back to subprocess ingest")
             _run_ingest(backlog_file, str(rf), dry_run)
-            seen_result_files.add(str(rf))
-            if not dry_run:
-                # Re-read after ingest so we see updated lane
-                data = store.read()
+            data = store.read()
+            continue
+
+        # Ingest via store directly to get the outcome dict
+        try:
+            outcome = store.ingest_result(report)
+        except Exception as e:
+            console.print(f"{log_prefix} [red]ingest error[/red] for {rf.name}: {e}")
+            data = store.read()
+            continue
+
+        data = store.read()
+        item_id = outcome.get("item_id", "")
+        status_applied = outcome.get("status_applied", "")
+        next_lane = outcome.get("next_lane", "")
+        outcome_branch = outcome.get("branch_name")
+
+        console.print(
+            f"{log_prefix} ingested {rf.name} — item {item_id} "
+            f"status={status_applied} next_lane={next_lane}"
+        )
+
+        # ── Post-ingest: passing review → git merge ───────────────────────────
+        verdict = report.get("verdict")
+        if verdict == "pass" and outcome_branch:
+            # Find item title for merge message
+            items_snap = data.get("items", [])
+            item_snap = next((i for i in items_snap if i.get("id") == item_id), {})
+            item_title = item_snap.get("title", item_id)
+            merge_msg = f"merge: item-{item_id} {item_title}"
+            console.print(
+                f"{log_prefix} review passed — merging branch {outcome_branch!r} into current branch"
+            )
+            repo_root = backlog_dir
+            # Walk up to find .git root
+            search = backlog_dir
+            for _ in range(10):
+                if (search / ".git").exists():
+                    repo_root = search
+                    break
+                parent = search.parent
+                if parent == search:
+                    break
+                search = parent
+
+            merge_result = subprocess.run(
+                ["git", "merge", "--no-ff", outcome_branch, "-m", merge_msg],
+                capture_output=True, text=True, cwd=str(repo_root),
+            )
+            if merge_result.returncode == 0:
+                console.print(
+                    f"{log_prefix} [green]Merge succeeded[/green] — "
+                    f"branch {outcome_branch!r} merged into current branch"
+                )
+                console.print(f"[dim]{merge_result.stdout.strip()}[/dim]")
+                # Ensure item is in done state (ingest may have moved to code-review first)
+                pos = _item_position(data, item_id)
+                if pos and item_snap.get("status") not in ("done", "discarded"):
+                    try:
+                        store.move_item(pos, "done", moved_by="orchestrator")
+                        data = store.read()
+                        console.print(f"{log_prefix} marked item {item_id} done after merge")
+                    except Exception as me:
+                        console.print(f"{log_prefix} [yellow]could not mark done:[/yellow] {me}")
+            else:
+                conflict_output = (merge_result.stdout + "\n" + merge_result.stderr).strip()
+                console.print(
+                    f"{log_prefix} [red]Merge conflict[/red] on branch {outcome_branch!r} — "
+                    "escalating to user"
+                )
+                # Open a thread on the item waiting for user
+                data2 = store.read()
+                items2 = data2.get("items", [])
+                item2 = next((i for i in items2 if i.get("id") == item_id), None)
+                if item2 is not None:
+                    from .core import _now_iso, _generate_id
+                    item2.setdefault("threads", []).append({
+                        "id": _generate_id(),
+                        "topic": f"Merge conflict: {outcome_branch}",
+                        "waiting_on": "user",
+                        "body": (
+                            f"Merge of branch `{outcome_branch}` into current branch failed.\n\n"
+                            f"Git output:\n```\n{conflict_output}\n```\n\n"
+                            "Resolve the conflict manually and merge."
+                        ),
+                        "created_at": _now_iso(),
+                        "resolved": False,
+                    })
+                    item2["updated_at"] = _now_iso()
+                    store.write(data2, expected_version=data2.get("version", 0))
+                    data = store.read()
+                pos = _item_position(data, item_id)
+                console.print(
+                    f"[yellow]NOTIFICATION:[/yellow] Item #{pos} '{item_title}' — "
+                    f"merge conflict on branch {outcome_branch!r}. Manual resolution required."
+                )
+
+        # ── Post-ingest: reject → surgical or architectural escalation ────────
+        elif verdict == "reject":
+            issues = report.get("issues", [])
+            blocker_text = report.get("blocker", "")
+            if not blocker_text and issues:
+                blocker_text = "; ".join(
+                    i.get("description", "") for i in issues if i.get("severity") == "blocker"
+                ) or "; ".join(i.get("description", "") for i in issues)
+
+            # Check for file:line reference — surgical reject
+            is_surgical = bool(_re.search(r"\w+\.\w+:\d+", blocker_text))
+
+            if is_surgical:
+                # Case 1: surgical — add blocker thread and re-invoke work agent
+                console.print(
+                    f"{log_prefix} reject is surgical (file:line found) — "
+                    f"re-invoking work agent for item {item_id}"
+                )
+                data2 = store.read()
+                items2 = data2.get("items", [])
+                item2 = next((i for i in items2 if i.get("id") == item_id), None)
+                if item2 is not None:
+                    from .core import _now_iso, _generate_id
+                    item2.setdefault("threads", []).append({
+                        "id": _generate_id(),
+                        "topic": "Review reject — surgical fix required",
+                        "waiting_on": "agent",
+                        "body": f"Reviewer blocked this item:\n\n{blocker_text}",
+                        "created_at": _now_iso(),
+                        "resolved": False,
+                    })
+                    item2["updated_at"] = _now_iso()
+                    store.write(data2, expected_version=data2.get("version", 0))
+                    data = store.read()
+                pos = _item_position(data, item_id)
+                if pos:
+                    _run_handoff(backlog_file, data.get("items", [{}])[pos - 1].get("assigned_to") or "backend-dev", pos, dry_run)
+            else:
+                # Case 2: architectural — open thread waiting on user, print NOTIFICATION
+                console.print(
+                    f"{log_prefix} reject is architectural (no file:line) — "
+                    f"escalating item {item_id} to user"
+                )
+                data2 = store.read()
+                items2 = data2.get("items", [])
+                item2 = next((i for i in items2 if i.get("id") == item_id), None)
+                if item2 is not None:
+                    from .core import _now_iso, _generate_id
+                    item2.setdefault("threads", []).append({
+                        "id": _generate_id(),
+                        "topic": "Review reject — architectural issue",
+                        "waiting_on": "user",
+                        "body": (
+                            f"Reviewer found an architectural issue that requires human decision:\n\n"
+                            f"{blocker_text}"
+                        ),
+                        "created_at": _now_iso(),
+                        "resolved": False,
+                    })
+                    item2["updated_at"] = _now_iso()
+                    store.write(data2, expected_version=data2.get("version", 0))
+                    data = store.read()
+                pos = _item_position(data, item_id)
+                item_snap = next((i for i in data.get("items", []) if i.get("id") == item_id), {})
+                console.print(
+                    f"[yellow]NOTIFICATION:[/yellow] Item #{pos} '{item_snap.get('title', item_id)}' — "
+                    f"review rejected with architectural blocker. Human input required:\n  {blocker_text}"
+                )
 
     # 2. Check items with waiting_on=lead threads
     items = data.get("items", [])
@@ -1197,6 +1409,15 @@ def _orchestrate_tick(
         # Skip if already terminal or waiting
         terminal_ids = {s.get("id") for s in statuses_list if s.get("id") in ("done", "discarded")}
         if status in terminal_ids or status in ("backlog", "refined"):
+            continue
+
+        # Skip if item has an unresolved agent-side thread — something is already in flight
+        # (e.g. a surgical reject re-invocation). Without this guard the step-4 dispatch
+        # loop would double-dispatch on every tick until the result file lands.
+        if any(
+            not t.get("resolved") and t.get("waiting_on") == "agent"
+            for t in item.get("threads", [])
+        ):
             continue
 
         # Skip if item has pending staged actions (two-stage approval gate)

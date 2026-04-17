@@ -1,5 +1,5 @@
 {
-  "version": 486,
+  "version": 501,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -890,7 +890,7 @@
     {
       "id": "oym0khty",
       "title": "Agent work lands on feature branches with PR \u2014 reviewer merges to main",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 9,
       "complexity": "medium",
       "category": "feature",
@@ -900,15 +900,145 @@
         "agents",
         "git"
       ],
-      "description": "Currently agents work in worktrees that get cleaned up, losing all changes. Redesign the agent workflow so each agent:\n\n1. Creates a feature branch (e.g. feat/item-4-approval-gate)\n2. Commits their work on that branch before finishing\n3. Opens a PR (or leaves the branch ready for review)\n4. The reviewer agent reviews the PR/branch \u2014 not just the backlog item\n5. On pass, the reviewer (or orchestrator) merges to main\n6. On reject, the branch stays open with review comments for the agent to address\n\nThis replaces the current pattern where worktree agents lose their work on completion. It also gives the reviewer actual diffs to review instead of reading code in-place.\n\n**Acceptance criteria:**\n- Agent prompts include branch creation + commit instructions\n- Each agent's work is preserved on a named branch after completion\n- Reviewer can diff the branch against main to review changes\n- Orchestrator handles merge after review passes\n- Works with both parallel and sequential agent workflows\n- No more lost work from worktree cleanup",
-      "links": [],
-      "threads": [],
-      "lane_history": [],
-      "gate_from": 0,
+      "description": "Redesign the agent workflow so work is preserved on named branches and reviewed against real diffs.\n\n**Execution model:**\n- Work Brief includes explicit git instructions: create `feat/item-{id}-{slug}` branch, commit before finishing\n- Real execution: Claude-as-orchestrator \u2192 Agent tool (worktree isolation) \u2192 sub-agent has full shell/file access\n- Python `backlog orchestrate` CLI = board monitor + prompt assembler only (not agent launcher)\n- `claude --print` / Python handoff path = dry-run/debug only\n\n**Work agent responsibilities:**\n1. `git checkout -b feat/item-{id}-{slug}` at start\n2. Implement, commit with clear messages\n3. Move item to `code-review`, output result JSON including `branch_name`\n4. Do NOT push \u2014 commits stay local until human batch-pushes\n\n**Review:**\n- Reviewer checks out the branch (not diff text) \u2014 reads full implementation as a senior engineer\n- Socratic methodology (#37 doctrine): ask questions before running checklist\n- Reviewer must give precise blockers: file:line:what. Architectural feedback = escalate to user, not reject\n- Review Brief includes: branch name, spec, acceptance criteria\n\n**Merge / rejection:**\n- Pass \u2192 orchestrator runs `git merge --no-ff feat/item-{id}-{slug}` \u2192 marks done\n- Reject (Case 1 \u2014 surgical) \u2192 orchestrator re-invokes work agent with branch + git log + exact blocker list\n  - For one-line fixes: orchestrator may address directly without re-invoking agent\n- Reject (Case 2 \u2014 architectural) \u2192 escalate to user (this is a refinement failure, not a review finding)\n- Merge conflicts \u2192 escalate to user\n\n**Acceptance criteria:**\n- Work Brief template includes branch creation + commit instructions\n- Work result JSON includes `branch_name` field\n- Review Brief includes branch name; reviewer checks it out and reads full code\n- Orchestrator merges branch after pass verdict\n- Orchestrator handles surgical reject loop (re-invoke or self-fix)\n- Architectural rejections escalate to user, not to work agent\n- No agent pushes to remote \u2014 human controls push\n- Works with parallel items (each gets its own branch)",
+      "links": [
+        {
+          "item_id": "ky8ra2a7",
+          "type": "related",
+          "reason": "#37 defines the Socratic review methodology the reviewer uses on the branch surface created by #22"
+        }
+      ],
+      "threads": [
+        {
+          "id": "refine-22-execution-model",
+          "topic": "Execution model: claude --print vs real tool-use session",
+          "waiting_on": "user",
+          "resolved": true,
+          "body": "Current `backlog handoff` uses `claude --print <prompt>` \u2014 a stateless text-generation call with no tool access. Agents can't create git branches or commit in this mode.\n\nTwo paths forward:\n(a) Keep `--print` but enhance the Work Brief to include explicit git instructions (`git checkout -b feat/item-{id}-{slug}`, commit, push) \u2014 these only execute when the agent is a real Claude Code session with shell access (e.g. via Agent SDK worktree). The `--print` path becomes a dry-run / planning path.\n\n(b) Change `backlog handoff` to invoke a full interactive `claude` session with file/shell tool access, not `--print`. The JSON output contract stays, but the agent executes git ops inline.\n\nWhich path is intended?",
+          "created_at": "2026-04-16T02:04:40.996265+00:00",
+          "resolved_at": "2026-04-16T02:46:25.417859+00:00",
+          "resolution": "Decision (a): Work Brief includes explicit git instructions (checkout branch, commit, push). Real execution path: Claude-as-orchestrator \u2192 Agent tool (worktree isolation) \u2192 sub-agent executes git ops. Python `backlog orchestrate` CLI is board monitor + prompt assembler only; not the agent launcher. `claude --print` path is dry-run/debug only."
+        },
+        {
+          "id": "refine-22-reviewer-surface",
+          "topic": "What surface does the reviewer actually review?",
+          "waiting_on": "user",
+          "resolved": true,
+          "body": "Two options:\n(a) Review Brief pipes `git diff feat/item-X...main` text directly into the prompt \u2014 reviewer reads the diff as text, no branch access needed.\n\n(b) Review Brief tells the reviewer the branch name; reviewer checks out / diffs it as part of executing the review.\n\nOption (a) is simpler and works in any invocation mode. Option (b) is richer (can read full file context) but requires real tool-use session. Which is preferred?",
+          "created_at": "2026-04-16T02:04:40.996265+00:00",
+          "resolved_at": "2026-04-16T02:46:25.417859+00:00",
+          "resolution": "Decision (b): Reviewer checks out the branch and reads full code \u2014 not just diff text. Review Brief includes branch name. Reviewer navigates implementation as a senior engineer would: follows call chains, reads context, asks Socratic questions (#37 doctrine applies here). #22 and #37 are companion items \u2014 #22 is the surface, #37 is the methodology."
+        },
+        {
+          "id": "refine-22-merge-ownership",
+          "topic": "Who merges on pass?",
+          "waiting_on": "user",
+          "resolved": true,
+          "body": "Three options:\n(a) Reviewer merges as part of issuing `pass` verdict.\n(b) Orchestrator merges in `ingest` after processing a `pass` result \u2014 cleaner separation of concerns, orchestrator owns git state.\n(c) Human approves merge after reviewer passes \u2014 Flow opens the PR but human clicks merge.\n\nGiven the autonomous-flow philosophy, (b) seems most consistent. Confirm?",
+          "created_at": "2026-04-16T02:04:40.996265+00:00",
+          "resolved_at": "2026-04-16T02:46:25.417859+00:00",
+          "resolution": "Decision: Orchestrator merges mechanically after ingesting a pass verdict (reads branch_name from work result JSON, runs git merge --no-ff, marks done). Reviewer does not merge. On reject: only Case 1 (tactical/surgical) rejections are valid \u2014 reviewer must give file:line:what. For one-line fixes the orchestrator may address directly without re-invoking the work agent. Architectural rejections are a refinement failure and escalate to user, not the work agent. Human controls push to remote \u2014 agents commit locally only. Responsibility rule: orchestrator is accountable for spec quality before handoff, including for casual user requests \u2014 no vague brief reaches a work agent."
+        },
+        {
+          "id": "hvusyfxq",
+          "waiting_on": "lead",
+          "status": "partial",
+          "body": "Work in progress on branch",
+          "created_at": "2026-04-17T01:35:54.582084+00:00",
+          "resolved": true
+        },
+        {
+          "id": "reject-oym0khty-2026-04-17",
+          "topic": "Review reject \u2014 2 blockers to fix",
+          "waiting_on": "agent",
+          "resolved": true,
+          "created_at": "2026-04-17T03:16:56.839926+00:00",
+          "body": "**Blocker 1** \u2014 cli.py:1310-1334: Surgical reject re-invoke is not idempotent. After ingest moves item back to in-progress, next tick's step-4 work-dispatch loop has no guard for an unresolved waiting_on:agent thread \u2014 will double-dispatch work agents on every tick until a result file arrives. Fix: before dispatching work in step-4, check for an unresolved thread with waiting_on='agent'; if present, skip.\n\n**Blocker 2** \u2014 cli.py:1290, cli.py:1330, cli.py:1358: All three store.write(data2) calls after ingest omit expected_version. ingest_result already incremented the version; these writes replace the file with a stale snapshot, bypassing optimistic locking. Fix: re-read backlog after ingest_result returns, then write with current version.",
+          "resolved_at": "2026-04-17T14:47:35.212336+00:00",
+          "resolution": "Fixed: (1) added unresolved waiting_on=agent thread guard in step-4 dispatch loop; (2) all three store.write(data2) calls now pass expected_version"
+        },
+        {
+          "id": "reject-r2-oym0khty-2026-04-17",
+          "topic": "Review r2 reject \u2014 blocker fixed",
+          "waiting_on": "agent",
+          "resolved": true,
+          "created_at": "2026-04-17T14:54:50.948219+00:00",
+          "body": "**Blocker** \u2014 core.py:431-439: surgical-reject thread uses random _generate_id() ID; ingest_result only resolved the inline-review-{item_id} sentinel, leaving the random-ID thread unresolved. After re-work lands and item advances to code-review, step-4 guard sees the unresolved waiting_on=agent thread and skips forever \u2014 reviewer never dispatched.\n\nFix: ingest_result now resolves ALL unresolved waiting_on=agent threads when a result lands, not just the named sentinel.",
+          "resolved_at": "2026-04-17T14:55:05.261109+00:00",
+          "resolution": "Fixed: ingest_result now resolves all unresolved waiting_on=agent threads, not just the named sentinel"
+        },
+        {
+          "id": "followup-22-preexisting-writes",
+          "topic": "Follow-up: pre-existing store.write() calls missing expected_version (cli.py:1383, 1502, 1519)",
+          "waiting_on": "user",
+          "resolved": false,
+          "created_at": "2026-04-17T14:57:27.259893+00:00",
+          "body": "Three pre-existing store.write(data) calls in the orchestrator tick lack expected_version (lines 1383, 1502, 1519). Not regressions from #22 \u2014 low collision probability \u2014 but inconsistent with all other write paths. Worth a cleanup pass."
+        },
+        {
+          "id": "followup-22-branch-fallback",
+          "topic": "Follow-up: Review Brief silently falls back to computed slug when metadata.branch_name absent (cli.py:597)",
+          "waiting_on": "user",
+          "resolved": false,
+          "created_at": "2026-04-17T14:57:27.259893+00:00",
+          "body": "Review Brief uses computed slug as branch name fallback when item.metadata.branch_name is not set. Could mislead reviewer if actual branch diverged. Consider failing loudly or omitting the branch section rather than fabricating a name."
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-16T02:04:40.996265+00:00",
+          "by": "claude"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-04-16T02:48:21.253242+00:00",
+          "by": "claude"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-16T02:50:31.576599+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-17T01:36:03.142194+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-17T03:16:56.839926+00:00",
+          "by": "reviewer"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-17T14:47:35.212336+00:00",
+          "by": "claude"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-17T14:54:50.948219+00:00",
+          "by": "reviewer"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-17T14:55:05.261109+00:00",
+          "by": "claude"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-17T14:57:27.259893+00:00",
+          "by": "reviewer"
+        }
+      ],
+      "gate_from": 8,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-04-10T21:03:00.791958+00:00",
-      "updated_at": "2026-04-10T21:03:00.791958+00:00"
+      "updated_at": "2026-04-17T14:57:27.259893+00:00",
+      "metadata": {
+        "branch_name": "feat/item-oym0khty-agent-work-lands-on-feature-branches-wit"
+      }
     },
     {
       "id": "0zhf9apl",
@@ -1241,7 +1371,13 @@
         "workflow"
       ],
       "description": "Upgrade the Code Review Protocol in SKILL.md: before running the static checklist (correctness, idempotency, error handling, edge cases, write safety), first generate the questions a skeptical senior engineer would ask about this specific implementation. The questions are derived from the item's acceptance criteria, behavioral contracts, and the actual code \u2014 not from a generic template. The reviewer then answers each question in the review artifact. This makes review item-context-aware rather than checklist-mechanical. Example: for a concurrent write operation the generated questions might be 'What happens if two agents pick this item simultaneously?' and 'Is the version check atomic with the write?' \u2014 questions the static checklist would not surface. The static checklist remains as a floor, but the Socratic questions are the ceiling. This is particularly valuable for catching assumptions the implementer made that were never written down in the spec.",
-      "links": [],
+      "links": [
+        {
+          "item_id": "oym0khty",
+          "type": "related",
+          "reason": "#22 creates the branch-based review surface that #37's Socratic methodology operates on"
+        }
+      ],
       "threads": [],
       "lane_history": [],
       "gate_from": 0,
@@ -1272,6 +1408,61 @@
       "skip_count": 0,
       "created_at": "2026-04-15T23:42:57.506346+00:00",
       "updated_at": "2026-04-15T23:42:57.506346+00:00"
+    },
+    {
+      "id": "y5nql8sq",
+      "title": "Update SKILL.md, README.md, schema.md for branch workflow (#22)",
+      "description": "Document the agent branch workflow introduced in #22:\n\n- Work Brief now includes `## Git Instructions` (branch create + commit)\n- Work result output contract has a new `branch_name` field\n- Review Brief now includes `## Branch` section with checkout instruction\n- Orchestrator merges branch on passing review (`git merge --no-ff`)\n- Surgical vs architectural reject handling (file:line detection \u2192 re-invoke vs user escalation)\n\nUpdate all three docs to reflect these contracts and behaviors.",
+      "status": "backlog",
+      "category": "docs",
+      "priority_weight": 6,
+      "complexity": "low",
+      "tags": [
+        "docs",
+        "orchestrator",
+        "workflow",
+        "agents",
+        "git"
+      ],
+      "links": [
+        {
+          "item_id": "oym0khty",
+          "type": "follow-up",
+          "reason": "Documents the branch workflow, output contract, and orchestrator merge behavior introduced in #22"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "created_at": "2026-04-17T15:02:07.030282+00:00",
+      "updated_at": "2026-04-17T15:02:07.030282+00:00"
+    },
+    {
+      "id": "cz7ayqgj",
+      "title": "Enrich SKILL.md \u2014 agents must add follow-up backlog items proactively",
+      "description": "Add explicit instruction to SKILL.md's 'Agent-initiated items' section:\n\nAgents must add follow-up backlog items immediately when they discover any of:\n- Doc gaps created by the work just done (SKILL.md, README.md, schema.md)\n- Pre-existing bugs or tech debt surfaced during implementation or review\n- Warnings from code review that don't block merge but need future attention\n- Any natural consequence of the completed work that isn't yet tracked\n\nThe rule: don't ask the user \u2014 add it, link it to the source item, and mention it in the completion summary. Asking 'should I add this?' for obvious follow-up work defeats the purpose of an autonomous skill.\n\nThis closes the loop at the doctrine level so all spawned agents \u2014 not just the orchestrator \u2014 behave this way.",
+      "status": "backlog",
+      "category": "docs",
+      "priority_weight": 7,
+      "complexity": "low",
+      "tags": [
+        "docs",
+        "skill",
+        "agents",
+        "workflow"
+      ],
+      "links": [
+        {
+          "item_id": "y5nql8sq",
+          "type": "related",
+          "reason": "#39 was the immediate fix; this makes it doctrine so all agents follow the same rule"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "created_at": "2026-04-17T15:03:22.957969+00:00",
+      "updated_at": "2026-04-17T15:03:22.957969+00:00"
     }
   ],
   "config": {

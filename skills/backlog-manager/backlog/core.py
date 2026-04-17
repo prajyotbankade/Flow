@@ -419,15 +419,25 @@ class BacklogStore:
         now = _now_iso()
         actions: list[str] = []
 
-        # ── Resolve inline-review sentinel thread if present ─────────────────
-        # The orchestrator writes a sentinel thread when it dispatches an inline
-        # review. Resolving it here tells the orchestrator the review cycle is
-        # complete and prevents it from dispatching another review on the next tick.
-        sentinel_id = f"inline-review-{item_id}"
+        # ── Store branch_name on work results ────────────────────────────────
+        # When a work result (non-review) carries branch_name, persist it on
+        # the item under metadata.branch_name for the reviewer and orchestrator.
+        branch_name = report.get("branch_name")
+        if branch_name and verdict is None:
+            # Non-review result — store on item metadata
+            target.setdefault("metadata", {})["branch_name"] = branch_name
+            actions.append(f"stored branch_name {branch_name!r} on item {item_id}")
+
+        # ── Resolve agent-side threads when a result lands ───────────────────
+        # Any unresolved waiting_on="agent" thread means work was dispatched and
+        # is now complete (the result just arrived). Resolve them all so the
+        # orchestrator's step-4 guard doesn't permanently block the item.
+        # This covers both the named inline-review sentinel and any random-ID
+        # surgical-reject re-work threads written by the orchestrator.
         for thread in target.get("threads", []):
-            if thread.get("id") == sentinel_id and not thread.get("resolved"):
+            if not thread.get("resolved") and thread.get("waiting_on") == "agent":
                 thread["resolved"] = True
-                actions.append(f"resolved inline-review sentinel thread for {item_id}")
+                actions.append(f"resolved agent thread {thread.get('id')!r} for {item_id}")
 
         # ── Status handling ───────────────────────────────────────────────────
         if status == "done":
@@ -536,10 +546,17 @@ class BacklogStore:
 
         self.write(data, expected_version=data.get("version", 0))
 
+        # Include branch_name in outcome when a review passes — orchestrator needs
+        # it to run git merge.
+        outcome_branch_name: str | None = None
+        if verdict == "pass":
+            outcome_branch_name = target.get("metadata", {}).get("branch_name")
+
         return {
             "item_id": item_id,
             "status_applied": status,
             "next_lane": target.get("status"),
+            "branch_name": outcome_branch_name,
             "new_items": [{"id": i["id"], "title": i["title"], "category": i["category"]} for i in new_items],
             "actions": actions,
             "note": "Tribunal should re-run to recompute scores for affected items.",
