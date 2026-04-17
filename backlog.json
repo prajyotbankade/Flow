@@ -1,5 +1,5 @@
 {
-  "version": 501,
+  "version": 509,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -1440,8 +1440,8 @@
     {
       "id": "cz7ayqgj",
       "title": "Enrich SKILL.md \u2014 agents must add follow-up backlog items proactively",
-      "description": "Add explicit instruction to SKILL.md's 'Agent-initiated items' section:\n\nAgents must add follow-up backlog items immediately when they discover any of:\n- Doc gaps created by the work just done (SKILL.md, README.md, schema.md)\n- Pre-existing bugs or tech debt surfaced during implementation or review\n- Warnings from code review that don't block merge but need future attention\n- Any natural consequence of the completed work that isn't yet tracked\n\nThe rule: don't ask the user \u2014 add it, link it to the source item, and mention it in the completion summary. Asking 'should I add this?' for obvious follow-up work defeats the purpose of an autonomous skill.\n\nThis closes the loop at the doctrine level so all spawned agents \u2014 not just the orchestrator \u2014 behave this way.",
-      "status": "backlog",
+      "description": "Two changes:\n\n**1. SKILL.md \u2014 agent-initiated follow-ups**\nAdd explicit instruction to the 'Agent-initiated items' section:\nAgents must add follow-up backlog items immediately when they discover:\n- Doc gaps created by the work just done (SKILL.md, README.md, schema.md)\n- Pre-existing bugs or tech debt surfaced during implementation or review\n- Warnings from code review that don't block merge but need future attention\n- Any natural consequence of the completed work that isn't yet tracked\n\nRule: don't ask the user \u2014 add it, link it to the source item, and mention it in the completion summary.\n\n**2. SKILL.md + policy \u2014 doctrine-before-feature ordering**\nThe tribunal scores by priority_weight and dependency links. It cannot detect that a low-complexity doctrine/doc item enables better execution of a higher-scored feature \u2014 because there is no structural `blocks` link and no shared tag signal.\n\nTwo additions to close this:\n- Add a SKILL.md heuristic: when a low-complexity `docs` or `skill` item directly enables an in-flight or next-up feature (same tag area, linked), it should be treated as if it blocks that feature for prioritization purposes \u2014 add a `blocks` link explicitly at creation time.\n- Add a structured policy: low-complexity `docs`/`skill` items tagged with active feature tags and linked to a `backlog`/`ready` item with pw >= 8 get elevated to pw+2. This makes the tribunal surface them correctly without human intervention.",
+      "status": "done",
       "category": "docs",
       "priority_weight": 7,
       "complexity": "low",
@@ -1456,13 +1456,49 @@
           "item_id": "y5nql8sq",
           "type": "related",
           "reason": "#39 was the immediate fix; this makes it doctrine so all agents follow the same rule"
+        },
+        {
+          "item_id": "0zhf9apl",
+          "type": "blocks",
+          "reason": "#40 doctrine teaches agents to handle follow-ups and ordering \u2014 #23 agent spawn benefits from this before it runs"
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "gate_from": 0,
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-17T15:12:00.980438+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-17T15:12:06.135429+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-17T15:12:57.688374+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-17T21:16:48.267455+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-17T21:18:42.018761+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-17T21:24:36.623143+00:00",
+          "by": "cli"
+        }
+      ],
+      "gate_from": 4,
       "created_at": "2026-04-17T15:03:22.957969+00:00",
-      "updated_at": "2026-04-17T15:03:22.957969+00:00"
+      "updated_at": "2026-04-17T21:24:36.623320+00:00"
     }
   ],
   "config": {

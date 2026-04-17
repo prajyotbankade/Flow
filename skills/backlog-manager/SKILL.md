@@ -274,6 +274,18 @@ If the user says "just mark it ready" without answering — acknowledge the risk
 
 **Agent-initiated items** — Add bugs/tech-debt found while working. Set `category`, `complexity`, `tags`, `priority_weight` (bugs only). Link back to source. Announce: "Found X while on #N — added as #M (bug, medium, [tags])."
 
+**Proactive follow-up rule** — When finishing any task, scan for gaps and add them to the backlog immediately — do not ask the user first. This includes:
+- Doc gaps created by the work (SKILL.md, README.md, schema.md not updated to reflect new behavior)
+- Pre-existing bugs or tech debt surfaced during implementation or review
+- Warnings from code review that don't block merge but need future attention
+- Any natural consequence of the completed work not yet tracked
+
+Add the item, link it to the source (`follow-up` or `discovered-during`), and mention it in the completion summary. Asking "should I add this?" for obvious follow-up work is unnecessary friction — the user should only be involved for decisions.
+
+**Doctrine-before-feature ordering** — The tribunal scores by `priority_weight` and dependency links. It cannot detect that a low-complexity doctrine or doc item enables better execution of a higher-scored feature unless there is a structural signal. When adding a doc/skill/doctrine item that directly enables an upcoming feature:
+1. Add a `blocks` link only if the feature genuinely cannot or should not start without the doctrine in place. Otherwise use `related` — misusing `blocks` inflates leverage scores and corrupts gate rules.
+2. Set `priority_weight` to reflect the cascade value, not just the item's own size — a low-effort item that improves every future agent run is worth more than its line count suggests.
+
 ### Linking
 
 ```json
