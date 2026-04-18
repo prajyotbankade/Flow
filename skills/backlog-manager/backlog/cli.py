@@ -25,6 +25,7 @@ from rich import box
 
 from .core import BacklogStore, DEFAULT_STATUSES
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
+from .server import compute_scores, compute_item_readiness
 
 app = typer.Typer(
     name="backlog",
@@ -195,6 +196,71 @@ def list(
     store = _store(file)
     data = store.read()
     _print_board(data, filter_status=status, filter_assigned=assigned_to, as_json=json_out)
+
+
+@app.command()
+@_handle
+def top(
+    n: int = typer.Argument(5, help="Number of items to show (default 5)"),
+    file: Optional[str] = FILE_OPT,
+    json_out: bool = JSON_OPT,
+) -> None:
+    """Show the top N prioritized items, ranked by score. No server needed."""
+    store = _store(file)
+    data = store.read()
+    all_items = data.get("items", [])
+    pos_map = {item.get("id"): idx + 1 for idx, item in enumerate(all_items)}
+
+    skip = {"done", "discarded"}
+    items_by_id = {item.get("id"): item for item in all_items}
+
+    scored = [r for r in compute_scores(data) if r.get("status") not in skip]
+    # compute_scores already sorts desc; just slice
+    top_items = scored[:n]
+
+    if json_out:
+        # Enrich with raw item fields before outputting
+        out = []
+        for r in top_items:
+            raw = items_by_id.get(r["id"], {})
+            out.append({**r, "priority_weight": raw.get("priority_weight"), "tags": raw.get("tags", []), "assigned_to": raw.get("assigned_to")})
+        console.print_json(json.dumps(out))
+        return
+
+    if not top_items:
+        console.print("[dim]No active items.[/dim]")
+        return
+
+    console.print(f"\n[bold]Top {n} by score[/bold]\n")
+    for rank, r in enumerate(top_items, 1):
+        iid = r.get("id")
+        raw = items_by_id.get(iid, {})
+        pos = pos_map.get(iid, "?")
+        score = r.get("score", 0)
+        status = r.get("status", "")
+        title = r.get("title", "")
+        pw = raw.get("priority_weight") or "—"
+        tags = ", ".join(raw.get("tags") or [])
+        assigned = raw.get("assigned_to") or "unassigned"
+        readiness_pct = int(r.get("readiness", {}).get("score", 0) * 100)
+
+        status_color = {
+            "in-progress": "yellow",
+            "ready": "green",
+            "refined": "blue",
+            "backlog": "dim",
+            "code-review": "magenta",
+        }.get(status, "dim")
+
+        console.print(
+            f"  [bold]{rank}.[/bold] [cyan]#{pos}[/cyan] {title}  "
+            f"[bold]score={score}[/bold]  pw={pw}  [{status_color}]{status}[/{status_color}]"
+        )
+        console.print(
+            f"       readiness={readiness_pct}%  assigned={assigned}"
+            + (f"  tags={tags}" if tags else "")
+        )
+    console.print()
 
 
 @app.command()
@@ -380,6 +446,117 @@ def init_cmd(
     console.print('  backlog add "Your first task"          [dim]# add an item[/dim]')
     console.print("  backlog board                           [dim]# open the visual board[/dim]")
     console.print("  backlog list                            [dim]# view your backlog[/dim]")
+    console.print("  backlog doctor --fix                    [dim]# configure CLAUDE.md for agents[/dim]")
+
+
+# ── CLAUDE.md snippet ─────────────────────────────────────────────────────────
+
+_CLAUDE_MD_MARKER = "<!-- flow-backlog-setup -->"
+
+_CLAUDE_MD_SNIPPET = """\
+<!-- flow-backlog-setup -->
+## Flow Backlog
+
+This project uses the Flow backlog manager skill.
+
+- **What to work on next:** `BACKLOG_FILE=./backlog.json backlog top`
+- **Never reason about priorities yourself** — always check the backlog first
+- **All backlog commands:** prefix with `BACKLOG_FILE=./backlog.json` or set the env var once:
+  `export BACKLOG_FILE=./backlog.json`
+- **First time on a session:** run `backlog top` to orient, then pick up the top item
+<!-- end flow-backlog-setup -->
+"""
+
+
+def _find_backlog_file(cwd: Path) -> Optional[Path]:
+    """Walk up from cwd looking for backlog.json."""
+    for directory in [cwd, *cwd.parents]:
+        candidate = directory / "backlog.json"
+        if candidate.exists():
+            return candidate
+        if (directory / ".git").exists():
+            break  # stop at repo root
+    return None
+
+
+def _find_claude_md(cwd: Path) -> Optional[Path]:
+    """Return CLAUDE.md in cwd if it exists, else None."""
+    candidate = cwd / "CLAUDE.md"
+    return candidate if candidate.exists() else None
+
+
+def _snippet_present(claude_md: Path) -> bool:
+    return _CLAUDE_MD_MARKER in claude_md.read_text(encoding="utf-8")
+
+
+def _write_snippet(claude_md: Path) -> None:
+    existing = claude_md.read_text(encoding="utf-8") if claude_md.exists() else ""
+    separator = "\n" if existing and not existing.endswith("\n") else ""
+    claude_md.write_text(existing + separator + "\n" + _CLAUDE_MD_SNIPPET, encoding="utf-8")
+
+
+@app.command()
+def doctor(
+    fix: bool = typer.Option(False, "--fix", help="Write missing setup to CLAUDE.md"),
+    file: Optional[str] = FILE_OPT,
+) -> None:
+    """Check (and optionally fix) project setup so agents use the backlog automatically."""
+    cwd = Path.cwd()
+    issues: list[str] = []
+    ok: list[str] = []
+
+    # ── 1. backlog.json ───────────────────────────────────────────────────────
+    if file:
+        backlog_path: Optional[Path] = Path(file)
+        if not backlog_path.exists():
+            backlog_path = None
+    else:
+        env_path = os.environ.get("BACKLOG_FILE")
+        backlog_path = Path(env_path) if env_path and Path(env_path).exists() else _find_backlog_file(cwd)
+
+    if backlog_path:
+        rel = backlog_path.relative_to(cwd) if backlog_path.is_relative_to(cwd) else backlog_path
+        ok.append(f"backlog.json found at {rel}")
+    else:
+        issues.append("backlog.json not found — run `backlog init` to create one")
+
+    # ── 2. CLAUDE.md snippet ─────────────────────────────────────────────────
+    claude_md = _find_claude_md(cwd)
+    snippet_ok = claude_md is not None and _snippet_present(claude_md)
+
+    if snippet_ok:
+        ok.append("CLAUDE.md has Flow setup — agents will use the backlog automatically")
+    else:
+        if fix:
+            target = claude_md or (cwd / "CLAUDE.md")
+            _write_snippet(target)
+            ok.append(f"CLAUDE.md updated — Flow setup written to {target.name}")
+        else:
+            issues.append(
+                "CLAUDE.md missing Flow setup — agents won't know to use the backlog. "
+                "Run `backlog doctor --fix` to add it."
+            )
+
+    # ── 3. BACKLOG_FILE env var ───────────────────────────────────────────────
+    if os.environ.get("BACKLOG_FILE"):
+        ok.append(f"BACKLOG_FILE env var set → {os.environ['BACKLOG_FILE']}")
+    else:
+        issues.append("BACKLOG_FILE env var not set — commands need --file or the env var each time")
+
+    # ── Report ────────────────────────────────────────────────────────────────
+    console.print()
+    for msg in ok:
+        console.print(f"  [green]✓[/green] {msg}")
+    for msg in issues:
+        console.print(f"  [red]✗[/red] {msg}")
+
+    if not issues:
+        console.print("\n[green]All good.[/green] Agents on this project will use the backlog automatically.\n")
+    elif fix and not any("backlog.json" in i for i in issues):
+        console.print("\n[green]Fixed.[/green] Commit CLAUDE.md so all agents on this project pick it up.\n")
+    else:
+        console.print()
+        raise typer.Exit(1)
 
 
 @app.command()
@@ -1253,6 +1430,18 @@ def _orchestrate_tick(
                     f"branch {outcome_branch!r} merged into current branch"
                 )
                 console.print(f"[dim]{merge_result.stdout.strip()}[/dim]")
+                # Delete the feature branch now that it's merged
+                delete_result = subprocess.run(
+                    ["git", "branch", "-d", outcome_branch],
+                    capture_output=True, text=True, cwd=str(repo_root),
+                )
+                if delete_result.returncode == 0:
+                    console.print(f"{log_prefix} deleted branch {outcome_branch!r}")
+                else:
+                    console.print(
+                        f"{log_prefix} [yellow]could not delete branch {outcome_branch!r}:[/yellow] "
+                        f"{delete_result.stderr.strip()}"
+                    )
                 # Ensure item is in done state (ingest may have moved to code-review first)
                 pos = _item_position(data, item_id)
                 if pos and item_snap.get("status") not in ("done", "discarded"):

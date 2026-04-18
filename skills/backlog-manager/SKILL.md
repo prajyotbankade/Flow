@@ -40,6 +40,23 @@ This gives you two entry points:
 - Visual management → `backlog board` (or `backlog-server --file ...`)
 - Natural language → Claude skill (this file)
 
+## First Use on a New Project
+
+When this skill is invoked on a project for the first time, run:
+
+```bash
+backlog doctor --fix
+```
+
+This checks that `backlog.json` exists and writes a `## Flow Backlog` section to the project's `CLAUDE.md`. That section tells every future agent on this project to use `backlog top` for priority — without needing the skill to be explicitly invoked again.
+
+**Always commit the updated CLAUDE.md** so all agents and teammates inherit the setup.
+
+To verify setup at any time (read-only):
+```bash
+backlog doctor
+```
+
 ## How to Operate
 
 Agents do not need the server running. Use the CLI directly.
@@ -48,7 +65,7 @@ Agents do not need the server running. Use the CLI directly.
 2. **Decompose** the work into tasks — add via CLI or API with dependencies and links
 3. **Assign** based on team (`.claude/agents/`) using assignment intelligence
 4. **Delegate** to sub-agents with handoff protocol (see Delegating to a Sub-Agent below)
-5. **Monitor** via `/api/pulse` (if server running) or `backlog list` — act on `_events` after every write. Use `/api/graph` to surface dependency order and critical path before assigning work.
+5. **Monitor** via `backlog top` (no server) or `/api/pulse` (if server running) — act on `_events` after every write. Use `/api/graph` to surface dependency order and critical path before assigning work.
 6. **Prune personas** — after task completion, review sub-agent persona files: remove duplicates, merge similar learnings, trim anything now obvious from the codebase
 
 **Start the web board** (human visual use only):
@@ -132,6 +149,10 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 # File resolution: --file flag > BACKLOG_FILE env var > error
 export BACKLOG_FILE=/path/to/backlog.json
 
+backlog top                           # top 5 items by score — what to work on next (no server needed)
+backlog top 10                        # top 10 items by score
+backlog top --json                    # machine-readable ranked list
+
 backlog list                          # board grouped by lane
 backlog list --status ready           # filter by lane
 backlog list --assigned-to alice      # filter by assignee
@@ -170,6 +191,10 @@ backlog orchestrate --mode auto       # auto mode: lead agent refines + starts i
 backlog orchestrate --poll 30         # tick interval in seconds (default 10)
 backlog orchestrate --once            # single tick and exit
 backlog orchestrate --dry-run         # print actions without invoking agents
+
+backlog init                          # create starter backlog.json
+backlog doctor                        # check project setup (backlog.json + CLAUDE.md)
+backlog doctor --fix                  # write missing CLAUDE.md setup so agents use the backlog automatically
 ```
 
 **Exit codes:** `0` success · `1` gate violation / not found / validation error · `2` version conflict (re-read and retry)
