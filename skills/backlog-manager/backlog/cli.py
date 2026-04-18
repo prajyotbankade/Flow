@@ -223,7 +223,7 @@ def top(
         out = []
         for r in top_items:
             raw = items_by_id.get(r["id"], {})
-            out.append({**r, "priority_weight": raw.get("priority_weight"), "tags": raw.get("tags", []), "assigned_to": raw.get("assigned_to")})
+            out.append({**r, "priority_weight": raw.get("priority_weight"), "complexity": raw.get("complexity"), "tags": raw.get("tags", []), "assigned_to": raw.get("assigned_to")})
         console.print_json(json.dumps(out))
         return
 
@@ -242,6 +242,7 @@ def top(
         pw = raw.get("priority_weight") or "—"
         tags = ", ".join(raw.get("tags") or [])
         assigned = raw.get("assigned_to") or "unassigned"
+        complexity = raw.get("complexity") or "—"
         readiness_pct = int(r.get("readiness", {}).get("score", 0) * 100)
 
         status_color = {
@@ -257,7 +258,7 @@ def top(
             f"[bold]score={score}[/bold]  pw={pw}  [{status_color}]{status}[/{status_color}]"
         )
         console.print(
-            f"       readiness={readiness_pct}%  assigned={assigned}"
+            f"       readiness={readiness_pct}%  effort={complexity}  assigned={assigned}"
             + (f"  tags={tags}" if tags else "")
         )
     console.print()
