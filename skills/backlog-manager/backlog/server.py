@@ -789,6 +789,16 @@ def evaluate_tribunal(data, agent=None, blocks_map=None, blocked_by=None, in_pro
     strategic_cfg = {**DEFAULT_STRATEGIC, **config.get("strategic", {})}
     agents_cfg = config.get("agents", {})
     items = data.get("items", [])
+    if not strategic_cfg.get("current_focus"):
+        from collections import Counter
+        skip = {"done", "discarded"}
+        tag_counts = Counter(
+            tag
+            for item in items
+            if (item.get("priority_weight") or 0) >= 7 and item.get("status") not in skip
+            for tag in (item.get("tags") or [])
+        )
+        strategic_cfg["current_focus"] = [tag for tag, _ in tag_counts.most_common(5)]
     if blocks_map is None or blocked_by is None:
         blocks_map, blocked_by = resolve_blocks(items)
     if in_progress_per_agent is None:
