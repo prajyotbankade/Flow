@@ -1,5 +1,5 @@
 {
-  "version": 510,
+  "version": 514,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -1503,7 +1503,7 @@
     {
       "id": "ngh3dnz4",
       "title": "Wire backlog top to use tribunal ranking instead of score-only",
-      "status": "backlog",
+      "status": "done",
       "priority": "high",
       "priority_weight": 8,
       "complexity": "low",
@@ -1513,15 +1513,31 @@
         "scoring",
         "workflow"
       ],
-      "description": "Replace compute_scores in backlog top with evaluate_tribunal. Pull ranked list from shadow_ranking, show tribunal score + justification for top pick. Also investigate why justification returns None. ~15-20 lines in cli.py.",
+      "description": "Replace compute_scores in backlog top with evaluate_tribunal. Pull ranked list from shadow_ranking, show tribunal score + justification for top pick. Also investigate why justification returns None. ~15-20 lines in cli.py.\n\n## Spec\n**Acceptance criteria:** backlog top always uses tribunal ranking (6 lenses: urgency, leverage, strategic fit, risk, momentum, agent_fit). Raw score is no longer the sort order. Tribunal wins on any ordering difference.\n**Failure modes:** Empty backlog \u2192 print 'Backlog is empty.' and exit 0. Any tribunal error \u2192 show error to user, do not silently fall back to raw score.\n**Edge cases:** If justification is None or missing, display 'No justification available' \u2014 never omit it silently as users will ask why.",
       "links": [],
       "threads": [],
-      "lane_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-20T19:10:43.336158+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-20T19:12:25.452805+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-20T19:12:25.590184+00:00",
+          "by": "cli"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-04-18T03:04:55.315287+00:00",
-      "updated_at": "2026-04-18T03:04:55.315287+00:00"
+      "updated_at": "2026-04-20T19:12:25.590351+00:00"
     }
   ],
   "config": {

@@ -26,7 +26,7 @@ from rich import box
 
 from .core import BacklogStore, DEFAULT_STATUSES, _detect_foreign_schema, migrate_to_flow_schema
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
-from .server import compute_scores, compute_item_readiness
+from .server import compute_scores, compute_item_readiness, evaluate_tribunal
 
 app = typer.Typer(
     name="backlog",
@@ -206,62 +206,77 @@ def top(
     file: Optional[str] = FILE_OPT,
     json_out: bool = JSON_OPT,
 ) -> None:
-    """Show the top N prioritized items, ranked by score. No server needed."""
+    """Show the top N prioritized items, ranked by tribunal. No server needed."""
     store = _store(file)
     data = store.read()
     all_items = data.get("items", [])
-    pos_map = {item.get("id"): idx + 1 for idx, item in enumerate(all_items)}
 
-    skip = {"done", "discarded"}
+    if not any(i.get("status") not in {"done", "discarded"} for i in all_items):
+        console.print("[dim]Backlog is empty.[/dim]")
+        return
+
+    pos_map = {item.get("id"): idx + 1 for idx, item in enumerate(all_items)}
     items_by_id = {item.get("id"): item for item in all_items}
 
-    scored = [r for r in compute_scores(data) if r.get("status") not in skip]
-    # compute_scores already sorts desc; just slice
-    top_items = scored[:n]
+    result = evaluate_tribunal(data)
+    picked = result.get("picked")
+    shadow = result.get("shadow_ranking", [])
+
+    if not picked:
+        console.print("[dim]Backlog is empty.[/dim]")
+        return
+
+    # Build ranked list: winner first, then shadow runners-up, sliced to n
+    ranked_entries = [{"id": picked["item_id"], "tribunal_score": picked["tribunal_score"],
+                       "score": picked["score"], "reasoning": picked.get("reasoning"),
+                       "readiness": picked.get("readiness", {})}]
+    for s in shadow:
+        ranked_entries.append({"id": s["item_id"], "tribunal_score": s["tribunal_score"],
+                                "score": s["score"], "reasoning": None,
+                                "readiness": {}})
+    ranked_entries = ranked_entries[:n]
 
     if json_out:
-        # Enrich with raw item fields before outputting
         out = []
-        for r in top_items:
+        for r in ranked_entries:
             raw = items_by_id.get(r["id"], {})
-            out.append({**r, "priority_weight": raw.get("priority_weight"), "complexity": raw.get("complexity"), "tags": raw.get("tags", []), "assigned_to": raw.get("assigned_to")})
+            out.append({**r, "priority_weight": raw.get("priority_weight"),
+                        "complexity": raw.get("complexity"), "tags": raw.get("tags", []),
+                        "assigned_to": raw.get("assigned_to"),
+                        "status": raw.get("status"), "title": raw.get("title")})
         console.print_json(json.dumps(out))
         return
 
-    if not top_items:
-        console.print("[dim]No active items.[/dim]")
-        return
-
-    console.print(f"\n[bold]Top {n} by score[/bold]\n")
-    for rank, r in enumerate(top_items, 1):
-        iid = r.get("id")
+    console.print(f"\n[bold]Top {n} by tribunal[/bold]\n")
+    for rank, r in enumerate(ranked_entries, 1):
+        iid = r["id"]
         raw = items_by_id.get(iid, {})
         pos = pos_map.get(iid, "?")
-        score = r.get("score", 0)
-        status = r.get("status", "")
-        title = r.get("title", "")
+        tribunal_score = r["tribunal_score"]
+        status = raw.get("status", "")
+        title = raw.get("title", "")
         pw = raw.get("priority_weight") or "—"
         tags = ", ".join(raw.get("tags") or [])
         assigned = raw.get("assigned_to") or "unassigned"
         complexity = raw.get("complexity") or "—"
-        readiness_pct = int(r.get("readiness", {}).get("score", 0) * 100)
+        readiness_pct = int(r["readiness"].get("score", 0) * 100)
 
         status_color = {
-            "in-progress": "yellow",
-            "ready": "green",
-            "refined": "blue",
-            "backlog": "dim",
-            "code-review": "magenta",
+            "in-progress": "yellow", "ready": "green", "refined": "blue",
+            "backlog": "dim", "code-review": "magenta",
         }.get(status, "dim")
 
         console.print(
             f"  [bold]{rank}.[/bold] [cyan]#{pos}[/cyan] {title}  "
-            f"[bold]score={score}[/bold]  pw={pw}  [{status_color}]{status}[/{status_color}]"
+            f"[bold]score={tribunal_score}[/bold]  pw={pw}  [{status_color}]{status}[/{status_color}]"
         )
         console.print(
             f"       readiness={readiness_pct}%  effort={complexity}  assigned={assigned}"
             + (f"  tags={tags}" if tags else "")
         )
+        if rank == 1:
+            justification = r.get("reasoning") or "No justification available"
+            console.print(f"       [dim]why: {justification}[/dim]")
     console.print()
 
 
