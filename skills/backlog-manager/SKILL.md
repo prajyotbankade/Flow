@@ -107,7 +107,18 @@ Skipping step 1 and spawning an Agent tool call directly produces an unstructure
 
 When reviewing an item in `code-review`, a **reject verdict blocks the merge**. Do not pass and log a follow-up ticket — if you can see the bug, it must be fixed before done.
 
-**Review checklist:**
+**Step 1 — Socratic questions (before reading the checklist):**
+
+Read the item's acceptance criteria and `## Spec` block, then generate the questions a skeptical senior engineer would ask about *this specific implementation* — derived from the actual code and spec, not a generic template. Answer each question inline as you review. These questions are the ceiling; the static checklist below is the floor.
+
+If the item has no acceptance criteria or `## Spec` block (e.g. user created and moved to ready manually without going through the spec gate), stop and ask the user for the acceptance criteria before proceeding. Do not skip the Socratic step silently.
+
+Example questions for a concurrent write operation:
+- *What happens if two agents pick this item simultaneously?*
+- *Is the version check atomic with the write?*
+- *What does the caller see if the write fails halfway through?*
+
+**Step 2 — Review checklist:**
 
 1. **Correctness** — does the implementation match the acceptance criteria exactly?
 2. **Idempotency** — any code that runs in a loop, on a recurring tick, or in response to repeated events must be safe to call multiple times without side effects. If it dispatches, writes, or creates something, check it guards against doing that twice.

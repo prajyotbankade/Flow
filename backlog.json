@@ -1,5 +1,5 @@
 {
-  "version": 514,
+  "version": 519,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -1361,7 +1361,7 @@
     {
       "id": "ky8ra2a7",
       "title": "Socratic code review \u2014 generate senior-engineer questions before running checklist",
-      "status": "backlog",
+      "status": "done",
       "priority": "medium",
       "priority_weight": 7,
       "complexity": "low",
@@ -1370,7 +1370,7 @@
         "code-review",
         "workflow"
       ],
-      "description": "Upgrade the Code Review Protocol in SKILL.md: before running the static checklist (correctness, idempotency, error handling, edge cases, write safety), first generate the questions a skeptical senior engineer would ask about this specific implementation. The questions are derived from the item's acceptance criteria, behavioral contracts, and the actual code \u2014 not from a generic template. The reviewer then answers each question in the review artifact. This makes review item-context-aware rather than checklist-mechanical. Example: for a concurrent write operation the generated questions might be 'What happens if two agents pick this item simultaneously?' and 'Is the version check atomic with the write?' \u2014 questions the static checklist would not surface. The static checklist remains as a floor, but the Socratic questions are the ceiling. This is particularly valuable for catching assumptions the implementer made that were never written down in the spec.",
+      "description": "Upgrade the Code Review Protocol in SKILL.md: before running the static checklist (correctness, idempotency, error handling, edge cases, write safety), first generate the questions a skeptical senior engineer would ask about this specific implementation. The questions are derived from the item's acceptance criteria, behavioral contracts, and the actual code \u2014 not from a generic template. The reviewer then answers each question in the review artifact. This makes review item-context-aware rather than checklist-mechanical. Example: for a concurrent write operation the generated questions might be 'What happens if two agents pick this item simultaneously?' and 'Is the version check atomic with the write?' \u2014 questions the static checklist would not surface. The static checklist remains as a floor, but the Socratic questions are the ceiling. This is particularly valuable for catching assumptions the implementer made that were never written down in the spec.\n\n## Spec\n**Acceptance criteria:** Socratic questions are generated from the item's acceptance criteria, behavioral contracts, and the actual code. The reviewer answers each question inline as part of the review artifact \u2014 questions serve as a lens, not a pre-read gate. Static checklist remains but Socratic questions are the ceiling.\n**Failure modes:** Items should always have spec/acceptance criteria from the refinement/lead agent. If missing (e.g. user created and moved to ready manually), the reviewer asks the user for acceptance criteria before proceeding rather than skipping the Socratic step silently.\n**Edge cases:** Add Socratic questions step to the existing Code Review Protocol section in SKILL.md \u2014 not a new section. Keeps all review guidance in one place.",
       "links": [
         {
           "item_id": "oym0khty",
@@ -1379,12 +1379,28 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-20T19:50:04.978447+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-20T20:13:08.681580+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-20T20:13:08.830268+00:00",
+          "by": "cli"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-04-15T23:42:34.301801+00:00",
-      "updated_at": "2026-04-15T23:42:34.301801+00:00"
+      "updated_at": "2026-04-20T20:13:08.830429+00:00"
     },
     {
       "id": "uto3a3bf",
@@ -1538,6 +1554,30 @@
       "skip_count": 0,
       "created_at": "2026-04-18T03:04:55.315287+00:00",
       "updated_at": "2026-04-20T19:12:25.590351+00:00"
+    },
+    {
+      "id": "cor2twzx",
+      "title": "backlog doctor should detect when installed SKILL.md is out of sync with repo",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "cli",
+        "doctor",
+        "install",
+        "workflow"
+      ],
+      "description": "",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-20T19:30:34.517826+00:00",
+      "updated_at": "2026-04-20T19:30:34.517826+00:00"
     }
   ],
   "config": {
