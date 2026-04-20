@@ -442,12 +442,21 @@ def init_cmd(
     store = BacklogStore(path)
     store.init()
     console.print(f"[green]Created[/green] {store.file_path}")
+
+    # Auto-wire CLAUDE.md so agents use the backlog without extra setup steps
+    cwd = Path.cwd()
+    claude_md = _find_claude_md(cwd)
+    if not (claude_md and _snippet_present(claude_md)):
+        target = claude_md or (cwd / "CLAUDE.md")
+        _write_snippet(target)
+        console.print(f"[green]Updated[/green] {target.name} — agents will use the backlog automatically")
+        console.print("[dim]  Commit CLAUDE.md so all agents and teammates inherit the setup.[/dim]")
+
     console.print()
     console.print("[bold]Next steps:[/bold]")
     console.print('  backlog add "Your first task"          [dim]# add an item[/dim]')
     console.print("  backlog board                           [dim]# open the visual board[/dim]")
     console.print("  backlog list                            [dim]# view your backlog[/dim]")
-    console.print("  backlog doctor --fix                    [dim]# configure CLAUDE.md for agents[/dim]")
 
 
 # ── CLAUDE.md snippet ─────────────────────────────────────────────────────────

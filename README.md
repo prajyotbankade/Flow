@@ -88,6 +88,15 @@ Set your backlog file once (or pass `--file` on every command):
 export BACKLOG_FILE=/path/to/your/backlog.json
 ```
 
+Wire agents to use the backlog — run this once per project, then commit `CLAUDE.md`:
+
+```bash
+backlog doctor --fix
+git add CLAUDE.md && git commit -m "chore: add Flow Backlog setup for agents"
+```
+
+This writes a `## Flow Backlog` section to your project's `CLAUDE.md` so every agent on the project uses the backlog CLI instead of reasoning about priorities on its own. Without this step, agents won't know the backlog exists.
+
 Now agents and scripts can use the CLI directly — no server required:
 
 ```bash
