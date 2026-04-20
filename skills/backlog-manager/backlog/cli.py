@@ -11,6 +11,7 @@ Exit codes:
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,7 +24,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
-from .core import BacklogStore, DEFAULT_STATUSES
+from .core import BacklogStore, DEFAULT_STATUSES, _detect_foreign_schema, migrate_to_flow_schema
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
 from .server import compute_scores, compute_item_readiness
 
@@ -440,7 +441,17 @@ def init_cmd(
     """Write a starter backlog.json to the current directory (or --file path)."""
     path = file or os.environ.get("BACKLOG_FILE", "backlog.json")
     store = BacklogStore(path)
-    store.init()
+    try:
+        store.init()
+    except FileExistsError as e:
+        msg = str(e)
+        if msg.startswith("foreign_schema:"):
+            schema_desc = msg[len("foreign_schema:"):]
+            console.print(f"[yellow]backlog.json already exists with an incompatible schema:[/yellow] {schema_desc}")
+            console.print("Run [bold]backlog doctor --fix[/bold] to migrate it to Flow format (a backup will be created).")
+        else:
+            console.print("[yellow]backlog.json already exists.[/yellow] Run [bold]backlog doctor --fix[/bold] to check setup.")
+        raise typer.Exit(1)
     console.print(f"[green]Created[/green] {store.file_path}")
 
     # Auto-wire CLAUDE.md so agents use the backlog without extra setup steps
@@ -529,6 +540,31 @@ def doctor(
         ok.append(f"backlog.json found at {rel}")
     else:
         issues.append("backlog.json not found — run `backlog init` to create one")
+
+    # ── 1b. Schema compatibility ──────────────────────────────────────────────
+    if backlog_path:
+        try:
+            with open(backlog_path, "r") as f:
+                raw_data = json.load(f)
+            schema_type, schema_desc = _detect_foreign_schema(raw_data)
+            if schema_type != "flow":
+                if fix:
+                    backup_path = backlog_path.with_suffix(".json.bak")
+                    shutil.copy2(backlog_path, backup_path)
+                    migrated = migrate_to_flow_schema(raw_data)
+                    BacklogStore(str(backlog_path)).write(migrated)
+                    ok.append(
+                        f"backlog.json migrated from foreign schema ({schema_desc}) — "
+                        f"backup saved to {backup_path.name}"
+                    )
+                else:
+                    issues.append(
+                        f"backlog.json has incompatible schema ({schema_desc}) — "
+                        f"Flow commands will fail. Run `backlog doctor --fix` to migrate "
+                        f"(a .bak backup will be created automatically)."
+                    )
+        except json.JSONDecodeError:
+            issues.append("backlog.json is not valid JSON — cannot read or migrate it")
 
     # ── 2. CLAUDE.md snippet ─────────────────────────────────────────────────
     claude_md = _find_claude_md(cwd)

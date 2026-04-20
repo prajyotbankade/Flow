@@ -90,6 +90,103 @@ def _normalize_lane_history(items: list) -> None:
         item["lane_history"] = normalized
 
 
+_FOREIGN_KEY_ALTERNATIVES = ("tasks", "todos", "backlog", "work_items", "issues", "cards")
+
+
+def _detect_foreign_schema(data) -> tuple[str, str]:
+    """Return (schema_type, human_description).
+
+    schema_type == "flow" means the data matches Flow's expected structure.
+    Any other value means the data is a foreign format and cannot be used directly.
+    """
+    if isinstance(data, list):
+        return "list", "top-level JSON array (not a Flow backlog dict)"
+    if not isinstance(data, dict):
+        return "unknown", f"unexpected JSON type: {type(data).__name__}"
+    if "items" in data and isinstance(data["items"], list):
+        return "flow", ""
+    for key in _FOREIGN_KEY_ALTERNATIVES:
+        if key in data and isinstance(data[key], list):
+            return f"dict_with_{key}", f"dict with '{key}' key instead of 'items'"
+    return "unknown_dict", "dict without a recognized item list"
+
+
+_STATUS_MIGRATION_MAP = {
+    "done": "done", "completed": "done", "closed": "done", "finished": "done",
+    "in-progress": "in-progress", "in_progress": "in-progress",
+    "active": "in-progress", "doing": "in-progress", "wip": "in-progress",
+    "todo": "backlog", "open": "backlog", "new": "backlog",
+    "pending": "backlog", "icebox": "backlog", "triage": "backlog",
+}
+
+
+def migrate_to_flow_schema(data) -> dict:
+    """Best-effort migration from a foreign backlog format to Flow schema.
+
+    Extracts items from known alternative structures, maps field names and status
+    values to Flow equivalents. Unknown fields are preserved in description.
+    """
+    schema_type, _ = _detect_foreign_schema(data)
+
+    raw_items: list = []
+    if schema_type == "list":
+        raw_items = data if isinstance(data, list) else []
+    elif schema_type.startswith("dict_with_"):
+        key = schema_type[len("dict_with_"):]
+        raw_items = data.get(key, [])
+    # unknown_dict: no items extractable — produce empty backlog
+
+    items = []
+    for raw in raw_items:
+        if not isinstance(raw, dict):
+            continue
+
+        title = (
+            raw.get("title") or raw.get("task") or raw.get("name")
+            or raw.get("text") or raw.get("summary") or "Untitled"
+        )
+
+        raw_status = str(raw.get("status", "")).lower()
+        done_flag = raw.get("done") or raw.get("completed") or raw.get("finished")
+        if done_flag:
+            status = "done"
+        else:
+            status = _STATUS_MIGRATION_MAP.get(raw_status, "backlog")
+
+        priority = str(raw.get("priority", "medium")).lower()
+        if priority not in ("low", "medium", "high", "critical"):
+            priority = "medium"
+
+        tags = raw.get("tags", [])
+        if not isinstance(tags, list):
+            tags = [str(tags)] if tags else []
+
+        items.append({
+            "id": _generate_id(),
+            "title": title,
+            "status": status,
+            "priority": priority,
+            "priority_weight": 5,
+            "complexity": "medium",
+            "tags": tags,
+            "description": raw.get("description") or raw.get("notes") or raw.get("body") or "",
+            "links": [],
+            "threads": [],
+            "lane_history": [],
+            "gate_from": 0,
+            "reopen_count": 0,
+            "skip_count": 0,
+            "created_at": _now_iso(),
+            "updated_at": _now_iso(),
+        })
+
+    return {
+        "version": 0,
+        "config": {"scope": "project", "project_name": ""},
+        "items": items,
+    }
+
+
 def validate_lane_transition(item: dict, new_status: str, statuses: list) -> tuple[bool, str | None]:
     """Check if moving item to new_status satisfies gate rules.
 
@@ -196,6 +293,12 @@ class BacklogStore:
             return dict(STARTER_BACKLOG)
         except json.JSONDecodeError as e:
             raise ValueError(f"backlog.json is corrupted: {e}")
+        schema_type, schema_desc = _detect_foreign_schema(data)
+        if schema_type != "flow":
+            raise ValueError(
+                f"backlog.json has an unrecognized schema ({schema_desc}). "
+                f"Run `backlog doctor --fix` to migrate it to Flow format."
+            )
         _normalize_lane_history(data.get("items", []))
         return data
 
@@ -229,6 +332,14 @@ class BacklogStore:
     def init(self) -> None:
         """Write a starter backlog.json. Raises if file already exists."""
         if os.path.exists(self.file_path):
+            try:
+                with open(self.file_path, "r") as f:
+                    existing_data = json.load(f)
+                schema_type, schema_desc = _detect_foreign_schema(existing_data)
+                if schema_type != "flow":
+                    raise FileExistsError(f"foreign_schema:{schema_desc}")
+            except (json.JSONDecodeError, OSError):
+                pass
             raise FileExistsError(f"{self.file_path} already exists.")
         project_name = Path(self.file_path).parent.name
         starter = dict(STARTER_BACKLOG)
