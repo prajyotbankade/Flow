@@ -35,3 +35,11 @@ This project uses the Flow backlog manager skill.
   `export BACKLOG_FILE=./backlog.json`
 - **First time on a session:** run `backlog top` to orient, then pick up the top item
 <!-- end flow-backlog-setup -->
+
+## Code Review Gate
+
+When an item reaches `code-review` status, the **only** valid flow is:
+1. `backlog handoff reviewer --item N --review` — generates the structured handoff file
+2. `backlog ingest <result_file>` — advances to `done` (pass) or `in-progress` (reject)
+
+**NEVER** spawn a reviewer agent directly via the Agent tool and manually call `backlog done`. That bypasses the gate — the item appears done but the review was never properly recorded. Always use the CLI commands above.

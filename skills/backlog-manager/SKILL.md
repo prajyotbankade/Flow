@@ -99,6 +99,12 @@ When the user describes a feature to build:
 
 ## Code Review Protocol
 
+**NEVER spawn a reviewer agent directly.** The correct flow is always:
+1. `backlog handoff reviewer --item N --review` — generates a structured handoff file
+2. `backlog ingest <result_file>` — advances the item to `done` (pass) or back to `in-progress` (reject)
+
+Skipping step 1 and spawning an Agent tool call directly produces an unstructured markdown file that `backlog ingest` cannot parse. The item will appear done but the gate was never properly closed. This is a protocol violation — not an acceptable shortcut.
+
 When reviewing an item in `code-review`, a **reject verdict blocks the merge**. Do not pass and log a follow-up ticket — if you can see the bug, it must be fixed before done.
 
 **Review checklist:**
