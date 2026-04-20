@@ -1,5 +1,5 @@
 {
-  "version": 519,
+  "version": 524,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -1043,7 +1043,7 @@
     {
       "id": "0zhf9apl",
       "title": "Bake Superpowers methodology into agent personas",
-      "status": "backlog",
+      "status": "done",
       "priority": "high",
       "priority_weight": 9,
       "complexity": "medium",
@@ -1053,15 +1053,36 @@
         "process",
         "methodology"
       ],
-      "description": "Extract key practices from obra/superpowers skills and embed them into .claude/agents/*.md persona files. Three skills to incorporate: (1) test-driven-development \u2014 RED-GREEN-REFACTOR enforcement, no production code without failing test first, delete code written before tests. Add to backend-dev and frontend-dev. (2) systematic-debugging \u2014 4-phase root cause process (investigate \u2192 pattern analysis \u2192 hypothesis \u2192 fix), no fixes without root cause, stop after 3 failed fixes and question architecture. Add to all agents. (3) verification-before-completion \u2014 evidence before claims, run verification commands before any completion claim, never trust agent self-reports. Add to all agents and strengthen reviewer's checklist. Do NOT install superpowers as a plugin \u2014 it conflicts with Flow's orchestration layer. Cherry-pick methodology only.",
+      "description": "Extract key practices from obra/superpowers skills and embed them into .claude/agents/*.md persona files. Three skills to incorporate: (1) test-driven-development \u2014 RED-GREEN-REFACTOR enforcement, no production code without failing test first, delete code written before tests. Add to backend-dev and frontend-dev. (2) systematic-debugging \u2014 4-phase root cause process (investigate \u2192 pattern analysis \u2192 hypothesis \u2192 fix), no fixes without root cause, stop after 3 failed fixes and question architecture. Add to all agents. (3) verification-before-completion \u2014 evidence before claims, run verification commands before any completion claim, never trust agent self-reports. Add to all agents and strengthen reviewer's checklist. Do NOT install superpowers as a plugin \u2014 it conflicts with Flow's orchestration layer. Cherry-pick methodology only.\n\n## Spec\n**Acceptance criteria:** (1) All three practices embedded into relevant persona files AND reflected in SKILL.md so reviewers enforce them. (2) Practices distilled into persona-specific language per agent role \u2014 not copy-pasted verbatim.\n\n**Failure modes:** If persona files are missing, create a default team of 2 BE, 2 FE, and 1 Lead agent with standard templates. Notify the user that the team was auto-created and can be managed via the web portal. If team exists but is missing a critical role (e.g. no BE agent), ask the user whether to create it or have you create it.\n\n**Edge cases:** systematic-debugging and verification-before-completion go into all worker agents. Also add to the reviewer agent \u2014 make it highly visible to the user with a note so they can correct if needed. 'All agents' = workers + reviewer. Lead agent gets verification-before-completion and systematic-debugging but not TDD (lead orchestrates, doesn't write code).",
       "links": [],
       "threads": [],
-      "lane_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-20T21:57:28.295776+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-04-20T21:57:48.706588+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-20T22:39:49.139390+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-20T22:39:49.271154+00:00",
+          "by": "cli"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-04-10T21:29:40.041777+00:00",
-      "updated_at": "2026-04-10T21:37:10.314463+00:00"
+      "updated_at": "2026-04-20T22:39:49.271316+00:00"
     },
     {
       "id": "j1pa09p0",

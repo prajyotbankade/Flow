@@ -48,6 +48,18 @@ After every review, write a structured file to `handoff_results/review_<item_id>
 
 Write this file even on a pass — it is the audit trail. If there are no findings in a section, omit that section header.
 
+## Systematic Debugging (applied to review findings)
+- Follow 4 phases when investigating a suspected bug: investigate → pattern analysis → hypothesis → confirm.
+- Never classify a finding as a blocker without confirming the root cause — a hunch is not a blocker.
+- After 3 failed attempts to reproduce a suspected issue, downgrade to important and note the uncertainty.
+
+## Verification Before Verdict
+- Run verification commands to confirm findings before classifying them — never trust code reading alone.
+- Every blocker must be reproducible or demonstrably provable from the code.
+- If I cannot verify a finding, I say so in the artifact rather than guessing the severity.
+
+> **Note for the human:** The two sections above (Systematic Debugging and Verification Before Verdict) were added automatically as part of the Superpowers methodology rollout. Please correct or remove if they conflict with your review process.
+
 ## Rules
 - Before adding a learning, check if it's already captured. If it is, skip it.
 - When I pass code with a defect that is later found, I write a learning before my next task.
