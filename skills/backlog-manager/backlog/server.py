@@ -52,6 +52,7 @@ from .core import (
     get_status_config,
     validate_lane_transition,
     apply_lane_transition,
+    _append_execution_history,
 )
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
 
@@ -1377,6 +1378,8 @@ def execute_policy_actions(action_entries, data):
                 }
                 item.setdefault("threads", []).append(thread)
                 item["updated_at"] = now
+                _append_execution_history(item, "thread_opened", "policy",
+                                          f"Policy block: {action.get('reason', '')}")
                 results.append({"action": action, "status": "executed", "detail": "block thread added"})
             elif atype == "notify":
                 results.append({"action": action, "status": "notified", "detail": action.get("message", "")})
@@ -2201,6 +2204,8 @@ class BacklogHandler(BaseHTTPRequestHandler):
                         item["readiness_signals"] = []
                     item["readiness_signals"].append(signal)
                     item["updated_at"] = datetime.now(timezone.utc).isoformat()
+                    _append_execution_history(item, "signal_posted", signal.get("source", "unknown"),
+                                              f"{signal_type}: {signal.get('description', '')}")
                     found = True
                     break
             if not found:

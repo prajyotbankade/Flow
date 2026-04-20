@@ -237,6 +237,14 @@ def validate_lane_transition(item: dict, new_status: str, statuses: list) -> tup
 _validate_lane_transition = validate_lane_transition
 
 
+def _append_execution_history(item: dict, action: str, actor: str, detail: str = "") -> None:
+    """Append an audit entry to item['execution_history']. Always system-generated."""
+    entry = {"action": action, "actor": actor, "at": _now_iso()}
+    if detail:
+        entry["detail"] = detail
+    item.setdefault("execution_history", []).append(entry)
+
+
 def apply_lane_transition(item: dict, new_status: str, statuses: list, moved_by: str = "cli") -> None:
     """Mutate item in place: append lane_history entry and update gate_from on backward moves.
 
@@ -266,6 +274,9 @@ def apply_lane_transition(item: dict, new_status: str, statuses: list, moved_by:
 
     item["status"] = new_status
     item["updated_at"] = _now_iso()
+    direction = "backward" if new_idx < old_idx else "forward"
+    _append_execution_history(item, "lane_transition", moved_by,
+                              f"{old_status} → {new_status} ({direction})")
 
 
 # Private alias
@@ -300,6 +311,8 @@ class BacklogStore:
                 f"Run `backlog doctor --fix` to migrate it to Flow format."
             )
         _normalize_lane_history(data.get("items", []))
+        for item in data.get("items", []):
+            item.setdefault("execution_history", [])
         return data
 
     def write(self, data: dict, expected_version: int | None = None) -> None:
@@ -381,6 +394,7 @@ class BacklogStore:
             "links": [],
             "threads": [],
             "lane_history": [],
+            "execution_history": [],
             "gate_from": 0,
             "reopen_count": 0,
             "skip_count": 0,
@@ -390,8 +404,8 @@ class BacklogStore:
         # Remove None-valued optional fields to keep JSON clean
         item = {k: v for k, v in item.items() if v is not None or k in (
             "id", "title", "status", "description", "links", "threads",
-            "lane_history", "gate_from", "reopen_count", "skip_count",
-            "created_at", "updated_at", "tags",
+            "lane_history", "execution_history", "gate_from", "reopen_count",
+            "skip_count", "created_at", "updated_at", "tags",
         )}
         data.setdefault("items", []).append(item)
         self.write(data)
@@ -415,19 +429,23 @@ class BacklogStore:
         self.write(data, expected_version=data.get("version", 0))
         return item
 
-    def assign_item(self, position: int, agent: str) -> dict:
+    def assign_item(self, position: int, agent: str, actor: str = "cli") -> dict:
         """Assign item to agent. Raises ItemNotFoundError if not found."""
         data, item = self.get_item(position)
+        prev = item.get("assigned_to") or "unassigned"
         item["assigned_to"] = agent
         item["updated_at"] = _now_iso()
+        _append_execution_history(item, "assigned", actor, f"{prev} → {agent}")
         self.write(data, expected_version=data.get("version", 0))
         return item
 
-    def unassign_item(self, position: int) -> dict:
+    def unassign_item(self, position: int, actor: str = "cli") -> dict:
         """Remove assignment from item. Raises ItemNotFoundError if not found."""
         data, item = self.get_item(position)
+        prev = item.get("assigned_to") or "unassigned"
         item["assigned_to"] = None
         item["updated_at"] = _now_iso()
+        _append_execution_history(item, "unassigned", actor, f"{prev} → unassigned")
         self.write(data, expected_version=data.get("version", 0))
         return item
 

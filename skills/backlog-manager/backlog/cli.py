@@ -173,6 +173,15 @@ def _print_item(item: dict, position: int, as_json: bool = False) -> None:
     history = item.get("lane_history", [])
     if history:
         console.print(f"  History:    {len(history)} lane transition(s)")
+    exec_history = item.get("execution_history", [])
+    if exec_history:
+        console.print(f"  Audit trail ({len(exec_history)} event(s)):")
+        for entry in exec_history:
+            actor = entry.get("actor", "?")
+            action = entry.get("action", "?")
+            at = entry.get("at", "")[:19].replace("T", " ")
+            detail = entry.get("detail", "")
+            console.print(f"    [dim]{at}[/dim]  [{actor}] {action}" + (f" — {detail}" if detail else ""))
     console.print(f"  ID:         {item.get('id', '')}")
     console.print(f"  Created:    {item.get('created_at', '')}")
     console.print(f"  Updated:    {item.get('updated_at', '')}")
