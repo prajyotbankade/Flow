@@ -414,6 +414,20 @@ time curl -s http://localhost:8089/api/pulse | wc -c
 lsof -ti :8089 | xargs kill -9
 ```
 
+### To run CLI stress test (agent path)
+```bash
+export BACKLOG_FILE=stress-tests/backlog_stress_2000.json
+
+echo "--- top (2000) ---"
+time backlog top
+
+echo "--- list (2000) ---"
+time backlog list > /dev/null
+
+echo "--- show (2000) ---"
+time backlog show 1 > /dev/null
+```
+
 ### To run all evals (full suite)
 ```bash
 source skills/backlog-manager/evals/.venv/bin/activate
