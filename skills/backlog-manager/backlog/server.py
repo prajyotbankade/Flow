@@ -1866,7 +1866,13 @@ class BacklogHandler(BaseHTTPRequestHandler):
         except ValueError as e:
             self._json_error(500, str(e))
             return
-        pulse = compute_pulse(data, agent_name=agent, backlog_path=self.backlog_file)
+        try:
+            pulse = compute_pulse(data, agent_name=agent, backlog_path=self.backlog_file)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._json_error(500, f"compute_pulse failed: {e}")
+            return
         self._json_response(200, pulse)
 
     def _serve_recommend(self, agent=None, commit=False):
@@ -1875,7 +1881,13 @@ class BacklogHandler(BaseHTTPRequestHandler):
         except ValueError as e:
             self._json_error(500, str(e))
             return
-        result = evaluate_tribunal(data, agent=agent)
+        try:
+            result = evaluate_tribunal(data, agent=agent)
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            self._json_error(500, f"evaluate_tribunal failed: {e}")
+            return
         if result.get("picked"):
             winner_id = result["picked"].get("item_id")
             if winner_id:

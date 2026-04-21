@@ -394,35 +394,32 @@ source skills/backlog-manager/evals/.venv/bin/activate
 ### To run stress test
 ```bash
 lsof -ti :8089 | xargs kill -9
-find skills/backlog-manager/scripts -name "*.pyc" -delete
-find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
 
-python3 skills/backlog-manager/scripts/backlog_server.py --file stress-tests/backlog_stress_2000.json &
+BACKLOG_FILE=stress-tests/backlog_stress_2000.json backlog-server --no-open &
 
 until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
 
 echo "--- Scores (2000) ---"
-time curl -s http://localhost:8089/api/scores | wc -l
+time curl -s http://localhost:8089/api/scores | wc -c
 
 echo "--- Recommend (2000) ---"
-time curl -s http://localhost:8089/api/recommend | wc -l
+time curl -s http://localhost:8089/api/recommend | wc -c
 
 echo "--- Graph (2000) ---"
-time curl -s http://localhost:8089/api/graph | wc -l
+time curl -s http://localhost:8089/api/graph | wc -c
 
 echo "--- Pulse (2000) ---"
-time curl -s http://localhost:8089/api/pulse | wc -l
+time curl -s http://localhost:8089/api/pulse | wc -c
 
+lsof -ti :8089 | xargs kill -9
 ```
 
 ### To run all evals (full suite)
 ```bash
 source skills/backlog-manager/evals/.venv/bin/activate
 lsof -ti :8089 | xargs kill -9
-find skills/backlog-manager/scripts -name "*.pyc" -delete
-find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
 
-python3 skills/backlog-manager/scripts/backlog_server.py &
+backlog-server --no-open &
 
 until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
 
@@ -434,10 +431,8 @@ EVAL_LLM=openai python3 -m pytest test_flow_live.py -v 2>&1 | tee results/test_r
 ```bash
 source skills/backlog-manager/evals/.venv/bin/activate
 lsof -ti :8089 | xargs kill -9
-find skills/backlog-manager/scripts -name "*.pyc" -delete
-find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
 
-python3 skills/backlog-manager/scripts/backlog_server.py &
+backlog-server --no-open &
 
 until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
 
@@ -449,10 +444,8 @@ python3 -m pytest test_flow_live.py::TestTribunalTiesFixture -v
 ```bash
 source skills/backlog-manager/evals/.venv/bin/activate
 lsof -ti :8089 | xargs kill -9
-find skills/backlog-manager/scripts -name "*.pyc" -delete
-find skills/backlog-manager/scripts -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null; true
 
-python3 skills/backlog-manager/scripts/backlog_server.py &
+backlog-server --no-open &
 
 until curl -sf http://localhost:8089/api/backlog > /dev/null; do sleep 0.5; done
 
