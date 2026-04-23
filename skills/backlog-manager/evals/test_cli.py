@@ -1320,3 +1320,373 @@ def test_review_gate_no_reviewer_available_notifies_user(tmp_path, monkeypatch):
     item = written["items"][0]
     user_threads = [t for t in item.get("threads", []) if t.get("waiting_on") == "user"]
     assert len(user_threads) >= 1, "Expected a waiting_on=user thread on the item"
+
+
+# ── #48: policy engine conflict resolution and adjudication ──────────────────
+
+from backlog.server import (
+    detect_policy_conflicts,
+    execute_policy_actions,
+    _CONTRADICTORY_PAIRS,
+    get_policy_log_path,
+    read_policy_log,
+    run_policy_engine,
+    get_policies_path,
+    save_policies,
+)
+
+
+def _policy_action(item_id, action_type, **kwargs):
+    return {"type": action_type, "item_id": item_id, "reason": "test", **kwargs}
+
+
+def _fired(policy_id, policy_name, item_id, action_type, **kwargs):
+    return {
+        "policy_id": policy_id,
+        "policy_name": policy_name,
+        "actions": [_policy_action(item_id, action_type, **kwargs)],
+    }
+
+
+def test_contradictory_pairs_defined():
+    """All three documented contradictory pairs are in _CONTRADICTORY_PAIRS."""
+    assert tuple(sorted(["escalate", "skip_force"])) in _CONTRADICTORY_PAIRS
+    assert tuple(sorted(["escalate", "block"])) in _CONTRADICTORY_PAIRS
+    assert tuple(sorted(["reprioritize", "skip_force"])) in _CONTRADICTORY_PAIRS
+
+
+def test_detect_conflicts_escalate_skip_force():
+    """escalate + skip_force on same item is detected as a conflict."""
+    fired = [
+        _fired("p1", "Policy A", "item001", "escalate"),
+        _fired("p2", "Policy B", "item001", "skip_force"),
+    ]
+    result = detect_policy_conflicts(fired)
+    assert len(result["conflicts"]) == 1
+    assert result["conflicts"][0]["item_id"] == "item001"
+    assert len(result["clean"]) == 0
+
+
+def test_detect_conflicts_escalate_block():
+    """escalate + block on same item is detected as a conflict."""
+    fired = [
+        _fired("p1", "Policy A", "item001", "escalate"),
+        _fired("p2", "Policy B", "item001", "block"),
+    ]
+    result = detect_policy_conflicts(fired)
+    assert len(result["conflicts"]) == 1
+
+
+def test_detect_conflicts_reprioritize_skip_force():
+    """reprioritize + skip_force on same item is detected as a conflict."""
+    fired = [
+        _fired("p1", "Policy A", "item001", "reprioritize", priority_weight=9),
+        _fired("p2", "Policy B", "item001", "skip_force"),
+    ]
+    result = detect_policy_conflicts(fired)
+    assert len(result["conflicts"]) == 1
+
+
+def test_non_contradictory_pair_no_conflict():
+    """notify + reprioritize on same item is NOT a conflict — both go to clean."""
+    fired = [
+        _fired("p1", "Policy A", "item001", "notify", message="heads up"),
+        _fired("p2", "Policy B", "item001", "reprioritize", priority_weight=8),
+    ]
+    result = detect_policy_conflicts(fired)
+    assert len(result["conflicts"]) == 0
+    assert len(result["clean"]) == 2
+
+
+def test_conflict_on_different_items_no_conflict():
+    """Contradictory action types on different items are not a conflict."""
+    fired = [
+        _fired("p1", "Policy A", "item001", "escalate"),
+        _fired("p2", "Policy B", "item002", "skip_force"),
+    ]
+    result = detect_policy_conflicts(fired)
+    assert len(result["conflicts"]) == 0
+    assert len(result["clean"]) == 2
+
+
+def test_execute_escalate_sets_priority_weight_to_9():
+    """escalate action sets priority_weight to at least 9."""
+    item = {"id": "item001", "title": "Test", "priority_weight": 5, "updated_at": "2026-01-01T00:00:00+00:00"}
+    data = {"items": [item]}
+    entries = [{"action": _policy_action("item001", "escalate"), "policy_name": "P1", "policy_id": "p1"}]
+    execute_policy_actions(entries, data)
+    assert item["priority_weight"] >= 9
+
+
+def test_execute_skip_force_increments_skip_count():
+    """skip_force action increments skip_count by 1."""
+    item = {"id": "item001", "title": "Test", "skip_count": 2, "updated_at": "2026-01-01T00:00:00+00:00"}
+    data = {"items": [item]}
+    entries = [{"action": _policy_action("item001", "skip_force"), "policy_name": "P1", "policy_id": "p1"}]
+    execute_policy_actions(entries, data)
+    assert item["skip_count"] == 3
+
+
+def test_execute_block_adds_thread():
+    """block action adds a waiting_on=user thread to the item."""
+    item = {"id": "item001", "title": "Test", "threads": [], "execution_history": [], "updated_at": "2026-01-01T00:00:00+00:00"}
+    data = {"items": [item]}
+    entries = [{"action": _policy_action("item001", "block"), "policy_name": "P1", "policy_id": "p1"}]
+    execute_policy_actions(entries, data)
+    assert len(item["threads"]) == 1
+    assert item["threads"][0]["waiting_on"] == "user"
+
+
+def test_execute_reprioritize_updates_priority_weight():
+    """reprioritize action sets priority_weight to specified value."""
+    item = {"id": "item001", "title": "Test", "priority_weight": 5, "updated_at": "2026-01-01T00:00:00+00:00"}
+    data = {"items": [item]}
+    entries = [{"action": _policy_action("item001", "reprioritize", priority_weight=9), "policy_name": "P1", "policy_id": "p1"}]
+    execute_policy_actions(entries, data)
+    assert item["priority_weight"] == 9
+
+
+def test_run_policy_engine_structured_conditions_no_llm(tmp_path):
+    """Structured-condition policies fire and log without needing ANTHROPIC_API_KEY."""
+    import json as _json
+
+    backlog_file = tmp_path / "backlog.json"
+    item = {
+        "id": "bugitem1", "title": "Critical bug", "status": "backlog",
+        "category": "bug", "priority_weight": 9, "assigned_to": None,
+        "complexity": "low", "tags": [], "links": [], "threads": [],
+        "lane_history": [], "execution_history": [], "readiness_signals": [],
+        "gate_from": 0, "reopen_count": 0, "skip_count": 0,
+        "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    data = {"version": 1, "config": {"statuses": [
+        {"id": "backlog", "label": "Backlog"}, {"id": "refined", "label": "Refined"},
+        {"id": "ready", "label": "Ready"},
+        {"id": "in-progress", "label": "In Progress", "requires": ["ready"]},
+        {"id": "code-review", "label": "Code Review", "requires": ["in-progress"]},
+        {"id": "done", "label": "Done", "requires": ["code-review"]},
+        {"id": "discarded", "label": "Discarded"},
+    ]}, "items": [item]}
+    backlog_file.write_text(_json.dumps(data))
+
+    # Write a structured policy that fires on this item
+    policies_file = get_policies_path(str(backlog_file))
+    policies_data = {
+        "version": 1,
+        "policies": [{
+            "id": "pol001",
+            "name": "Escalate critical unassigned bugs",
+            "description": "Escalate critical unassigned bugs",
+            "priority": 10,
+            "active": True,
+            "conditions": {
+                "match": "all",
+                "rules": [
+                    {"field": "category", "op": "eq", "value": "bug"},
+                    {"field": "priority_weight", "op": "gte", "value": 9},
+                    {"field": "assigned_to", "op": "null"},
+                ],
+            },
+            "action": {"type": "escalate", "reason": "Critical unassigned bug"},
+        }],
+    }
+    Path(policies_file).parent.mkdir(parents=True, exist_ok=True)
+    Path(policies_file).write_text(_json.dumps(policies_data))
+
+    result = run_policy_engine(data, str(backlog_file))
+
+    assert result["fires"] >= 1
+    # Log entry created
+    log_path = get_policy_log_path(str(backlog_file))
+    assert Path(log_path).exists()
+    log_data = read_policy_log(log_path)
+    entries = log_data.get("entries", [])
+    assert len(entries) >= 1
+    assert any(e.get("policy_id") == "pol001" for e in entries)
+
+
+def test_run_policy_engine_conflict_resolved_to_single_action(tmp_path, monkeypatch):
+    """When two contradictory structured policies fire on the same item, only one action applies."""
+    import json as _json
+
+    backlog_file = tmp_path / "backlog.json"
+    item = {
+        "id": "conflict1", "title": "Conflict item", "status": "backlog",
+        "category": "bug", "priority_weight": 9, "assigned_to": None,
+        "complexity": "low", "tags": [], "links": [], "threads": [],
+        "lane_history": [], "execution_history": [], "readiness_signals": [],
+        "gate_from": 0, "reopen_count": 0, "skip_count": 0,
+        "created_at": "2026-01-01T00:00:00+00:00", "updated_at": "2026-01-01T00:00:00+00:00",
+    }
+    data = {"version": 1, "config": {}, "items": [item]}
+    backlog_file.write_text(_json.dumps(data))
+
+    policies_file = get_policies_path(str(backlog_file))
+    policies_data = {
+        "version": 1,
+        "policies": [
+            {
+                "id": "pol_escalate", "name": "Escalate policy", "description": "Escalate",
+                "priority": 10, "active": True,
+                "conditions": {"match": "all", "rules": [{"field": "category", "op": "eq", "value": "bug"}]},
+                "action": {"type": "escalate", "reason": "escalate"},
+            },
+            {
+                "id": "pol_skip", "name": "Skip policy", "description": "Skip",
+                "priority": 9, "active": True,
+                "conditions": {"match": "all", "rules": [{"field": "category", "op": "eq", "value": "bug"}]},
+                "action": {"type": "skip_force", "reason": "skip"},
+            },
+        ],
+    }
+    Path(policies_file).parent.mkdir(parents=True, exist_ok=True)
+    Path(policies_file).write_text(_json.dumps(policies_data))
+
+    # Mock LLM adjudication to return the escalate action (no API key needed)
+    def mock_resolve(conflicts, context):
+        return [{"action": conflicts[0]["actions"][0], "resolution_reasoning": "escalate wins", "conflict_item_id": conflicts[0]["item_id"]}]
+
+    monkeypatch.setattr("backlog.server.resolve_conflicts_with_llm", mock_resolve)
+
+    run_policy_engine(data, str(backlog_file))
+
+    # Item must not be in both escalated AND skipped state simultaneously
+    # escalate → priority_weight >= 9; skip_force → skip_count > 0
+    # Only one should have been applied
+    escalated = item.get("priority_weight", 0) >= 9
+    skipped = item.get("skip_count", 0) > 0
+    assert not (escalated and skipped), "Both contradictory actions were applied — adjudication failed"
+
+
+# ── #50: concurrent write conflict detection and retry semantics ──────────────
+
+def test_conflict_version_equal_to_current_succeeds(tmp_backlog):
+    """Write with version exactly equal to current → succeeds, no ConflictError."""
+    invoke(["add", "Version match item"], tmp_backlog)
+    data = json.loads(Path(tmp_backlog).read_text())
+    current_version = data["version"]
+    # Write with matching version — should not raise
+    store = BacklogStore(tmp_backlog)
+    data2 = json.loads(Path(tmp_backlog).read_text())
+    data2["items"][0]["title"] = "Updated title"
+    store.write(data2, expected_version=current_version)
+    result = json.loads(Path(tmp_backlog).read_text())
+    assert result["items"][0]["title"] == "Updated title"
+
+
+def test_conflict_version_ahead_of_current_rejected(tmp_backlog):
+    """Write where file version has advanced past expected_version → ConflictError."""
+    invoke(["add", "Ahead version item"], tmp_backlog)
+    data = json.loads(Path(tmp_backlog).read_text())
+    stale_version = data["version"]
+    # Bump the file version externally to simulate a concurrent writer
+    data["version"] += 3
+    Path(tmp_backlog).write_text(json.dumps(data, indent=2))
+    # Now try to write claiming the old stale version — must be rejected
+    store = BacklogStore(tmp_backlog)
+    with pytest.raises(ConflictError):
+        store.write(data, expected_version=stale_version)
+
+
+def test_conflict_version_unchanged_after_stale_write(tmp_backlog):
+    """Stale write is rejected; file version does not advance."""
+    invoke(["add", "Stale write item"], tmp_backlog)
+    data_before = json.loads(Path(tmp_backlog).read_text())
+    version_before = data_before["version"]
+
+    # Bump file version externally to simulate concurrent write
+    data_before["version"] += 2
+    Path(tmp_backlog).write_text(json.dumps(data_before, indent=2))
+
+    store = BacklogStore(tmp_backlog)
+    with pytest.raises(ConflictError):
+        store.write({"version": version_before, "items": []}, expected_version=version_before)
+
+    # File version must not have changed
+    data_after = json.loads(Path(tmp_backlog).read_text())
+    assert data_after["version"] == version_before + 2
+
+
+def test_conflict_retry_succeeds_after_reread(tmp_backlog):
+    """Retry flow: re-read → re-apply → write with fresh version → succeeds."""
+    invoke(["add", "Retry item"], tmp_backlog)
+
+    # Simulate intervening write bumping version
+    data = json.loads(Path(tmp_backlog).read_text())
+    stale_version = data["version"]
+    data["version"] += 1
+    data["items"][0]["title"] = "Intervening change"
+    Path(tmp_backlog).write_text(json.dumps(data, indent=2))
+
+    # Retry: re-read and apply our change on top
+    store = BacklogStore(tmp_backlog)
+    fresh = json.loads(Path(tmp_backlog).read_text())
+    fresh["items"][0]["tags"] = ["retried"]
+    store.write(fresh, expected_version=fresh["version"])
+
+    result = json.loads(Path(tmp_backlog).read_text())
+    assert result["items"][0]["title"] == "Intervening change", "Intervening change lost after retry"
+    assert result["items"][0]["tags"] == ["retried"], "Retry change not applied"
+
+
+def test_conflict_cli_move_exit_code_2_on_stale(tmp_backlog, monkeypatch):
+    """CLI move exits with code 2 when ConflictError is raised."""
+    invoke(["add", "CLI conflict item"], tmp_backlog)
+    invoke(["move", "1", "ready"], tmp_backlog)
+
+    def always_conflict(self, data, expected_version):
+        raise ConflictError("concurrent write")
+
+    monkeypatch.setattr(BacklogStore, "write", always_conflict)
+    result = invoke(["move", "1", "in-progress"], tmp_backlog)
+    assert result.exit_code == 2, result.output
+
+
+def test_conflict_cli_edit_exit_code_2_on_stale(tmp_backlog, monkeypatch):
+    """CLI edit exits with code 2 when ConflictError is raised."""
+    invoke(["add", "Edit conflict item"], tmp_backlog)
+
+    def always_conflict(self, data, expected_version):
+        raise ConflictError("concurrent write")
+
+    monkeypatch.setattr(BacklogStore, "write", always_conflict)
+    result = invoke(["edit", "1", "--title", "New title"], tmp_backlog)
+    assert result.exit_code == 2, result.output
+
+
+def test_conflict_cli_done_exit_code_2_on_stale(tmp_backlog, monkeypatch):
+    """CLI done exits with code 2 when ConflictError is raised (item advanced past gate)."""
+    # Advance item through all gates so `done` is a valid target
+    invoke(["add", "Done conflict item"], tmp_backlog)
+    invoke(["move", "1", "ready"], tmp_backlog)
+    invoke(["move", "1", "in-progress"], tmp_backlog)
+    invoke(["move", "1", "code-review"], tmp_backlog)
+
+    def always_conflict(self, data, expected_version):
+        raise ConflictError("concurrent write")
+
+    monkeypatch.setattr(BacklogStore, "write", always_conflict)
+    result = invoke(["done", "1"], tmp_backlog)
+    assert result.exit_code == 2, result.output
+
+
+def test_conflict_sequential_second_write_rejected(tmp_backlog):
+    """Sequential simulation: first write advances version; second write with old version is rejected."""
+    invoke(["add", "Sequential conflict item"], tmp_backlog)
+
+    # Writer A reads, writes successfully — version advances
+    store = BacklogStore(tmp_backlog)
+    d_a = json.loads(Path(tmp_backlog).read_text())
+    stale_version = d_a["version"]
+    d_a["items"][0]["tags"] = ["writer-a"]
+    store.write(d_a, expected_version=stale_version)
+
+    # Writer B tries to write with the now-stale version → ConflictError
+    d_b = json.loads(Path(tmp_backlog).read_text())
+    d_b["items"][0]["tags"] = ["writer-b"]
+    with pytest.raises(ConflictError):
+        store.write(d_b, expected_version=stale_version)
+
+    # File reflects writer-a's change, not writer-b's
+    final = json.loads(Path(tmp_backlog).read_text())
+    assert final["items"][0]["tags"] == ["writer-a"], "Writer B overwrote Writer A's change"
