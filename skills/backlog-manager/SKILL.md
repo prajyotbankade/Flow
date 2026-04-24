@@ -204,6 +204,8 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 ## Operations
 
+> **Lane = status.** Both terms refer to where an item sits in the workflow (`backlog → refined → ready → in-progress → code-review → done`). They are interchangeable in CLI output and docs.
+
 **Add** — Append to end, `status: backlog`, generate 8-char random alphanumeric ID (lowercase letters + digits; not UUID-based, never reused). Default `priority_weight = 5` if not set. Infer `category`, `complexity`, `tags`, `priority_weight` from context — don't ask. Confirm: "Added as #N (category, complexity, [tags])."
 
 **List** — Group by status: `#N title [score: X] (assigned, complexity, category) — flags`
@@ -258,6 +260,11 @@ Types: `blocks`, `discovered-during`, `follow-up`, `related`. `reason` is requir
 
 - Use `blocks` only when the dependent item **cannot or should not start** without this one done. Overusing `blocks` inflates leverage scores and corrupts gate rules.
 - Use `related` for everything else — parallel work, thematic connections, context links.
+
+```
+blocks:  "Auth service must be deployed before login feature can start"
+related: "Frontend form is thematically linked to the auth spec but can begin independently"
+```
 
 ## Concurrency Safety
 
