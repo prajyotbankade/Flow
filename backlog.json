@@ -1,5 +1,5 @@
 {
-  "version": 561,
+  "version": 563,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -607,8 +607,8 @@
     {
       "id": "c3d4e5f6",
       "title": "Code review assignment \u2014 who reviews agent work?",
-      "description": "When an agent moves an item to code-review, there is no mechanism to assign a reviewer or notify anyone. The item sits in code-review indefinitely with no owner.\n\nNeeds a solution for:\n1. **Reviewer assignment**: `assigned_to` currently tracks the worker \u2014 we need a separate `reviewer` field (or a convention like `assigned_to` transfers on code-review entry)\n2. **Notification / visibility**: reviewer should be surfaced in pulse, board, and CLI show output\n3. **Policy hook**: a policy rule like `on: enter_lane(code-review) \u2192 assign_reviewer(lead)` would make this automatic\n\nDecisions needed before refining: does reviewer replace or supplement assigned_to? Is 'lead' a special agent role or just a config value?",
-      "status": "backlog",
+      "description": "When an agent moves an item to code-review, there is no mechanism to assign a reviewer or notify anyone. The item sits in code-review indefinitely with no owner.\n\nNeeds a solution for:\n1. **Reviewer assignment**: `assigned_to` currently tracks the worker \u2014 we need a separate `reviewer` field (or a convention like `assigned_to` transfers on code-review entry)\n2. **Notification / visibility**: reviewer should be surfaced in pulse, board, and CLI show output\n3. **Policy hook**: a policy rule like `on: enter_lane(code-review) \u2192 assign_reviewer(lead)` would make this automatic\n\nDecisions needed before refining: does reviewer replace or supplement assigned_to? Is 'lead' a special agent role or just a config value?\n\n## Spec\n\n**Acceptance criteria:**\n1. When any item enters `code-review` (via CLI move, server API, or ingest), `reviewer` is auto-set to the agent with `role: \"reviewer\"` in config, excluding the current `assigned_to`\n2. On re-entry to `in-progress` after rejection, `assigned_to` is set to the current `reviewer` (they own the fix)\n3. On re-entry to `code-review`, `reviewer` is cleared and a fresh reviewer assigned (again excluding new `assigned_to`)\n4. `reviewer_history` (list) tracks all past reviewers per item for audit\n5. `backlog show N` displays the `reviewer` field\n6. `backlog list` shows reviewer name next to code-review items\n7. Pulse surfaces items in code-review with `reviewer: null` as warnings\n8. If no eligible reviewer-role agent exists: `reviewer = null`, warning thread opened on item\n\n**Failure modes:**\n- No agent with `role: \"reviewer\"` configured \u2192 reviewer null, warning in pulse + thread on item\n- All reviewer-role agents are the same as assigned_to \u2192 same fallback\n- Concurrent write \u2192 standard HTTP 409 version-conflict handling\n\n**Edge cases:**\n- Item enters code-review without passing in-progress first \u2192 still auto-assign reviewer\n- Item has no assigned_to \u2192 any reviewer-role agent eligible\n- Ingest moves item to in-progress on reject \u2192 assigned_to set to reviewer at that point\n- Multiple reviewer-role agents \u2192 pick first available (not excluded)\n",
+      "status": "in-progress",
       "category": "feature",
       "priority_weight": 7,
       "complexity": "medium",
@@ -618,12 +618,17 @@
         "code-review"
       ],
       "created_at": "2026-04-03T23:50:00.000000+00:00",
-      "updated_at": "2026-04-04T02:49:53.900Z",
+      "updated_at": "2026-04-24T03:47:57.705745+00:00",
       "lane_history": [
         {
           "lane": "backlog",
           "at": null,
           "by": "unknown"
+        },
+        {
+          "lane": "backlog",
+          "at": "2026-04-24T03:47:57.705575+00:00",
+          "by": "cli"
         }
       ],
       "gate_from": 0,
@@ -631,7 +636,14 @@
       "reopen_count": 0,
       "assigned_to": null,
       "notes": "",
-      "execution_history": []
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:47:57.705750+00:00",
+          "detail": "backlog \u2192 in-progress (forward)"
+        }
+      ]
     },
     {
       "id": "z1a2b3c4",

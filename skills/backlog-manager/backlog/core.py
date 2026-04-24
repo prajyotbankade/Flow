@@ -283,6 +283,46 @@ def apply_lane_transition(item: dict, new_status: str, statuses: list, moved_by:
 _apply_lane_transition = apply_lane_transition
 
 
+def _select_reviewer(data: dict, item: dict) -> str | None:
+    """Pick an eligible reviewer from config.agents.
+
+    Prefers agents with role='reviewer'. Excludes:
+    - the current assigned_to (they just did the work)
+    - anyone already in reviewer_history who is also the current assigned_to
+      (prevents the worker from self-reviewing after a reject cycle)
+
+    Returns agent name, or None if no eligible reviewer found.
+    """
+    agents = data.get("config", {}).get("agents", {})
+    if not agents:
+        return None
+    exclude = set(filter(None, [item.get("assigned_to")]))
+    # Prefer reviewer-role agents, then fall back to any configured agent
+    candidates = sorted(
+        agents.items(),
+        key=lambda kv: (0 if kv[1].get("role") == "reviewer" else 1),
+    )
+    for name, _ in candidates:
+        if name not in exclude:
+            return name
+    return None
+
+
+def _auto_assign_reviewer(item: dict, data: dict) -> str | None:
+    """Auto-assign reviewer when item enters code-review.
+
+    Sets item['reviewer'] and appends to item['reviewer_history'].
+    Returns the assigned reviewer name, or None if no eligible agent found.
+    """
+    reviewer = _select_reviewer(data, item)
+    item["reviewer"] = reviewer
+    if reviewer:
+        history = item.setdefault("reviewer_history", [])
+        if reviewer not in history:
+            history.append(reviewer)
+    return reviewer
+
+
 class BacklogStore:
     """All backlog CRUD + gate enforcement. File-backed, thread-safe via atomic writes."""
 
@@ -425,7 +465,18 @@ class BacklogStore:
         if not ok:
             raise GateViolationError(err)
 
+        old_status = item.get("status")
         _apply_lane_transition(item, target_status, statuses, moved_by=moved_by)
+
+        if target_status == "code-review":
+            _auto_assign_reviewer(item, data)
+        elif target_status == "in-progress" and old_status == "code-review":
+            # Reviewer is taking ownership after a rejection
+            reviewer = item.get("reviewer")
+            if reviewer:
+                item["assigned_to"] = reviewer
+                item["reviewer"] = None
+
         self.write(data, expected_version=data.get("version", 0))
         return item
 
@@ -584,6 +635,8 @@ class BacklogStore:
                     next_lane = sid
                     break
             _apply_lane_transition(target, next_lane, statuses, moved_by="ingest")
+            if next_lane == "code-review":
+                _auto_assign_reviewer(target, data)
             actions.append(f"advanced item {item_id} to {next_lane!r}")
 
         else:
@@ -609,7 +662,12 @@ class BacklogStore:
             # A review reject (verdict=reject) moves the item back to in-progress so the
             # developer can address the blockers before re-submitting for review.
             if report.get("verdict") == "reject" and target.get("status") == "code-review":
+                reviewer = target.get("reviewer")
                 _apply_lane_transition(target, "in-progress", statuses, moved_by="ingest")
+                # Reviewer takes ownership of the fix
+                if reviewer:
+                    target["assigned_to"] = reviewer
+                    target["reviewer"] = None
                 actions.append(f"moved item {item_id} back to 'in-progress' (review rejected)")
 
         # ── Discovered items ──────────────────────────────────────────────────

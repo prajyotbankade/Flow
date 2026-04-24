@@ -124,15 +124,18 @@ def _print_board(data: dict, filter_status: Optional[str] = None,
         for item in groups[sid]:
             pos = pos_map.get(item.get("id"), "?")
             assigned = f" [dim](→ {item['assigned_to']})[/dim]" if item.get("assigned_to") else ""
+            reviewer = item.get("reviewer")
+            reviewer_flag = f" [magenta](reviewer: {reviewer})[/magenta]" if reviewer else (
+                " [yellow](no reviewer)[/yellow]" if sid == "code-review" else ""
+            )
             unresolved = sum(
                 1 for t in item.get("threads", []) if not t.get("resolved")
             )
             thread_flag = f" [yellow]⚠ {unresolved} unresolved[/yellow]" if unresolved else ""
-            done_marker = "✓ " if sid == "done" else "  "
             arrow = "→ " if sid == "in-progress" else "  "
             console.print(
                 f"  {arrow}[cyan]#{pos}[/cyan] {item.get('title', '')}"
-                f"{assigned}{thread_flag}"
+                f"{assigned}{reviewer_flag}{thread_flag}"
             )
         console.print()
 
@@ -149,6 +152,12 @@ def _print_item(item: dict, position: int, as_json: bool = False) -> None:
     console.print(f"  Category:   {item.get('category', '')}")
     console.print(f"  Tags:       {', '.join(item.get('tags', []))}")
     console.print(f"  Assigned:   {item.get('assigned_to') or '(unassigned)'}")
+    reviewer = item.get("reviewer")
+    reviewer_history = item.get("reviewer_history", [])
+    if reviewer or item.get("status") == "code-review":
+        console.print(f"  Reviewer:   {reviewer or '(unassigned)'}")
+    if reviewer_history:
+        console.print(f"  Rev. history: {', '.join(reviewer_history)}")
     if item.get("description"):
         console.print(f"  Description:\n    {item['description']}")
     threads = item.get("threads", [])

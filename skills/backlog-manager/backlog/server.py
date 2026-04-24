@@ -53,6 +53,7 @@ from .core import (
     validate_lane_transition,
     apply_lane_transition,
     _append_execution_history,
+    _auto_assign_reviewer,
 )
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
 
@@ -997,9 +998,15 @@ def compute_pulse(data, agent_name=None, backlog_path=None):
             "readiness": round(rd["score"], 2),
             "readiness_level": "ready" if rd["score"] >= 0.90 else "startable",
         })
+    unreviewed = [
+        {"id": i.get("id"), "title": i.get("title", ""), "assigned_to": i.get("assigned_to")}
+        for i in items
+        if i.get("status") == "code-review" and not i.get("reviewer")
+    ]
     result = {
         "agent": agent_name, "recommendation": recommendation, "startable_items": startable[:5],
         "conflicts": conflicts, "rebalancing": rebalancing, "active_agents": active_agents,
+        "unreviewed_items": unreviewed,
         "generated_at": datetime.now(timezone.utc).isoformat(),
     }
     if backlog_path:
@@ -2144,6 +2151,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
                     old_snapshot = dict(item)
                     new_status = item_data.get("status")
                     if new_status and new_status != item.get("status"):
+                        old_status = item.get("status")
                         statuses = get_status_config(data)
                         ok, err = validate_lane_transition(item, new_status, statuses)
                         if not ok:
@@ -2151,11 +2159,21 @@ class BacklogHandler(BaseHTTPRequestHandler):
                             return
                         moved_by = item_data.pop("_moved_by", "board")
                         apply_lane_transition(item, new_status, statuses, moved_by=moved_by)
+                        if new_status == "code-review":
+                            _auto_assign_reviewer(item, data)
+                        elif new_status == "in-progress" and old_status == "code-review":
+                            reviewer = item.get("reviewer")
+                            if reviewer:
+                                item["assigned_to"] = reviewer
+                                item["reviewer"] = None
                         # Sync authoritative fields back to item_data
                         item_data["lane_history"] = item["lane_history"]
                         item_data["gate_from"] = item.get("gate_from", 0)
                         item_data["reopen_count"] = item.get("reopen_count", 0)
                         item_data["updated_at"] = item.get("updated_at", "")
+                        item_data["reviewer"] = item.get("reviewer")
+                        item_data["reviewer_history"] = item.get("reviewer_history", [])
+                        item_data["assigned_to"] = item.get("assigned_to")
                     else:
                         item_data.pop("_moved_by", None)
                     data["items"][i].update(item_data)
