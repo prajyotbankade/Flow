@@ -21,6 +21,21 @@ Invoke proactively (without being asked) when:
 
 ---
 
+## Quick Start
+
+This is all you need 80% of the time:
+
+1. `backlog top` — see what's next
+2. `backlog pick <your-name>` — claim the top ready item → moves it to `in-progress`
+3. Do the work
+4. `backlog move N code-review` — when done
+5. `backlog handoff reviewer --item N --review` → `backlog ingest <result_file>` — closes the review gate
+6. Blocked? Open a thread on the item, set `waiting_on: "user"`, notify the user
+
+Full protocols for code review, spec gate, delegation, and orchestration are below.
+
+---
+
 ## Setup
 
 The skill ships as an installable Python package. Install once per machine:
