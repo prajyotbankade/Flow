@@ -399,12 +399,14 @@ def test_file_flag_overrides_env_var(tmp_backlog, tmp_path, monkeypatch):
     assert "Override item" in result.output
 
 
-def test_no_file_specified_exits_with_error(monkeypatch):
-    """No --file and BACKLOG_FILE not set → exit 1 with clear message."""
+def test_no_file_specified_defaults_to_backlog_json(monkeypatch, tmp_path):
+    """No --file and BACKLOG_FILE not set → defaults to ./backlog.json in cwd."""
     monkeypatch.delenv("BACKLOG_FILE", raising=False)
+    monkeypatch.chdir(tmp_path)
+    # No backlog.json exists yet — list should exit with file-not-found, not a config error
     result = runner.invoke(app, ["list"])
-    assert result.exit_code == 1, result.output
-    assert "BACKLOG_FILE" in result.output or "backlog file" in result.output.lower()
+    # Should not complain about missing env var — the default path is used
+    assert "BACKLOG_FILE" not in result.output
 
 
 # ── Test: --json output ────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 """Backlog CLI — thin Typer adapter over BacklogStore.
 
 File resolution precedence:
-  --file flag  >  BACKLOG_FILE env var  >  error
+  --file flag  >  BACKLOG_FILE env var  >  ./backlog.json (default)
 
 Exit codes:
   0 — success
@@ -39,14 +39,7 @@ err_console = Console(stderr=True)
 # ── File resolution ────────────────────────────────────────────────────────────
 
 def _resolve_file(file_flag: Optional[str]) -> str:
-    path = file_flag or os.environ.get("BACKLOG_FILE")
-    if not path:
-        err_console.print(
-            "[red]Error:[/red] No backlog file specified. "
-            "Use [bold]--file[/bold] or set [bold]BACKLOG_FILE[/bold]."
-        )
-        raise typer.Exit(1)
-    return path
+    return file_flag or os.environ.get("BACKLOG_FILE", "backlog.json")
 
 
 def _store(file_flag: Optional[str]) -> BacklogStore:
@@ -476,7 +469,7 @@ def init_cmd(
         else:
             console.print("[yellow]backlog.json already exists.[/yellow] Run [bold]backlog doctor --fix[/bold] to check setup.")
         raise typer.Exit(1)
-    console.print(f"[green]Created[/green] {store.file_path}")
+    console.print(f"[green]✓[/green] Created {store.file_path}")
 
     # Auto-wire CLAUDE.md so agents use the backlog without extra setup steps
     cwd = Path.cwd()
@@ -484,14 +477,17 @@ def init_cmd(
     if not (claude_md and _snippet_present(claude_md)):
         target = claude_md or (cwd / "CLAUDE.md")
         _write_snippet(target)
-        console.print(f"[green]Updated[/green] {target.name} — agents will use the backlog automatically")
-        console.print("[dim]  Commit CLAUDE.md so all agents and teammates inherit the setup.[/dim]")
+        console.print(f"[green]✓[/green] Updated {target.name} — agents will use the backlog automatically")
+        console.print(f"[dim]  git add {target.name} && git commit -m 'chore: add flow backlog setup'[/dim]")
+    else:
+        console.print(f"[green]✓[/green] CLAUDE.md already configured")
 
     console.print()
-    console.print("[bold]Next steps:[/bold]")
-    console.print('  backlog add "Your first task"          [dim]# add an item[/dim]')
+    console.print("[bold green]You're ready.[/bold green]")
+    console.print()
+    console.print('  backlog add "Your first task"')
+    console.print("  backlog top                             [dim]# what to work on next[/dim]")
     console.print("  backlog board                           [dim]# open the visual board[/dim]")
-    console.print("  backlog list                            [dim]# view your backlog[/dim]")
 
 
 # ── CLAUDE.md snippet ─────────────────────────────────────────────────────────
@@ -504,10 +500,8 @@ _CLAUDE_MD_SNIPPET = """\
 
 This project uses the Flow backlog manager skill.
 
-- **What to work on next:** `BACKLOG_FILE=./backlog.json backlog top`
+- **What to work on next:** `backlog top`
 - **Never reason about priorities yourself** — always check the backlog first
-- **All backlog commands:** prefix with `BACKLOG_FILE=./backlog.json` or set the env var once:
-  `export BACKLOG_FILE=./backlog.json`
 - **First time on a session:** run `backlog top` to orient, then pick up the top item
 <!-- end flow-backlog-setup -->
 """
@@ -611,7 +605,7 @@ def doctor(
     if os.environ.get("BACKLOG_FILE"):
         ok.append(f"BACKLOG_FILE env var set → {os.environ['BACKLOG_FILE']}")
     else:
-        issues.append("BACKLOG_FILE env var not set — commands need --file or the env var each time")
+        ok.append("BACKLOG_FILE env var not set — defaulting to ./backlog.json (no config needed)")
 
     # ── Report ────────────────────────────────────────────────────────────────
     console.print()

@@ -1,5 +1,5 @@
 {
-  "version": 541,
+  "version": 555,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -1838,6 +1838,225 @@
       "skip_count": 0,
       "created_at": "2026-04-23T14:23:38.453577+00:00",
       "updated_at": "2026-04-23T14:24:12.644398+00:00"
+    },
+    {
+      "id": "99i1f62i",
+      "title": "Agent workflow: branch-per-item, notify user when ready to merge, never auto-merge to main",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "git",
+        "workflow",
+        "safety",
+        "agent"
+      ],
+      "description": "Each backlog item gets its own branch (e.g. flow/item-N-slug). Agent works on the branch, commits there. When the code-review gate passes, agent notifies the user that the branch is ready and asks to merge. Main is never touched until the user confirms. Mirrors standard GitHub Flow / enterprise git practice where main = production.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-24T02:20:05.140040+00:00",
+      "updated_at": "2026-04-24T02:20:05.140040+00:00"
+    },
+    {
+      "id": "bnc7tra8",
+      "title": "Split SKILL.md into operating protocol and reference docs",
+      "status": "backlog",
+      "priority_weight": 9,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "docs",
+        "skill",
+        "dx",
+        "adoption"
+      ],
+      "description": "SKILL.md currently serves two audiences: agents operating the skill and humans understanding it. Split into: (1) SKILL.md \u2014 activation hints, decision hierarchy, code review protocol, spec gate, proactive follow-up rule \u2014 agents need nothing else. (2) REFERENCE.md \u2014 full CLI reference, API table, scoring formula, lane gate internals, concurrency safety, policy condition syntax. Agents discover these via --help or on-demand reads. Result: SKILL.md becomes a focused operating protocol, not a reference manual.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-24T02:29:57.133520+00:00",
+      "updated_at": "2026-04-24T02:29:57.133520+00:00"
+    },
+    {
+      "id": "7zdekh6n",
+      "title": "Default BACKLOG_FILE to ./backlog.json when env var not set",
+      "status": "done",
+      "priority_weight": 9,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "dx",
+        "setup",
+        "adoption"
+      ],
+      "description": "One-line code change: when BACKLOG_FILE env var is not set, default to ./backlog.json in the current directory. Most users run from project root \u2014 the common case should require zero config. Eliminates the biggest setup friction point.",
+      "links": [],
+      "threads": [
+        {
+          "id": "bzlghgyf",
+          "waiting_on": "lead",
+          "status": "partial",
+          "body": "Raw output (JSON parse failed)",
+          "created_at": "2026-04-24T02:41:19.333520+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-24T02:37:11.887196+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-24T02:37:12.017769+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-24T02:40:08.693355+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-24T02:41:42.592562+00:00",
+          "by": "cli"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T02:37:11.887374+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T02:37:12.017953+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T02:40:08.693545+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T02:41:42.592736+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-24T02:33:58.857550+00:00",
+      "updated_at": "2026-04-24T02:41:42.592732+00:00"
+    },
+    {
+      "id": "ct4ykg04",
+      "title": "Collapse init flow into single backlog init command",
+      "status": "done",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "dx",
+        "setup",
+        "adoption"
+      ],
+      "description": "backlog init should do everything in one shot: create backlog.json, write the CLAUDE.md section, print 'You are ready'. Currently users need backlog doctor --fix plus manually committing CLAUDE.md \u2014 that is two extra steps after init. backlog doctor --fix stays for repair/verification but init becomes the complete happy path.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-24T02:50:50.413951+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-24T02:50:50.547017+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-24T03:04:15.713620+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-24T03:04:32.649956+00:00",
+          "by": "cli"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T02:50:50.414131+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T02:50:50.547179+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:04:15.713822+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:04:32.650138+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-24T02:33:59.055198+00:00",
+      "updated_at": "2026-04-24T03:04:32.650133+00:00"
+    },
+    {
+      "id": "05urh6gs",
+      "title": "Publish to PyPI and support uvx backlog-manager",
+      "status": "backlog",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "dx",
+        "setup",
+        "adoption",
+        "distribution"
+      ],
+      "description": "pip install -e . from a cloned repo is a contributor workflow, not a user workflow. Publish the package to PyPI so users can run: uvx backlog-manager init \u2014 no clone, no virtualenv, no manual install. uvx is the modern Python equivalent of npx. This is the adoption multiplier \u2014 strangers can try the tool in 10 seconds.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-24T02:33:59.192353+00:00",
+      "updated_at": "2026-04-24T02:33:59.192353+00:00"
     }
   ],
   "config": {
