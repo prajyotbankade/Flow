@@ -1,5 +1,5 @@
 {
-  "version": 555,
+  "version": 561,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -1866,7 +1866,7 @@
     {
       "id": "bnc7tra8",
       "title": "Split SKILL.md into operating protocol and reference docs",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 9,
       "complexity": "medium",
       "category": "feature",
@@ -1879,13 +1879,59 @@
       "description": "SKILL.md currently serves two audiences: agents operating the skill and humans understanding it. Split into: (1) SKILL.md \u2014 activation hints, decision hierarchy, code review protocol, spec gate, proactive follow-up rule \u2014 agents need nothing else. (2) REFERENCE.md \u2014 full CLI reference, API table, scoring formula, lane gate internals, concurrency safety, policy condition syntax. Agents discover these via --help or on-demand reads. Result: SKILL.md becomes a focused operating protocol, not a reference manual.",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-04-24T03:16:42.532743+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-04-24T03:16:42.681484+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-24T03:20:56.359535+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-04-24T03:21:13.498541+00:00",
+          "by": "cli"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:16:42.532915+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:16:42.681659+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:20:56.359694+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:21:13.498734+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-04-24T02:29:57.133520+00:00",
-      "updated_at": "2026-04-24T02:29:57.133520+00:00"
+      "updated_at": "2026-04-24T03:21:13.498730+00:00"
     },
     {
       "id": "7zdekh6n",
@@ -2038,7 +2084,7 @@
       "id": "05urh6gs",
       "title": "Publish to PyPI and support uvx backlog-manager",
       "status": "backlog",
-      "priority_weight": 8,
+      "priority_weight": 4,
       "complexity": "medium",
       "category": "feature",
       "tags": [
@@ -2047,7 +2093,7 @@
         "adoption",
         "distribution"
       ],
-      "description": "pip install -e . from a cloned repo is a contributor workflow, not a user workflow. Publish the package to PyPI so users can run: uvx backlog-manager init \u2014 no clone, no virtualenv, no manual install. uvx is the modern Python equivalent of npx. This is the adoption multiplier \u2014 strangers can try the tool in 10 seconds.",
+      "description": "pip install -e . from a cloned repo is a contributor workflow, not a user workflow. Publish the package to PyPI so users can run: uvx backlog-manager init \u2014 no clone, no virtualenv, no manual install. uvx is the modern Python equivalent of npx. This is the adoption multiplier \u2014 strangers can try the tool in 10 seconds.\n\n## Why parked\nRequires a PyPI account (pypi.org) \u2014 free to create, takes 5 minutes. Parked until account is ready.\n\n## What's already done\n- pyproject.toml is valid and ready: name, version, dependencies, scripts all set\n- setuptools build backend configured\n- Package structure is correct\n- uvx support costs nothing extra \u2014 works automatically once on PyPI\n\n## What's needed before pickup\n1. Create PyPI account at pypi.org and generate an API token\n2. Verify 'backlog-manager' name is available on PyPI (may already be taken)\n3. Add missing pyproject.toml metadata: description, author, license, readme, homepage\n4. Run: pip install build twine && python -m build && twine upload dist/*\n5. Optional but recommended: GitHub Actions workflow to auto-publish on tag push\n\n## Decision needed\nWho is the target user for uvx backlog-manager?\n- Claude Code users following a README \u2192 PyPI makes sense, one-liner install\n- People who clone this repo \u2192 pip install -e . is already fine\nPyPI adds real value if strangers should be able to try it without cloning.",
       "links": [],
       "threads": [],
       "lane_history": [],
@@ -2056,7 +2102,7 @@
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-04-24T02:33:59.192353+00:00",
-      "updated_at": "2026-04-24T02:33:59.192353+00:00"
+      "updated_at": "2026-04-24T03:13:00.196775+00:00"
     }
   ],
   "config": {

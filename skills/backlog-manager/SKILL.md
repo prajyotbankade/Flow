@@ -26,36 +26,24 @@ The skill ships as an installable Python package. Install once per machine:
 ```bash
 cd <skill-path>
 pip install -e .
-export BACKLOG_FILE=/path/to/backlog.json   # or pass --file on every command
 ```
+
+Then run once per project to create `backlog.json` and wire up `CLAUDE.md`:
+
+```bash
+backlog init
+```
+
+That's it. No env vars, no extra steps. `backlog` defaults to `./backlog.json` in your project root.
 
 > **Backup:** Copy `backlog.json` before upgrading the skill or making bulk edits. There is no automatic migration.
 
-This gives you two entry points:
-- **`backlog`** — CLI for agents and terminal users (no server required)
-- **`backlog-server`** — HTTP server for the web Kanban board
-
 **Which interface to use:**
 - Agents and scripts → `backlog` CLI
-- Visual management → `backlog board` (or `backlog-server --file ...`)
+- Visual management → `backlog board`
 - Natural language → Claude skill (this file)
 
-## First Use on a New Project
-
-When this skill is invoked on a project for the first time, run:
-
-```bash
-backlog doctor --fix
-```
-
-This checks that `backlog.json` exists and writes a `## Flow Backlog` section to the project's `CLAUDE.md`. That section tells every future agent on this project to use `backlog top` for priority — without needing the skill to be explicitly invoked again.
-
-**Always commit the updated CLAUDE.md** so all agents and teammates inherit the setup.
-
-To verify setup at any time (read-only):
-```bash
-backlog doctor
-```
+---
 
 ## How to Operate
 
@@ -70,8 +58,7 @@ Agents do not need the server running. Use the CLI directly.
 
 **Start the web board** (human visual use only):
 ```bash
-backlog board                          # uses BACKLOG_FILE, port 8089
-backlog-server --file backlog.json     # explicit path, same thing
+backlog board       # port 8089
 ```
 
 ## Decision Hierarchy
@@ -160,87 +147,6 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 
 ---
 
-## CLI Reference
-
-```bash
-# File resolution: --file flag > BACKLOG_FILE env var > error
-export BACKLOG_FILE=/path/to/backlog.json
-
-backlog top                           # top 5 items by score — what to work on next (no server needed)
-backlog top 10                        # top 10 items by score
-backlog top --json                    # machine-readable ranked list
-
-backlog list                          # board grouped by lane
-backlog list --status ready           # filter by lane
-backlog list --assigned-to alice      # filter by assignee
-backlog list --json                   # machine-readable output
-
-backlog show 3                        # full detail for #3
-backlog show 3 --json                 # machine-readable detail
-
-backlog add "Title"                   # add to backlog
-backlog add "Title" --priority high --complexity low --tags "auth,backend"
-backlog add "Title" --description "Details" --priority-weight 8 --category bug --assigned-to alice
-
-backlog move 3 in-progress            # lane transition (gate rules enforced)
-backlog done 3                        # move to done
-backlog assign 3 --to alice
-backlog unassign 3
-
-backlog pick alice                    # pick top ready item → in-progress
-backlog pick alice --json             # machine-readable picked item
-backlog discard 3                     # always allowed from any lane
-backlog restore 3                     # always goes back to backlog
-
-backlog edit 3 --title "New title"
-backlog edit 3 --description "Updated details" --priority high --complexity low
-backlog edit 3 --priority-weight 9 --category bug --tags "auth,backend" --assigned-to alice
-
-backlog init                          # create starter backlog.json
-backlog board                         # launch web board (port 8089)
-backlog board --port 9000             # custom port
-
-backlog handoff reviewer --item 3 --review   # review handoff: pass/reject verdict
-backlog handoff backend-dev --item 3         # work handoff: done/blocked/partial
-
-backlog orchestrate                   # supervised mode (default): acts on ready+ items
-backlog orchestrate --mode auto       # auto mode: lead agent refines + starts items autonomously
-backlog orchestrate --poll 30         # tick interval in seconds (default 10)
-backlog orchestrate --once            # single tick and exit
-backlog orchestrate --dry-run         # print actions without invoking agents
-
-backlog init                          # create starter backlog.json
-backlog doctor                        # check project setup (backlog.json + CLAUDE.md)
-backlog doctor --fix                  # write missing CLAUDE.md setup so agents use the backlog automatically
-```
-
-**Exit codes:** `0` success · `1` gate violation / not found / validation error · `2` version conflict (re-read and retry)
-
----
-
-Data store: `backlog.json` at project root. Always re-read before writing. Increment `version` on every write.
-
-Status flow: `backlog → refined → ready → in-progress → code-review → done` (`discarded` from any lane, no gates).
-
-Items referenced by position: `#1` = index 0, `#2` = index 1, etc.
-
-## Pulse — Primary Agent Interface
-
-Call `GET /api/pulse?agent=<your-name>` as your single source of truth. One call replaces `/api/recommend`, `/api/scores`, `/api/agents`, `/api/policies`, and `/api/policies/log`.
-
-**Response fields:**
-- **recommendation**: Tribunal pick with justification, confidence, supporting lenses, shadow ranking of runners-up
-- **startable_items**: Items at >=70% readiness available now (max 5)
-- **conflicts**: In-progress items in your area (tag overlap with other agents) — check before starting
-- **rebalancing**: Suggestions if load is uneven across agents
-- **active_agents**: Who is working on what, current load percentage
-- **policies**: Policy intelligence:
-  - `active_count` — number of active policies
-  - `recent_fires` — last 5 policy fires with reasoning and action types
-  - `notifications` — recent policy notifications (no state change, just alerts)
-  - `influences_on_pick` — policy actions that affected the recommended item
-  - `stale_warnings` — policies that may be redundant or outdated
-
 ## Work Brief Format
 
 ```
@@ -279,9 +185,7 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 ---
 
-## Reference
-
-### Operations
+## Operations
 
 **Add** — Append to end, `status: backlog`, generate 8-char random alphanumeric ID (lowercase letters + digits; not UUID-based, never reused). Default `priority_weight = 5` if not set. Infer `category`, `complexity`, `tags`, `priority_weight` from context — don't ask. Confirm: "Added as #N (category, complexity, [tags])."
 
@@ -328,234 +232,18 @@ Add the item, link it to the source (`follow-up` or `discovered-during`), and me
 1. Add a `blocks` link only if the feature genuinely cannot or should not start without the doctrine in place. Otherwise use `related` — misusing `blocks` inflates leverage scores and corrupts gate rules.
 2. Set `priority_weight` to reflect the cascade value, not just the item's own size — a low-effort item that improves every future agent run is worth more than its line count suggests.
 
-### Linking
+## Linking
 
 ```json
 { "item_id": "abc12345", "type": "blocks", "reason": "one sentence why" }
 ```
 Types: `blocks`, `discovered-during`, `follow-up`, `related`. `reason` is required on every link.
 
-### Scoring
-
-```
-score = base_priority
-      + unblock_weight × (# items this blocks)
-      + freshness
-      + complexity_bonus
-      + blocked_penalty        (dynamic: scales with blocker readiness)
-      + quick_win_bonus        (low complexity + blockers ≥ ready_threshold)
-      + reopen_count × reopen_penalty_per
-      + skip_count × skip_floor_per
-      + critical_bug_boost     (category=bug AND priority_weight ≥ 9)
-```
-
-`base_priority`: `priority_weight × factor`. All items receive `priority_weight = 5` at creation if not explicitly set, ensuring consistent scoring across mixed backlogs. `blocked_penalty` scales with blocker readiness — a blocker at 70% applies only 30% of the penalty; a fully-done blocker applies 0. All weights configurable via `config.scoring`.
-
-### Readiness Signals
-
-Each item has a **readiness score** (0.0–1.0) derived from status baseline + artifact signals:
-
-| Status baseline | `backlog`=5% | `refined`=20% | `ready`=35% | `in-progress`=50% | `code-review`=70% | `done`=100% |
-
-Signal types (additive):
-
-| Type | Trust | Meaning |
-|---|---|---|
-| `spec_written` | +10% | Spec captured at ready gate (acceptance criteria, failure modes, edge cases) — set by the skill during Refine |
-| `file_created` | +10% | Code artifact exists |
-| `design_approved` | +15% | Design gate passed |
-| `test_passed` | +20% | Downstream gate cleared |
-| `pr_merged` | +25% | Integration artifact complete |
-| `review_approved` | +25% | Peer review gate passed |
-
-**Readiness levels:** `not_ready` (< 70%) · `startable` (70–89% — can begin with known risk) · `ready` (>= 90%)
-
-**Add a signal:** `POST /api/items/<id>/signal` with `{"type": "pr_merged", "source": "agent-name", "description": "optional note"}`
-
-### Tribunal
-
-Evaluates eligible items through 6 weighted lenses. Access via `/api/pulse` (preferred) or `GET /api/recommend[?agent=name&commit=true]`.
-
-| Lens | Weight | Evaluates |
-|---|---|---|
-| urgency | 1.0 | Time-sensitivity, criticality, staleness |
-| leverage | 1.2 | Downstream unblock cascade |
-| agent_fit | 0.8 | Skill match, complexity preference, load, history |
-| risk | 1.0 | Blocking impact, reopens, skip neglect |
-| momentum | 0.6 | Status progression, recent activity |
-| strategic | 1.0 | Business value alignment with declared focus areas |
-
-**Strategic lens** — tribunal-only, does not modify raw scores. Configure `config.strategic.current_focus` with tags/categories the team is prioritizing (e.g., `["auth", "security"]`). Items with matching tags, high `priority_weight` (>=8), or category alignment score higher. Justifications cite the signal.
-
-Use `?commit=true` on `/api/recommend` to store decisions for outcome tracking.
-
-### Orchestrator
-
-`backlog orchestrate` is a persistent process that drives the dev cycle forward. It runs in two modes:
-
-**Supervised (default):** Orchestrator only acts on `ready`+ items. Human controls when work starts by moving items to `ready`. Orchestrator handles execution, review, and result ingestion from there.
-
-**Auto:** A designated lead agent continuously picks the highest-priority `backlog`/`refined` item, assesses whether it's actionable (via Claude), and either moves it to `ready` or opens a refinement thread (`waiting_on: "user"`) with at most 2 blocking questions. Human answers questions; lead agent resumes. Items already waiting for human input are skipped.
-
-**Config:**
-```json
-"orchestrator": {
-  "mode": "supervised",     // "supervised" (default) or "auto"
-  "require_review": true    // false disables peer review gate (logged warning at startup)
-}
-```
-
-**Lead agent:** Set `"role": "lead"` on exactly one agent in `config.agents`. Required for auto mode; validated at startup. Zero or multiple leads → hard error with names listed.
-
-**Reviewer agent:** Set `"role": "reviewer"` on the designated code review agent. When the orchestrator dispatches a review handoff, `_select_agent` gives this agent a +10 score bonus so it wins over generalist agents unless at capacity.
-
-```json
-"agents": {
-  "lead-dev": { "role": "lead", "skills": ["python", "api"], "max_active": 1 },
-  "worker-a":  { "skills": ["python", "api"], "max_active": 2 }
-}
-```
-
-**Honesty rule (both modes):** Agents must stop and ask the human rather than guess when context is insufficient. Autonomy does not mean guessing.
-
-### Assignment Intelligence
-
-- +2 per tag match (item `tags` ∩ agent `skills`)
-- +3 if agent worked on a linked item (`assigned_to` or `lane_history.by`)
-- +1 if item `complexity` in agent's `preferred_complexity`
-- −5 if agent at/above `max_active`
-
-Highest positive affinity wins. Tie or no positive affinity → ask user.
-
-### Agent Team (`.claude/agents/`)
-
-The team roster lives in `.claude/agents/*.md`. Each file defines one agent with YAML frontmatter (skills, capacity) and a markdown body (persona, learnings, rules). The server reads these files on every request — no restart needed.
-
-**To add an agent:** Create `.claude/agents/<name>.md` with this template:
-```markdown
----
-name: <agent-name>
-description: <one-line role description>
-skills: [tag1, tag2, ...]
-complexity: [low, medium, high]
-max_active: <int>
----
-
-## Persona
-<2-3 sentences: who you are, how you work, what you prefer>
-
-## Learnings (max 10 items — one line each, no narrative)
-
-## Rules
-- Before adding a learning, check if it's already captured. If it is, skip it.
-- When I receive a correction, I update this file before finishing my task.
-- If learnings reach 10, I consolidate or drop entries that are now obvious from the codebase.
-```
-
-**To remove an agent:** Delete the file. **To modify:** Edit the file directly — changes take effect on next API call.
-
-**Persona constraints:** Max 10 learnings, max 60 lines per file. The lead agent prunes personas after task completion (step 6 of How to Operate).
-
-### Lane Gate Rules
-
-Each status can have `requires: [lane_ids]` — item must have passed through those lanes (from `gate_from` onward) before entering. Backward moves always allowed.
-
-- `lane_history`: append-only. Format: `{"lane": "<old_status>", "at": "<ISO UTC>", "by": "<actor>"}`. `by` = agent name, `"user"`, or `"unknown"` (legacy entries). Bare-string entries from older data are normalized to `{"lane": ..., "at": null, "by": "unknown"}` on every read — callers always see structured dicts.
-- `gate_from`: watermark index. On backward move: append current lane, set `gate_from = len(lane_history)`.
-- Before any forward move: verify target's `requires` against `lane_history[gate_from:]`. If missing: "Can't move to X — requires Y first."
-- Server enforces gates (HTTP 422). Check client-side too.
-
-**Backward-then-forward example:**
-An item progresses `backlog → ready → in-progress`, then gets moved back to `ready`.
-On the backward move, `gate_from` resets to the current length of `lane_history`.
-The earlier `in-progress` entry is now before `gate_from` and is no longer counted as an earned gate.
-Attempting to move to `code-review` (which requires `in-progress`) will be blocked — even though `in-progress` appears in `lane_history`.
-The item must pass through `in-progress` again before `code-review` becomes reachable.
-
-### Natural Language Rule Engine
-
-Policies are plain English rules. When a policy has a `conditions` + `action` block, the server evaluates it with pure Python — **no API key required**. Policies without `conditions` fall back to LLM evaluation (requires `ANTHROPIC_API_KEY`).
-
-**When creating a policy, always compile the natural language description into structured `conditions` + `action` fields.** This makes the policy free to evaluate for everyone.
-
-**Structured condition format:**
-```json
-{
-  "conditions": {
-    "match": "all",
-    "rules": [
-      { "field": "category",        "op": "eq",   "value": "bug" },
-      { "field": "priority_weight", "op": "gte",  "value": 9 },
-      { "field": "assigned_to",     "op": "null"              },
-      { "field": "hours_since_created", "op": "gte", "value": 4 }
-    ]
-  },
-  "action": { "type": "escalate", "reason": "Critical unassigned bug" }
-}
-```
-
-**`match`:** `"all"` (AND) or `"any"` (OR)
-
-**Supported fields:** any item field (`status`, `category`, `complexity`, `priority_weight`, `assigned_to`, `skip_count`, `reopen_count`, `blocks_count`, `blocked_by_count`, `score`, `readiness`, `readiness_level`, `tags`) plus computed: `hours_since_created`, `hours_in_status`
-
-**Supported ops:** `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `null`, `not_null`, `contains`
-
-**`action` type values:** `reprioritize` (include `priority_weight`), `reassign` (include `agent`), `escalate`, `block`, `notify` (include `message` and `severity`: `info|warning|critical`), `skip_force`. Always include `reason`.
-
-**Policy commands:**
-
-| Prompt | Action |
-|---|---|
-| "Add rule: [description]" | `POST /api/policies` with name, description, conditions, action |
-| "List rules" / "Show policies" | `GET /api/policies` |
-| "Disable rule [name]" | `PUT /api/policies/<id>` `{"active": false}` |
-| "Delete rule [name]" | `DELETE /api/policies/<id>` |
-| "Show rule history" | `GET /api/policies/log` |
-| "Run rules now" | `GET /api/policies/evaluate` |
-| "Suggest rules" | `GET /api/policies/suggestions` |
-
-**Structured action types:**
-
-| Type | Effect |
-|---|---|
-| `reprioritize` | Change `priority_weight` on item |
-| `reassign` | Change `assigned_to` on item |
-| `escalate` | Set `priority_weight` ≥ 9, mark as critical |
-| `block` | Add a block thread (waiting_on: user) |
-| `notify` | Surface a warning (no state change) |
-| `skip_force` | Increment `skip_count` — deprioritize temporarily |
-
-**Evaluation pipeline:** Policies evaluate in priority order (10 = highest) on every write. Policies with `conditions` use the pure-Python structured evaluator (no API key needed). Policies without `conditions` use LLM reasoning (`ANTHROPIC_API_KEY` required). Conflicting actions on the same item are adjudicated by a second LLM call; the winning action and reasoning are logged to `policy_log.json`. Actions apply in a background thread — the main response is never delayed.
-
-**Policy effectiveness:** Each policy tracks `fire_count` and `last_fired`. Staleness warnings surface in pulse (`policies.stale_warnings`) and in the web board settings when policies haven't fired in 21+ days or never fired after 14+ days.
-
-**Gate rules vs. policies:** Gate rules (`requires` arrays) enforce lane sequencing synchronously at write time. Policies are contextual intelligence — they respond to live system state and apply judgment. Gates prevent invalid moves; policies surface intelligent actions.
-
-### Concurrency Safety
+## Concurrency Safety
 
 Server rejects writes where client `version` < current (HTTP 409).
 **On 409**: re-read → re-apply → retry. Never manually increment version.
 
-## API
+---
 
-```
-GET  /api/pulse[?agent=name]                 Single source of truth — recommendation + coordination + policies
-GET  /api/backlog[?agent=name]               Full or agent-filtered backlog
-GET  /api/scores                             Ranked items with score_breakdown + readiness
-GET  /api/recommend[?agent=name&commit=true] Tribunal recommendation (use pulse instead for coordination)
-GET  /api/decisions                          Stored decision history with outcomes
-GET  /api/agents                             Agent load info
-GET  /api/graph                              Dependency graph with critical path, conflicts, rebalancing
-PUT  /api/backlog                            Full write (version-checked)
-PUT  /api/items/<id>                         Single item update
-POST /api/items/<id>/signal                  Append a readiness signal to an item
-GET  /api/policies                           List all policies with staleness analysis
-POST /api/policies                           Create a policy {"name","description","priority","active","conditions"?,"action"?}
-PUT  /api/policies/<id>                      Update a policy (name, description, priority, active)
-DELETE /api/policies/<id>                    Delete a policy
-GET  /api/policies/log[?limit=N]             Recent policy fire history (default 50)
-GET  /api/policies/evaluate                  Manually trigger policy evaluation
-GET  /api/policies/suggestions               LLM-generated rule suggestions based on patterns
-```
-
-**`/api/graph` key fields:** `critical_path` (item IDs by cascade impact), `conflicts` (concurrent in-progress items sharing tags), `nodes[].cascade_count` (items transitively unblocked).
+> Full CLI reference, API docs, scoring internals, lane gate rules, policy syntax → **[REFERENCE.md](REFERENCE.md)**
