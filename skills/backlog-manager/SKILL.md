@@ -17,6 +17,8 @@ Invoke proactively (without being asked) when:
 - You discover bugs, tech debt, or follow-ups while working → add them to the backlog and link them to the source task
 - An item enters or is already in `code-review` status (after any write, or when scanning the backlog) → for each `code-review` item with no unresolved `review-dispatched` sentinel thread: (1) run `backlog handoff reviewer --item N --review`, (2) immediately run `backlog ingest <result_file>` on the file it prints ("Result saved to …"). Do not wait for the user to ask. The ingest step is what actually advances the item to `done` (pass) or back to `in-progress` (reject) — skipping it leaves the item stuck in `code-review`.
 
+> **Code review shortcut:** When an item is in `code-review`, the only valid path is `backlog handoff reviewer --item N --review` → `backlog ingest <result_file>`. Do not spawn a reviewer agent directly and call `backlog done` — that bypasses the gate.
+
 ---
 
 ## Setup
@@ -238,6 +240,9 @@ Add the item, link it to the source (`follow-up` or `discovered-during`), and me
 { "item_id": "abc12345", "type": "blocks", "reason": "one sentence why" }
 ```
 Types: `blocks`, `discovered-during`, `follow-up`, `related`. `reason` is required on every link.
+
+- Use `blocks` only when the dependent item **cannot or should not start** without this one done. Overusing `blocks` inflates leverage scores and corrupts gate rules.
+- Use `related` for everything else — parallel work, thematic connections, context links.
 
 ## Concurrency Safety
 
