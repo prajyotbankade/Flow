@@ -1,5 +1,5 @@
 {
-  "version": 563,
+  "version": 572,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -608,7 +608,7 @@
       "id": "c3d4e5f6",
       "title": "Code review assignment \u2014 who reviews agent work?",
       "description": "When an agent moves an item to code-review, there is no mechanism to assign a reviewer or notify anyone. The item sits in code-review indefinitely with no owner.\n\nNeeds a solution for:\n1. **Reviewer assignment**: `assigned_to` currently tracks the worker \u2014 we need a separate `reviewer` field (or a convention like `assigned_to` transfers on code-review entry)\n2. **Notification / visibility**: reviewer should be surfaced in pulse, board, and CLI show output\n3. **Policy hook**: a policy rule like `on: enter_lane(code-review) \u2192 assign_reviewer(lead)` would make this automatic\n\nDecisions needed before refining: does reviewer replace or supplement assigned_to? Is 'lead' a special agent role or just a config value?\n\n## Spec\n\n**Acceptance criteria:**\n1. When any item enters `code-review` (via CLI move, server API, or ingest), `reviewer` is auto-set to the agent with `role: \"reviewer\"` in config, excluding the current `assigned_to`\n2. On re-entry to `in-progress` after rejection, `assigned_to` is set to the current `reviewer` (they own the fix)\n3. On re-entry to `code-review`, `reviewer` is cleared and a fresh reviewer assigned (again excluding new `assigned_to`)\n4. `reviewer_history` (list) tracks all past reviewers per item for audit\n5. `backlog show N` displays the `reviewer` field\n6. `backlog list` shows reviewer name next to code-review items\n7. Pulse surfaces items in code-review with `reviewer: null` as warnings\n8. If no eligible reviewer-role agent exists: `reviewer = null`, warning thread opened on item\n\n**Failure modes:**\n- No agent with `role: \"reviewer\"` configured \u2192 reviewer null, warning in pulse + thread on item\n- All reviewer-role agents are the same as assigned_to \u2192 same fallback\n- Concurrent write \u2192 standard HTTP 409 version-conflict handling\n\n**Edge cases:**\n- Item enters code-review without passing in-progress first \u2192 still auto-assign reviewer\n- Item has no assigned_to \u2192 any reviewer-role agent eligible\n- Ingest moves item to in-progress on reject \u2192 assigned_to set to reviewer at that point\n- Multiple reviewer-role agents \u2192 pick first available (not excluded)\n",
-      "status": "in-progress",
+      "status": "done",
       "category": "feature",
       "priority_weight": 7,
       "complexity": "medium",
@@ -618,7 +618,7 @@
         "code-review"
       ],
       "created_at": "2026-04-03T23:50:00.000000+00:00",
-      "updated_at": "2026-04-24T03:47:57.705745+00:00",
+      "updated_at": "2026-04-24T03:54:49.767628+00:00",
       "lane_history": [
         {
           "lane": "backlog",
@@ -628,6 +628,11 @@
         {
           "lane": "backlog",
           "at": "2026-04-24T03:47:57.705575+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-04-24T03:54:49.767418+00:00",
           "by": "cli"
         }
       ],
@@ -642,6 +647,12 @@
           "actor": "cli",
           "at": "2026-04-24T03:47:57.705750+00:00",
           "detail": "backlog \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-04-24T03:54:49.767630+00:00",
+          "detail": "in-progress \u2192 done (forward)"
         }
       ]
     },
@@ -2115,6 +2126,110 @@
       "skip_count": 0,
       "created_at": "2026-04-24T02:33:59.192353+00:00",
       "updated_at": "2026-04-24T03:13:00.196775+00:00"
+    },
+    {
+      "id": "6aqckr5m",
+      "title": "Fix backlog handoff: remove subprocess claude invocation, make it print-and-exit",
+      "status": "backlog",
+      "priority": "high",
+      "complexity": "medium",
+      "category": "bug",
+      "tags": [
+        "backlog-manager",
+        "skill",
+        "cli",
+        "handoff"
+      ],
+      "description": "## Problem\n\nbacklog handoff reviewer --item N --review internally calls subprocess.run([\"claude\", \"--print\", prompt]). This fails silently when run from inside a Claude Code session because nested sessions are blocked by the Claude Code runtime. The failure manifests as:\n- Empty stdout from the subprocess\n- cli.py gets blank output \u2192 JSON parse fails \u2192 saves a 'partial' result file\n- No actionable error shown to the user \u2014 appears to succeed\n\nThe stderr error ('Claude Code cannot be launched inside another Claude Code session') is captured separately and never surfaced.\n\n## Root Cause\n\nThe skill is designed to be invoked from inside Claude Code, but the handoff command shells out to the claude CLI \u2014 those two facts are permanently in tension. subprocess.run([\"claude\"]) is the wrong tool for a skill that runs inside Claude Code.\n\n## Proposed Fix\n\nSplit handoff into two steps:\n1. backlog handoff reviewer --item N --review prints the review brief to stdout and exits (current --dry-run behavior becomes the only behavior)\n2. SKILL.md instructs Claude to read the brief, perform the review inline or via Agent tool, write the verdict JSON directly to handoff_results/<id>_<ts>.json, then run backlog ingest <file>\n\nThis removes the subprocess entirely. The AI invocation stays where it belongs \u2014 in Claude's hands, not in a subprocess.\n\n## Changes Required\n- cli.py: remove subprocess.run block from handoff command; always print prompt and exit\n- SKILL.md: update code review flow to reflect new two-step process\n- Remove the nested-session guard added as a temporary fix (os.environ CLAUDE_CODE_ENTRYPOINT check)\n\n## Verdict file format (for SKILL.md reference)\n{\"item_id\": \"<id>\", \"verdict\": \"pass | reject\", \"summary\": \"...\", \"issues\": [{\"description\": \"...\", \"severity\": \"blocker | warning\"}]}",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-04-24T21:32:10.694034+00:00",
+      "updated_at": "2026-04-24T21:32:10.694034+00:00"
+    },
+    {
+      "id": "l5dv3sr9",
+      "title": "Add backlog link CLI command",
+      "status": "code-review",
+      "priority": "high",
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "cli",
+        "backlog",
+        "ux"
+      ],
+      "description": "Add a dedicated CLI command to link items without requiring the HTTP API. Currently linking requires a PUT /api/items/<id> call with the full links array. A first-class CLI command would make this accessible from terminal and agent workflows without a running server.\n\n## Spec\n\n**Acceptance criteria:**\n- `backlog link <source_id> --type <type> --target <target_id> --reason \"<reason>\"` works without a running server (file-only)\n- `backlog unlink <source_id> --target <target_id>` removes a link\n- Valid types: `blocks`, `discovered-during`, `follow-up`, `related`\n- `reason` is required; command errors with a clear message if omitted\n- Both source and target IDs must exist; command errors if either is not found\n- Command respects `BACKLOG_FILE` env var and `--file` flag like all other commands\n- Output confirms: \"Linked #N \u2192 #M (blocks): <reason>\"\n- Unlink output confirms: \"Unlinked #N \u2192 #M\"\n\n**Failure modes:**\n- Missing `--reason`: exit code 1, message \"--reason is required for link\"\n- Unknown item ID: exit code 1, message \"Item <id> not found\"\n- Invalid type: exit code 1, list valid types\n- Version conflict on write: exit code 2, message \"Version conflict \u2014 re-read and retry\"\n- Duplicate link (same source+target+type): skip silently or warn, do not duplicate\n\n**Edge cases:**\n- Linking an item to itself: error \"Cannot link an item to itself\"\n- `unlink` on a non-existent link: exit code 1, message \"No link found from #N to #M\"\n- `backlog link --list <id>` shows all links for that item (read-only, no server needed)",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-07T16:55:22.627312+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-07T16:55:22.763355+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-07T16:55:31.114795+00:00",
+          "by": "cli"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-07T17:08:56.822714+00:00",
+          "by": "cli"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-05-07T16:55:22.627470+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-05-07T16:55:22.763625+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-07T16:55:30.979522+00:00",
+          "detail": "unassigned \u2192 backend-dev"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-05-07T16:55:31.114980+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "cli",
+          "at": "2026-05-07T17:08:56.822871+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-07T16:54:55.559629+00:00",
+      "updated_at": "2026-05-07T17:08:56.822866+00:00",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     }
   ],
   "config": {

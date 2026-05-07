@@ -24,7 +24,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
-from .core import BacklogStore, DEFAULT_STATUSES, _detect_foreign_schema, migrate_to_flow_schema
+from .core import BacklogStore, DEFAULT_STATUSES, _detect_foreign_schema, migrate_to_flow_schema, _now_iso
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
 from .server import compute_scores, compute_item_readiness, evaluate_tribunal
 
@@ -890,6 +890,14 @@ def handoff(
         )
         raise typer.Exit(1)
 
+    if os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
+        err_console.print(
+            "[red]Error:[/red] Cannot invoke claude from inside a Claude Code session "
+            "(nested sessions are blocked).\n"
+            "Run this command from a plain terminal outside Claude Code."
+        )
+        raise typer.Exit(1)
+
     console.print(f"[dim]Invoking claude for item {target.get('id')} ...[/dim]")
     try:
         result = subprocess.run(
@@ -1083,6 +1091,155 @@ def reject(
     if reason:
         msg += f" — reason: {reason}"
     console.print(msg)
+
+
+# ── Link / Unlink commands ────────────────────────────────────────────────────
+
+VALID_LINK_TYPES = ("blocks", "discovered-during", "follow-up", "related")
+
+
+def _resolve_item_ref(data: dict, ref: str) -> tuple[int, dict]:
+    """Resolve *ref* to (1-based position, item dict).
+
+    *ref* may be either a 1-based position number (e.g. "3") or an 8-char item ID.
+    Raises ItemNotFoundError if not found.
+    """
+    from .exceptions import ItemNotFoundError as _INF
+    items = data.get("items", [])
+    # Try position number first
+    if ref.isdigit():
+        pos = int(ref)
+        idx = pos - 1
+        if 0 <= idx < len(items):
+            return pos, items[idx]
+        raise _INF(f"Item #{pos} not found (backlog has {len(items)} item(s)).")
+    # Fall back to ID match
+    for idx, item in enumerate(items):
+        if item.get("id") == ref:
+            return idx + 1, item
+    raise _INF(f"Item {ref!r} not found.")
+
+
+@app.command(name="link")
+@_handle
+def link_cmd(
+    source: Optional[str] = typer.Argument(None, help="Source item — position number or item ID"),
+    file: Optional[str] = FILE_OPT,
+    link_type: Optional[str] = typer.Option(None, "--type", "-t", help="Link type: blocks|discovered-during|follow-up|related"),
+    target: Optional[str] = typer.Option(None, "--target", help="Target item — position number or item ID"),
+    reason: Optional[str] = typer.Option(None, "--reason", "-r", help="One-sentence reason for this link"),
+    list_links: Optional[str] = typer.Option(None, "--list", help="List all links for an item (position or ID)", metavar="ITEM"),
+) -> None:
+    """Add a directional link between two items, or list links for an item.
+
+    Usage:
+      backlog link <source> --type <type> --target <target> --reason "<reason>"
+      backlog link --list <item>
+    """
+    store = _store(file)
+    data = store.read()
+
+    # ── --list mode ───────────────────────────────────────────────────────────
+    if list_links is not None:
+        pos, item = _resolve_item_ref(data, list_links)
+        links = item.get("links", [])
+        if not links:
+            console.print(f"[dim]No links for item #{pos} \"{item.get('title', '')}\".[/dim]")
+            return
+        items_by_id = {i.get("id"): i for i in data.get("items", [])}
+        console.print(f"\n[bold]Links for #{pos} \"{item.get('title', '')}\"[/bold]")
+        for lnk in links:
+            tgt_id = lnk.get("item_id", "")
+            tgt_item = items_by_id.get(tgt_id)
+            tgt_title = tgt_item.get("title", "(unknown)") if tgt_item else "(unknown)"
+            ltype = lnk.get("type", "")
+            lreason = lnk.get("reason", "")
+            console.print(f"  [cyan]{ltype}[/cyan] → {tgt_title} [dim](id={tgt_id})[/dim]")
+            if lreason:
+                console.print(f"    {lreason}")
+        console.print()
+        return
+
+    # ── Add-link mode ─────────────────────────────────────────────────────────
+    if source is None:
+        err_console.print("[red]Error:[/red] SOURCE argument is required when not using --list")
+        raise typer.Exit(1)
+
+    if reason is None:
+        err_console.print("[red]Error:[/red] --reason is required for link")
+        raise typer.Exit(1)
+
+    if link_type is None:
+        err_console.print(
+            f"[red]Error:[/red] --type is required. "
+            f"Valid types: {', '.join(VALID_LINK_TYPES)}"
+        )
+        raise typer.Exit(1)
+
+    if link_type not in VALID_LINK_TYPES:
+        err_console.print(
+            f"[red]Error:[/red] Invalid type {link_type!r}. "
+            f"Valid types: {', '.join(VALID_LINK_TYPES)}"
+        )
+        raise typer.Exit(1)
+
+    if target is None:
+        err_console.print("[red]Error:[/red] --target is required for link")
+        raise typer.Exit(1)
+
+    src_pos, src_item = _resolve_item_ref(data, source)
+    tgt_pos, tgt_item = _resolve_item_ref(data, target)
+
+    if src_item.get("id") == tgt_item.get("id"):
+        err_console.print("[red]Error:[/red] Cannot link an item to itself")
+        raise typer.Exit(1)
+
+    # Duplicate guard: same source+target+type → skip silently
+    tgt_id = tgt_item.get("id")
+    existing = src_item.setdefault("links", [])
+    for lnk in existing:
+        if lnk.get("item_id") == tgt_id and lnk.get("type") == link_type:
+            console.print(
+                f"[yellow]Warning:[/yellow] Link #{src_pos} → #{tgt_pos} ({link_type}) already exists — skipped."
+            )
+            return
+
+    existing.append({"item_id": tgt_id, "type": link_type, "reason": reason})
+    src_item["updated_at"] = _now_iso()
+    store.write(data, expected_version=data.get("version", 0))
+    console.print(
+        f"[green]Linked[/green] #{src_pos} → #{tgt_pos} ({link_type}): {reason}"
+    )
+
+
+@app.command(name="unlink")
+@_handle
+def unlink_cmd(
+    source: str = typer.Argument(..., help="Source item — position number or item ID"),
+    file: Optional[str] = FILE_OPT,
+    target: str = typer.Option(..., "--target", help="Target item — position number or item ID"),
+) -> None:
+    """Remove a link from source item to target item."""
+    store = _store(file)
+    data = store.read()
+
+    src_pos, src_item = _resolve_item_ref(data, source)
+    tgt_pos, tgt_item = _resolve_item_ref(data, target)
+
+    tgt_id = tgt_item.get("id")
+    links = src_item.get("links", [])
+    new_links = [lnk for lnk in links if lnk.get("item_id") != tgt_id]
+
+    if len(new_links) == len(links):
+        err_console.print(
+            f"[red]Error:[/red] No link found from #{src_pos} to #{tgt_pos}"
+        )
+        raise typer.Exit(1)
+
+    src_item["links"] = new_links
+    src_item["updated_at"] = _now_iso()
+    store.write(data, expected_version=data.get("version", 0))
+    console.print(f"[green]Unlinked[/green] #{src_pos} → #{tgt_pos}")
 
 
 # ── Orchestrator helpers ──────────────────────────────────────────────────────
