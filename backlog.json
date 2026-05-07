@@ -1,5 +1,5 @@
 {
-  "version": 572,
+  "version": 591,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -2154,7 +2154,7 @@
     {
       "id": "l5dv3sr9",
       "title": "Add backlog link CLI command",
-      "status": "code-review",
+      "status": "done",
       "priority": "high",
       "complexity": "medium",
       "category": "feature",
@@ -2186,6 +2186,11 @@
           "lane": "in-progress",
           "at": "2026-05-07T17:08:56.822714+00:00",
           "by": "cli"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-07T17:26:15.764725+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -2218,14 +2223,236 @@
           "actor": "cli",
           "at": "2026-05-07T17:08:56.822871+00:00",
           "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-07T17:26:15.764731+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-07T16:54:55.559629+00:00",
-      "updated_at": "2026-05-07T17:08:56.822866+00:00",
+      "updated_at": "2026-05-07T17:26:15.764727+00:00",
       "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "mamzsbfd",
+      "title": "Add --type filter to backlog unlink command",
+      "status": "backlog",
+      "priority": "medium",
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "cli",
+        "backlog",
+        "ux"
+      ],
+      "description": "Currently unlink removes all links from source to target regardless of type. If two link types exist between the same pair (e.g. blocks + related), both are silently removed. Add an optional --type flag to unlink so users can remove a specific link type only.",
+      "links": [
+        {
+          "item_id": "l5dv3sr9",
+          "type": "follow-up",
+          "reason": "Surfaced during code review of #51 \u2014 unlink removes all links to target regardless of type"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-07T17:27:06.697941+00:00",
+      "updated_at": "2026-05-07T17:27:25.382907+00:00"
+    },
+    {
+      "id": "71un9vbt",
+      "title": "Fix board auto-refresh resetting scroll position",
+      "status": "code-review",
+      "priority": "high",
+      "complexity": "low",
+      "category": "bug",
+      "tags": [
+        "frontend",
+        "board",
+        "ux"
+      ],
+      "description": "When the board auto-refreshes (polling), the scroll position resets to the top of the page. With 40+ items, this makes it impossible to navigate to items further down the list without using search. The user loses their place on every refresh cycle.\n\n## Spec\n\n**Acceptance criteria:**\n- When the board auto-refreshes, the user's scroll position is preserved (page does not jump to top)\n- Scroll position is preserved both for the overall page and for individual lane columns if they scroll independently\n- After a refresh, the board re-renders with updated data at the same scroll offset the user was at\n- Manual refresh (if any) may reset scroll \u2014 only auto-refresh polling must preserve position\n\n**Failure modes:**\n- If scroll position cannot be restored (e.g. the previously visible item was removed), scroll stays at current position or top \u2014 do not throw an error\n- If the DOM is fully re-mounted on each refresh (rather than patched), the fix must capture scroll before unmount and restore after mount\n- Silent failure (no restore) is acceptable over a jarring jump to a wrong position\n\n**Edge cases:**\n- User scrolls during a refresh cycle \u2014 use the scroll position at the moment just before the DOM update, not when the poll fires\n- Multiple lane columns with independent scroll \u2014 each column's scroll offset must be saved and restored independently\n- Rapid successive refreshes \u2014 each must restore correctly without accumulated drift\n- Item count changes between refreshes (item added/removed) \u2014 restore best-effort by pixel offset, not item index",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-07T22:00:57.717108+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-07T22:00:57.874599+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-07T22:08:16.219172+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:00:57.717299+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:00:57.874770+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:08:16.219338+00:00",
+          "detail": "ready \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-07T21:59:25.643312+00:00",
+      "updated_at": "2026-05-07T22:08:16.219334+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "dadv9z5a",
+      "title": "Fix board search to accept item number without # prefix",
+      "status": "code-review",
+      "priority": "medium",
+      "complexity": "low",
+      "category": "bug",
+      "tags": [
+        "frontend",
+        "board",
+        "ux",
+        "search"
+      ],
+      "description": "Searching for an item by number requires typing '#3' \u2014 typing '3' alone returns no results. The # prefix should be optional; bare numbers should match item positions.\n\n## Spec\n\n**Acceptance criteria:**\n- Typing a bare number (e.g. `3`) in the board search matches item #3 by position\n- Typing `#3` continues to work as before\n- Number-only queries are tried as position lookups first; if no match, fall through to full-text search\n- Search is case/whitespace tolerant: ` 3 ` (with spaces) should still match\n\n**Failure modes:**\n- If a bare number matches no item at that position (e.g. typing `99` when only 40 items exist), fall through to full-text search \u2014 do not show an error\n- No change to non-numeric search behaviour\n\n**Edge cases:**\n- `13` should match item #13, not items whose text contains '1' or '3' separately\n- Numbers embedded in longer queries (e.g. `auth 3`) should not trigger position lookup \u2014 only a standalone number token should\n- Items are 1-indexed; `0` should not match anything as a position",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-07T22:03:24.949200+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-07T22:03:25.169044+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-07T22:08:16.356285+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:03:24.949412+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:03:25.169215+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:08:16.356479+00:00",
+          "detail": "ready \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-07T22:02:24.818568+00:00",
+      "updated_at": "2026-05-07T22:08:16.356475+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "7eddv82k",
+      "title": "Display item number in item detail view",
+      "status": "code-review",
+      "priority": "medium",
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "frontend",
+        "board",
+        "ux"
+      ],
+      "description": "When an item is opened/expanded on the board, the item number (#N) is not visible. Users lose track of which item they are looking at, especially when sharing or referencing items by number.\n\n## Spec\n\n**Acceptance criteria:**\n- The item number (e.g. `#3`) is displayed prominently in the item detail/modal header, near the title\n- Visible at a glance without scrolling \u2014 must be in the top section of the detail view\n- Shown as `#N` format, consistent with how the CLI references items\n\n**Failure modes:**\n- If position cannot be determined (item not found in list), omit the number rather than showing `#undefined` or `#0`\n\n**Edge cases:**\n- Position is 1-based and derived from current order in the backlog array \u2014 if items are reordered, the displayed number reflects the current position\n- Number should update if the board re-renders due to a refresh (not stale)",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-07T22:03:25.307017+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-07T22:03:25.469263+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-07T22:08:16.619561+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:03:25.307211+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:03:25.469428+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-07T22:08:16.619748+00:00",
+          "detail": "ready \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-07T22:02:24.958478+00:00",
+      "updated_at": "2026-05-07T22:08:16.619743+00:00",
       "reviewer": "reviewer",
       "reviewer_history": [
         "reviewer"

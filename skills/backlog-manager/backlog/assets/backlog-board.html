@@ -1158,7 +1158,7 @@
   <div class="modal-overlay" id="modal-overlay" onclick="closeModal(event)">
     <div class="modal" onclick="event.stopPropagation()">
       <div class="modal-header">
-        <h2 id="modal-title">New Item</h2>
+        <h2 id="modal-title">New Item</h2><span id="modal-item-number" style="font-size:0.85em;font-weight:600;color:#6b7280;margin-left:8px;"></span>
         <button class="close-btn" onclick="closeModal()">&times;</button>
       </div>
       <div class="modal-tabs" id="modal-tabs" style="display:none;">
@@ -1686,6 +1686,14 @@
 
     function renderBoard() {
       const board = document.getElementById('board');
+
+      // Save scroll positions before wiping
+      const savedWindowScrollY = window.scrollY;
+      const savedColumnScrolls = {};
+      document.querySelectorAll('.column-body[data-status]').forEach(col => {
+        savedColumnScrolls[col.dataset.status] = col.scrollTop;
+      });
+
       board.innerHTML = '';
 
       // Show welcome panel when backlog has no items
@@ -1779,6 +1787,15 @@
 
         board.appendChild(col);
       });
+
+      // Restore scroll positions after DOM settles
+      setTimeout(() => {
+        window.scrollTo(0, savedWindowScrollY);
+        document.querySelectorAll('.column-body[data-status]').forEach(col => {
+          const saved = savedColumnScrolls[col.dataset.status];
+          if (saved != null) col.scrollTop = saved;
+        });
+      }, 0);
     }
 
     function createCard(item, positionInColumn, totalInColumn) {
@@ -2079,6 +2096,8 @@
     function openAddModal() {
       editingItemId = null;
       document.getElementById('modal-title').textContent = 'New Item';
+      const numBadgeNew = document.getElementById('modal-item-number');
+      if (numBadgeNew) numBadgeNew.textContent = '';
       document.getElementById('item-title').value = '';
       document.getElementById('item-desc').value = '';
       document.getElementById('item-status').value = firstStatusId();
@@ -2111,6 +2130,9 @@
 
       editingItemId = id;
       document.getElementById('modal-title').textContent = 'Edit Item';
+      const itemPos = backlog.items.indexOf(item) + 1;
+      const numBadge = document.getElementById('modal-item-number');
+      if (numBadge) numBadge.textContent = itemPos > 0 ? `#${itemPos}` : '';
       document.getElementById('item-title').value = item.title;
       document.getElementById('item-desc').value = item.description || '';
       document.getElementById('item-status').value = item.status;
@@ -3587,6 +3609,12 @@
       if (searchQuery.startsWith('#')) {
         const num = parseInt(searchQuery.slice(1), 10);
         if (!isNaN(num)) return backlog.items.indexOf(item) + 1 === num;
+      }
+      if (/^\d+$/.test(searchQuery)) {
+        const num = parseInt(searchQuery, 10);
+        if (!isNaN(num) && num >= 1 && num <= backlog.items.length) {
+          return backlog.items.indexOf(item) + 1 === num;
+        }
       }
       return item.title.toLowerCase().includes(searchQuery.toLowerCase());
     }
