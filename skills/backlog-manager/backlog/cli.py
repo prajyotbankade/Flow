@@ -344,7 +344,7 @@ def move(
 ) -> None:
     """Move an item to a different lane (gate rules enforced)."""
     store = _store(file)
-    item = store.move_item(position, target_status)
+    item = store.move_item(position, target_status, moved_by="user")
     console.print(f"[green]Moved[/green] #{position} \"{item['title']}\" → {target_status}")
 
 
@@ -356,7 +356,7 @@ def done(
 ) -> None:
     """Move an item to done."""
     store = _store(file)
-    item = store.move_item(position, "done")
+    item = store.move_item(position, "done", moved_by="user")
     console.print(f"[green]Done[/green] #{position} \"{item['title']}\"")
 
 
@@ -393,7 +393,7 @@ def discard(
 ) -> None:
     """Discard an item (always allowed from any lane)."""
     store = _store(file)
-    item = store.discard_item(position)
+    item = store.discard_item(position, moved_by="user")
     console.print(f"[dim]Discarded[/dim] #{position} \"{item['title']}\"")
 
 
@@ -405,7 +405,7 @@ def restore(
 ) -> None:
     """Restore a discarded item back to backlog."""
     store = _store(file)
-    item = store.restore_item(position)
+    item = store.restore_item(position, moved_by="user")
     console.print(f"[green]Restored[/green] #{position} \"{item['title']}\" → backlog")
 
 

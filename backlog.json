@@ -1,5 +1,5 @@
 {
-  "version": 591,
+  "version": 594,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -2274,7 +2274,7 @@
     {
       "id": "71un9vbt",
       "title": "Fix board auto-refresh resetting scroll position",
-      "status": "code-review",
+      "status": "done",
       "priority": "high",
       "complexity": "low",
       "category": "bug",
@@ -2301,6 +2301,11 @@
           "lane": "ready",
           "at": "2026-05-07T22:08:16.219172+00:00",
           "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-07T22:11:29.615317+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -2321,13 +2326,19 @@
           "actor": "user",
           "at": "2026-05-07T22:08:16.219338+00:00",
           "detail": "ready \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-07T22:11:29.615323+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-07T21:59:25.643312+00:00",
-      "updated_at": "2026-05-07T22:08:16.219334+00:00",
+      "updated_at": "2026-05-07T22:11:29.615320+00:00",
       "reviewer": "reviewer",
       "reviewer_history": [
         "reviewer"
@@ -2336,7 +2347,7 @@
     {
       "id": "dadv9z5a",
       "title": "Fix board search to accept item number without # prefix",
-      "status": "code-review",
+      "status": "done",
       "priority": "medium",
       "complexity": "low",
       "category": "bug",
@@ -2364,6 +2375,11 @@
           "lane": "ready",
           "at": "2026-05-07T22:08:16.356285+00:00",
           "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-07T22:11:29.753718+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -2384,13 +2400,19 @@
           "actor": "user",
           "at": "2026-05-07T22:08:16.356479+00:00",
           "detail": "ready \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-07T22:11:29.753723+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-07T22:02:24.818568+00:00",
-      "updated_at": "2026-05-07T22:08:16.356475+00:00",
+      "updated_at": "2026-05-07T22:11:29.753720+00:00",
       "reviewer": "reviewer",
       "reviewer_history": [
         "reviewer"
@@ -2399,7 +2421,7 @@
     {
       "id": "7eddv82k",
       "title": "Display item number in item detail view",
-      "status": "code-review",
+      "status": "done",
       "priority": "medium",
       "complexity": "low",
       "category": "feature",
@@ -2426,6 +2448,11 @@
           "lane": "ready",
           "at": "2026-05-07T22:08:16.619561+00:00",
           "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-07T22:11:29.888459+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -2446,13 +2473,19 @@
           "actor": "user",
           "at": "2026-05-07T22:08:16.619748+00:00",
           "detail": "ready \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-07T22:11:29.888465+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-07T22:02:24.958478+00:00",
-      "updated_at": "2026-05-07T22:08:16.619743+00:00",
+      "updated_at": "2026-05-07T22:11:29.888462+00:00",
       "reviewer": "reviewer",
       "reviewer_history": [
         "reviewer"
