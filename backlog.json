@@ -1,5 +1,5 @@
 {
-  "version": 594,
+  "version": 602,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -2486,6 +2486,98 @@
       "skip_count": 0,
       "created_at": "2026-05-07T22:02:24.958478+00:00",
       "updated_at": "2026-05-07T22:11:29.888462+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "gxp1kds9",
+      "title": "Server startup: warn or refuse if --file path has uncommitted backlog changes",
+      "status": "done",
+      "priority": "high",
+      "priority_weight": 7,
+      "complexity": "low",
+      "category": "bug",
+      "tags": [
+        "backlog-server",
+        "dx",
+        "reliability"
+      ],
+      "description": "The server silently starts against a file that may have uncommitted changes, causing state drift between the server and CLI. Fix: on startup, check if the backlog file has uncommitted git changes (git status --short) and either refuse to start or emit a loud warning. This prevents the class of bug where items added via the board are lost when the server restarts against the last committed state.\n\n## Spec\n**Acceptance criteria:**\n- On startup, backlog-server runs `git status --short <file>` on the resolved backlog file path\n- If the file has uncommitted changes (appears in git status output), print a clear warning to stderr: e.g. `WARNING: backlog.json has uncommitted changes \u2014 server state may diverge from committed history`\n- A `--no-git-check` flag (or env var `BACKLOG_NO_GIT_CHECK=1`) suppresses the warning for non-git repos or CI contexts\n- Server still starts (warn, don't refuse) \u2014 refusing would break workflows where the file is intentionally dirty during a session\n\n**Failure modes:**\n- File is not inside a git repo \u2192 skip the check silently (git command will fail), do not crash\n- git not installed \u2192 catch the subprocess error, skip silently\n- git check takes too long \u2192 timeout after 1s, skip with a debug log\n\n**Edge cases:**\n- File path is absolute but outside the git worktree \u2192 git status returns empty, no warning (correct)\n- File is untracked (new project, never committed) \u2192 git status shows `??` \u2014 treat as dirty, warn\n- Running in CI with a clean checkout \u2192 no uncommitted changes, no warning (correct)",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-10T01:49:17.826814+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-10T01:49:18.000349+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-10T01:50:57.201381+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-10T02:21:17.832291+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-10T02:24:42.478094+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T01:49:17.827118+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T01:49:18.000580+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T01:50:57.201987+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-10T01:50:57.346786+00:00",
+          "detail": "unassigned \u2192 backend-dev"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T02:21:17.832496+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-10T02:24:42.478100+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-10T01:46:48.316948+00:00",
+      "updated_at": "2026-05-10T02:24:42.478097+00:00",
+      "assigned_to": "backend-dev",
       "reviewer": "reviewer",
       "reviewer_history": [
         "reviewer"
