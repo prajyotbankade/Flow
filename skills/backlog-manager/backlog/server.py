@@ -2386,6 +2386,46 @@ class BacklogHandler(BaseHTTPRequestHandler):
 
 # ── Entry point ───────────────────────────────────────────────────────────────
 
+def check_git_dirty_warning(
+    file_path: str,
+    print_warning=None,
+    no_git_check: bool = False,
+) -> None:
+    """Print a warning to stderr if *file_path* has uncommitted git changes.
+
+    Suppressed when:
+    - ``no_git_check`` is True (``--no-git-check`` CLI flag), or
+    - the environment variable ``BACKLOG_NO_GIT_CHECK`` is set to a non-empty value.
+
+    Silently skipped when git is not installed, the file is not in a git repo,
+    or the git command times out.
+    """
+    if print_warning is None:
+        import sys
+        print_warning = lambda msg: print(msg, file=sys.stderr)  # noqa: E731
+
+    if no_git_check or os.environ.get("BACKLOG_NO_GIT_CHECK", ""):
+        return
+
+    file_name = os.path.basename(file_path)
+    try:
+        result = subprocess.run(
+            ["git", "status", "--short", file_path],
+            capture_output=True,
+            text=True,
+            timeout=1,
+        )
+        if result.returncode != 0:
+            return  # not a git repo or other git error — skip silently
+        if result.stdout.strip():
+            print_warning(
+                f"WARNING: {file_name} has uncommitted git changes"
+                " — server state may diverge from committed history"
+            )
+    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+        return  # git not installed, timeout, or other OS error — skip silently
+
+
 def main():
     parser = argparse.ArgumentParser(description="Backlog Board Server")
     parser.add_argument("--port", type=int, default=8089, help="Port (default: 8089)")
@@ -2395,9 +2435,18 @@ def main():
         help="Path to backlog.json (or set BACKLOG_FILE env var)"
     )
     parser.add_argument("--no-open", action="store_true", help="Don't auto-open the browser")
+    parser.add_argument(
+        "--no-git-check", action="store_true",
+        help="Skip git dirty-file check on startup (or set BACKLOG_NO_GIT_CHECK=1)"
+    )
     args = parser.parse_args()
 
     BacklogHandler.backlog_file = os.path.abspath(args.file)
+
+    check_git_dirty_warning(
+        file_path=BacklogHandler.backlog_file,
+        no_git_check=args.no_git_check,
+    )
 
     server = HTTPServer(("localhost", args.port), BacklogHandler)
     url = f"http://localhost:{args.port}"
