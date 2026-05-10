@@ -32,11 +32,14 @@ API:
 """
 
 import argparse
+import atexit
 import glob as glob_mod
 import json
 import os
 import re
+import signal
 import subprocess
+import sys
 import tempfile
 import threading
 import webbrowser
@@ -78,6 +81,53 @@ def get_git_user():
 
 
 GIT_USER = get_git_user()
+
+
+# ── Auto-commit helpers ────────────────────────────────────────────────────────
+
+def _auto_commit(file_path: str) -> None:
+    """Commit file_path if it has uncommitted git changes. Idempotent and silent on failure."""
+    try:
+        r = subprocess.run(
+            ["git", "diff", "--quiet", file_path],
+            capture_output=True,
+        )
+        if r.returncode == 0:
+            return  # clean — nothing to do
+        subprocess.run(["git", "add", file_path], capture_output=True)
+        result = subprocess.run(
+            ["git", "commit", "-m", "backlog: auto-save on server shutdown"],
+            capture_output=True,
+        )
+        if result.returncode != 0:
+            print(
+                f"WARNING: auto-commit failed for {file_path}: "
+                + result.stderr.decode(errors="replace").strip(),
+                file=sys.stderr,
+            )
+    except Exception as exc:
+        # git not available, not a repo, etc. — skip silently
+        _ = exc
+
+
+def _start_periodic_commit(file_path: str, interval: float) -> None:
+    """Start a daemon timer that calls _auto_commit every *interval* seconds.
+
+    If interval <= 0, do nothing.
+    """
+    if interval <= 0:
+        return
+
+    def _tick() -> None:
+        _auto_commit(file_path)
+        t = threading.Timer(interval, _tick)
+        t.daemon = True
+        t.start()
+
+    t = threading.Timer(interval, _tick)
+    t.daemon = True
+    t.start()
+
 
 # ── Agent file parsing (.claude/agents/*.md) ──────────────────────────────────
 
@@ -2436,12 +2486,21 @@ def main():
     )
     parser.add_argument("--no-open", action="store_true", help="Don't auto-open the browser")
     parser.add_argument(
-        "--no-git-check", action="store_true",
-        help="Skip git dirty-file check on startup (or set BACKLOG_NO_GIT_CHECK=1)"
+        "--no-git-check",
+        action="store_true",
+        help="Suppress git dirty-state warning and all auto-commit behaviour",
+    )
+    parser.add_argument(
+        "--autosave-interval",
+        type=int,
+        default=300,
+        metavar="N",
+        help="Commit backlog.json every N seconds while running (default: 300; 0 disables)",
     )
     args = parser.parse_args()
 
     BacklogHandler.backlog_file = os.path.abspath(args.file)
+    backlog_file = BacklogHandler.backlog_file
 
     check_git_dirty_warning(
         file_path=BacklogHandler.backlog_file,
@@ -2451,17 +2510,25 @@ def main():
     server = HTTPServer(("localhost", args.port), BacklogHandler)
     url = f"http://localhost:{args.port}"
 
-    project_root = str(Path(BacklogHandler.backlog_file).parent)
+    project_root = str(Path(backlog_file).parent)
     file_agents = parse_agent_files(project_root)
 
     print(f"Backlog board: {url}")
-    print(f"Reading from:  {BacklogHandler.backlog_file}")
+    print(f"Reading from:  {backlog_file}")
     if file_agents:
         print(f"Agent files:   .claude/agents/ ({len(file_agents)} agents: {', '.join(file_agents.keys())})")
     else:
         print(f"Agent files:   none found (will use config.agents fallback)")
     print(f"Git user:      {GIT_USER['name']} <{GIT_USER['email']}>")
     print("Press Ctrl+C to stop\n")
+
+    # ── Auto-commit wiring ─────────────────────────────────────────────────────
+    _git_check_suppressed = args.no_git_check or bool(os.environ.get("BACKLOG_NO_GIT_CHECK"))
+    if not _git_check_suppressed:
+        atexit.register(_auto_commit, backlog_file)
+        # Ensure SIGTERM triggers atexit (sys.exit flushes atexit handlers)
+        signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
+        _start_periodic_commit(backlog_file, args.autosave_interval)
 
     if not args.no_open:
         webbrowser.open(url)
