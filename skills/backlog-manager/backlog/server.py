@@ -96,7 +96,7 @@ def _auto_commit(file_path: str) -> None:
             return  # clean — nothing to do
         subprocess.run(["git", "add", file_path], capture_output=True)
         result = subprocess.run(
-            ["git", "commit", "-m", "backlog: auto-save on server shutdown"],
+            ["git", "commit", "-m", "chore(backlog): autosave"],
             capture_output=True,
         )
         if result.returncode != 0:
