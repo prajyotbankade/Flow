@@ -131,6 +131,7 @@ Example questions for a concurrent write operation:
 3. **Error handling** — failures must be graceful. Silent failures that cause the caller to retry infinitely are bugs, not acceptable behavior.
 4. **Edge cases** — what happens when the list is empty, the file doesn't exist, the agent isn't configured, or the external call times out?
 5. **Write safety** — any write to `backlog.json` must re-read first, use `expected_version`, and go through `apply_lane_transition` for status changes (never raw field writes).
+6. **Test/eval coverage** — every new CLI command or behavior change must have a corresponding eval or integration test. Missing coverage is a **blocker**. Check `evals/evals.json` for skill behavior tests and `evals/` for CLI integration tests. A passing implementation with no test is not shippable.
 
 **Severity tiers** — classify every finding before issuing a verdict:
 - **blocker** — must fix before merge (correctness bug, security issue, data loss, broken contract)

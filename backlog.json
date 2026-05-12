@@ -1,5 +1,5 @@
 {
-  "version": 602,
+  "version": 624,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -2130,7 +2130,7 @@
     {
       "id": "6aqckr5m",
       "title": "Fix backlog handoff: remove subprocess claude invocation, make it print-and-exit",
-      "status": "backlog",
+      "status": "done",
       "priority": "high",
       "complexity": "medium",
       "category": "bug",
@@ -2143,13 +2143,37 @@
       "description": "## Problem\n\nbacklog handoff reviewer --item N --review internally calls subprocess.run([\"claude\", \"--print\", prompt]). This fails silently when run from inside a Claude Code session because nested sessions are blocked by the Claude Code runtime. The failure manifests as:\n- Empty stdout from the subprocess\n- cli.py gets blank output \u2192 JSON parse fails \u2192 saves a 'partial' result file\n- No actionable error shown to the user \u2014 appears to succeed\n\nThe stderr error ('Claude Code cannot be launched inside another Claude Code session') is captured separately and never surfaced.\n\n## Root Cause\n\nThe skill is designed to be invoked from inside Claude Code, but the handoff command shells out to the claude CLI \u2014 those two facts are permanently in tension. subprocess.run([\"claude\"]) is the wrong tool for a skill that runs inside Claude Code.\n\n## Proposed Fix\n\nSplit handoff into two steps:\n1. backlog handoff reviewer --item N --review prints the review brief to stdout and exits (current --dry-run behavior becomes the only behavior)\n2. SKILL.md instructs Claude to read the brief, perform the review inline or via Agent tool, write the verdict JSON directly to handoff_results/<id>_<ts>.json, then run backlog ingest <file>\n\nThis removes the subprocess entirely. The AI invocation stays where it belongs \u2014 in Claude's hands, not in a subprocess.\n\n## Changes Required\n- cli.py: remove subprocess.run block from handoff command; always print prompt and exit\n- SKILL.md: update code review flow to reflect new two-step process\n- Remove the nested-session guard added as a temporary fix (os.environ CLAUDE_CODE_ENTRYPOINT check)\n\n## Verdict file format (for SKILL.md reference)\n{\"item_id\": \"<id>\", \"verdict\": \"pass | reject\", \"summary\": \"...\", \"issues\": [{\"description\": \"...\", \"severity\": \"blocker | warning\"}]}",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-12T03:30:06.873219+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-12T03:30:07.007244+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T03:30:06.873575+00:00",
+          "detail": "backlog \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T03:30:07.007529+00:00",
+          "detail": "in-progress \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-04-24T21:32:10.694034+00:00",
-      "updated_at": "2026-04-24T21:32:10.694034+00:00"
+      "updated_at": "2026-05-12T03:30:07.007523+00:00"
     },
     {
       "id": "l5dv3sr9",
@@ -2582,6 +2606,374 @@
       "reviewer_history": [
         "reviewer"
       ]
+    },
+    {
+      "id": "menjy7de",
+      "title": "Server: auto-commit backlog.json on shutdown and periodic save",
+      "status": "done",
+      "priority": "high",
+      "priority_weight": 9,
+      "complexity": "low",
+      "category": "bug",
+      "tags": [
+        "backlog-server",
+        "reliability",
+        "dx"
+      ],
+      "description": "When the server shuts down (Ctrl+C, SIGTERM, or kill), uncommitted changes to backlog.json are silently lost if a git operation runs afterwards. Fix: register an atexit handler that auto-commits on exit, wire SIGTERM to sys.exit so atexit fires on kill signals, and add a periodic background timer that commits every 5 minutes while the server is running.\n\n## Spec\n**Acceptance criteria:**\n- On clean shutdown (Ctrl+C, SIGTERM), if backlog.json has uncommitted git changes, server runs: git add <file> && git commit -m 'backlog: auto-save on server shutdown'\n- A background timer commits every 5 minutes while the server is running (configurable via --autosave-interval N seconds, default 300)\n- If the file has no uncommitted changes, no commit is made (idempotent)\n- --no-git-check suppresses both the startup warning (existing) and all auto-commit behavior\n- BACKLOG_NO_GIT_CHECK=1 env var does the same\n- If git is not available or the file is not in a git repo, skip silently \u2014 do not crash\n\n**Failure modes:**\n- git commit fails (e.g. nothing to commit, no user config) \u2014 catch and log to stderr, do not crash\n- SIGKILL (unblockable) \u2014 periodic commit means at most 5 minutes of data loss\n- Server running outside a git repo \u2014 skip silently (same as startup check)\n\n**Edge cases:**\n- No changes at shutdown \u2014 no commit, no output\n- Periodic commit fires at same time as shutdown commit \u2014 idempotent, second commit is a no-op\n- --autosave-interval 0 disables periodic commits",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-10T02:32:34.851697+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-10T02:32:34.989931+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-10T02:32:35.136224+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-10T02:43:57.980340+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-10T02:44:56.592292+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T02:32:34.851958+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T02:32:34.990092+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T02:32:35.136438+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-10T02:32:35.271962+00:00",
+          "detail": "unassigned \u2192 backend-dev"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-10T02:43:57.980517+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-10T02:44:56.592297+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-10T02:32:23.230128+00:00",
+      "updated_at": "2026-05-10T02:44:56.592294+00:00",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "wvppqu7y",
+      "title": "Add CLI integration test suite for backlog link/unlink commands",
+      "status": "done",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "cli",
+        "link"
+      ],
+      "description": "Write deterministic integration tests that invoke the backlog link and backlog unlink binaries as subprocesses and assert stdout, exit codes, and backlog.json state. Cover: add link, duplicate guard (same source+target+type skipped silently), self-link rejection, --list output, unlink removes correct entry, unlink on missing link exits 1.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-12T03:30:07.140404+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-12T03:30:07.270107+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T03:30:07.140564+00:00",
+          "detail": "backlog \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T03:30:07.270262+00:00",
+          "detail": "in-progress \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:03:12.879333+00:00",
+      "updated_at": "2026-05-12T03:30:07.270258+00:00"
+    },
+    {
+      "id": "v1vy32x0",
+      "title": "Add CLI integration tests for backlog ingest and handoff flow",
+      "status": "backlog",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "cli",
+        "ingest",
+        "handoff"
+      ],
+      "description": "Write tests for the full handoff\u2192ingest pipeline. Cover: ingest with pass verdict advances item to done, ingest with reject verdict moves item back to in-progress and opens thread, ingest with malformed JSON exits 1, ingest with missing file exits 1, nested Claude Code session fallback (CLAUDE_CODE_ENTRYPOINT set) prints prompt and exits 0.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:03:42.628052+00:00",
+      "updated_at": "2026-05-12T03:03:42.628052+00:00"
+    },
+    {
+      "id": "8f7zscxn",
+      "title": "Add CLI integration tests for gate rule enforcement",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "cli",
+        "gates"
+      ],
+      "description": "Test that invalid lane transitions are rejected. Cover: cannot move backlog\u2192code-review (skips in-progress), cannot move backlog\u2192done, backward moves always allowed, gate_from resets on backward move and re-earning is required, discard allowed from any lane, restore always goes to backlog.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:03:42.765896+00:00",
+      "updated_at": "2026-05-12T03:03:42.765896+00:00"
+    },
+    {
+      "id": "jtaj8kpi",
+      "title": "Add CLI integration tests for spec gate (\u2192 ready transition)",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "cli",
+        "spec-gate"
+      ],
+      "description": "Test the spec gate enforcement. Cover: moving item to ready without spec block or spec_written signal is blocked and surfaces the 3 questions, item with ## Spec block in description passes gate, item with spec_written signal passes gate, reopened item with existing spec passes gate without re-asking.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:03:42.897601+00:00",
+      "updated_at": "2026-05-12T03:03:42.897601+00:00"
+    },
+    {
+      "id": "msbtoku9",
+      "title": "Add CLI integration tests for staged actions (staged/approve/reject)",
+      "status": "backlog",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "cli",
+        "staged-actions"
+      ],
+      "description": "Write tests for the two-stage approval gate. Cover: backlog staged N lists pending actions, backlog approve N <action-id> approves and applies action, backlog reject N <action-id> rejects with reason, approving non-existent action-id exits 1, JSON output flag works for staged.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:03:43.031421+00:00",
+      "updated_at": "2026-05-12T03:03:43.031421+00:00"
+    },
+    {
+      "id": "l1t1dvvz",
+      "title": "Add eval cases for code review gate and proactive follow-up behavior",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "evals",
+        "skill-behavior"
+      ],
+      "description": "Add entries to evals/evals.json covering: (1) agent correctly invokes handoff\u2192ingest flow when item enters code-review, never spawning reviewer directly; (2) after completing a task agent proactively adds follow-up items without being asked; (3) spec gate \u2014 agent surfaces 3 questions before allowing \u2192ready move.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:03:43.161106+00:00",
+      "updated_at": "2026-05-12T03:03:43.161106+00:00"
+    },
+    {
+      "id": "sbi0my84",
+      "title": "Add CI workflow to run pytest on every push",
+      "status": "backlog",
+      "priority_weight": 9,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "ci",
+        "testing",
+        "infrastructure"
+      ],
+      "description": "Create .github/workflows/test.yml that runs pytest tests/ on every push and PR to main. No external dependencies required \u2014 tests are deterministic. This is the foundation that makes the test suite actually useful as a regression gate.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:30:30.171710+00:00",
+      "updated_at": "2026-05-12T03:30:30.171710+00:00"
+    },
+    {
+      "id": "lsthvv2k",
+      "title": "Add core CLI integration tests (add, move, done, pick, assign, discard, restore)",
+      "status": "backlog",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "cli",
+        "core"
+      ],
+      "description": "Write tests/test_cli_core.py covering the most-used commands. Cover: add item creates correct JSON shape with defaults, move enforces gate rules, done requires in-progress first, pick claims top ready item and sets assigned_to, assign/unassign, discard from any lane, restore always goes to backlog, edit updates fields.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:30:30.307366+00:00",
+      "updated_at": "2026-05-12T03:30:30.307366+00:00"
+    },
+    {
+      "id": "2f03sg7d",
+      "title": "Add write safety and version conflict unit tests",
+      "status": "backlog",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "write-safety",
+        "concurrency"
+      ],
+      "description": "Write tests/test_write_safety.py targeting BacklogStore directly. Cover: write increments version, write with stale expected_version raises conflict, concurrent write simulation (read-modify-write race), apply_lane_transition is required for status changes (raw field write is rejected), re-read-and-retry pattern.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:30:30.511671+00:00",
+      "updated_at": "2026-05-12T03:30:30.511671+00:00"
+    },
+    {
+      "id": "ni4s7dsl",
+      "title": "Add scoring unit tests",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "scoring"
+      ],
+      "description": "Write tests/test_scoring.py with deterministic inputs and expected outputs. Cover: base_priority formula, unblock_weight scales with blocked item count, critical_bug_boost fires only for category=bug AND priority_weight>=9, blocked_penalty scales proportionally with blocker readiness (70% blocker = 30% penalty), quick_win_bonus fires for low complexity + ready blockers, skip_count and reopen_count penalties.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:30:30.643332+00:00",
+      "updated_at": "2026-05-12T03:30:30.643332+00:00"
+    },
+    {
+      "id": "iesy0s89",
+      "title": "Add shared test fixtures (conftest.py) for CLI test suite",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "testing",
+        "infrastructure"
+      ],
+      "description": "Create tests/conftest.py with reusable fixtures: tmp_backlog(items) factory that writes a temp backlog.json and returns its path, cli_runner using typer.testing.CliRunner, make_item() helper. This avoids duplication across test files as the suite grows.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-12T03:30:30.776264+00:00",
+      "updated_at": "2026-05-12T03:30:30.776264+00:00"
     }
   ],
   "config": {
