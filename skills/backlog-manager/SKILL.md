@@ -153,6 +153,47 @@ A reviewer who passes code with a known bug and logs a follow-up ticket has fail
 
 ---
 
+## Git Workflow
+
+All code changes must go through a branch → PR → merge flow. **Never push directly to `main`.**
+
+**Required steps for any code-producing task (subagent):**
+1. Create a feature branch: `git checkout -b <item-id>-<short-description>`
+2. Do the work and commit on that branch
+3. Push the branch: `git push -u origin <branch>`
+4. Open a PR targeting `main` using this body format:
+   ```
+   gh pr create --title "<concise title>" --body "$(cat <<'EOF'
+   ## What changed
+   <1-3 bullets describing the change>
+
+   ## Why
+   <motivation — backlog item #N, bug fix, etc.>
+
+   ## Test plan
+   <how to verify: what tests cover this, what to check manually if any>
+
+   Closes backlog item #N
+   EOF
+   )"
+   ```
+5. Report the PR URL to the lead agent — do not merge, do not wait for CI
+
+**Lead agent — PR monitoring and merge protocol:**
+1. After a subagent reports a PR URL, check if CI is configured: `gh pr checks <PR-number>`
+2. If no CI checks are present (project has no CI yet): skip to step 4 and note "no CI configured" in your report to the user
+3. If CI is still running: poll until it completes (re-run `gh pr checks` after a short wait)
+4. If CI fails: report the failure to the user with the failing step, move the backlog item back to `in-progress`, and ask the subagent to fix
+5. If CI is green (or no CI): report to the user — "PR #N is green. Ready to merge. Confirm?" — and wait
+6. **Only merge after the user explicitly confirms** — `gh pr merge <PR-number> --squash --delete-branch`
+7. After merge: move the backlog item to `done` and close any open threads
+
+**Why:** The user is the final gate before anything lands on `main`. The lead agent does the legwork (CI monitoring, status reporting) but never merges autonomously. Squash merge keeps `main` history clean; `--delete-branch` prevents stale branch accumulation.
+
+**Exception:** Pure doc or config changes with zero code risk may go direct to `main` after explicit user approval — but when in doubt, use a PR.
+
+---
+
 ## Delegating to a Sub-Agent
 
 When spawning a sub-agent for an assigned task, include in the prompt:
@@ -164,6 +205,7 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 5. Blocker protocol: if blocked, open a thread via `PUT /api/items/<id>` and report back
 6. Their persona file path (`.claude/agents/<name>.md`) — agent reads it for identity and past learnings
 7. Self-correction instruction: if you make a mistake and get corrected, update your persona file before finishing
+8. Git workflow: work on a feature branch, push it, open a PR targeting `main` via `gh pr create`, report the PR URL — do not merge directly to `main`
 
 ---
 
