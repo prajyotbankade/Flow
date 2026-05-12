@@ -45,6 +45,16 @@ backlog board --port 9000             # custom port
 
 backlog handoff reviewer --item 3 --review   # review handoff: pass/reject verdict
 backlog handoff backend-dev --item 3         # work handoff: done/blocked/partial
+backlog ingest <result_file>                 # process handoff result → advance item to done or in-progress
+
+backlog link 3 --type blocks --target 5 --reason "Auth must deploy first"
+backlog link 3 --type related --target 7 --reason "Thematically connected"
+backlog link --list 3                        # show all links for item #3
+backlog unlink 3 --target 5                  # remove link from #3 to #5
+
+backlog staged 3                             # list pending staged actions for item #3
+backlog approve 3 <action-id>               # approve a staged action
+backlog reject 3 <action-id> --reason "..."  # reject a staged action
 
 backlog orchestrate                   # supervised mode (default): acts on ready+ items
 backlog orchestrate --mode auto       # auto mode: lead agent refines + starts items autonomously

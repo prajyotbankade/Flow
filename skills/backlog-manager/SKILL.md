@@ -109,6 +109,8 @@ When the user describes a feature to build:
 
 Skipping step 1 and spawning an Agent tool call directly produces an unstructured markdown file that `backlog ingest` cannot parse. The item will appear done but the gate was never properly closed. This is a protocol violation — not an acceptable shortcut.
 
+**When running inside Claude Code** (nested `claude` sessions are blocked): `backlog handoff reviewer --item N --review` will print the review prompt to stdout instead of launching a subprocess. When you see `--- REVIEW PROMPT ---` in the output, execute the review inline using that prompt, write the artifact to `handoff_results/review_<item_id>_<timestamp>.md` in the exact format specified below, then run `backlog ingest <result_file>`.
+
 When reviewing an item in `code-review`, a **reject verdict blocks the merge**. Do not pass and log a follow-up ticket — if you can see the bug, it must be fixed before done.
 
 **Step 1 — Socratic questions (before reading the checklist):**
@@ -253,10 +255,15 @@ Add the item, link it to the source (`follow-up` or `discovered-during`), and me
 
 ## Linking
 
-```json
-{ "item_id": "abc12345", "type": "blocks", "reason": "one sentence why" }
+Use the CLI to add or remove links between items:
+
+```bash
+backlog link <source> --type <type> --target <target> --reason "<one sentence why>"
+backlog link --list <item>     # show all links for an item
+backlog unlink <source> --target <target>
 ```
-Types: `blocks`, `discovered-during`, `follow-up`, `related`. `reason` is required on every link.
+
+Types: `blocks`, `discovered-during`, `follow-up`, `related`. `--reason` is required on every link.
 
 - Use `blocks` only when the dependent item **cannot or should not start** without this one done. Overusing `blocks` inflates leverage scores and corrupts gate rules.
 - Use `related` for everything else — parallel work, thematic connections, context links.

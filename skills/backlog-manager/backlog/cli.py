@@ -891,12 +891,14 @@ def handoff(
         raise typer.Exit(1)
 
     if os.environ.get("CLAUDE_CODE_ENTRYPOINT"):
-        err_console.print(
-            "[red]Error:[/red] Cannot invoke claude from inside a Claude Code session "
-            "(nested sessions are blocked).\n"
-            "Run this command from a plain terminal outside Claude Code."
+        console.print(
+            "[yellow]Running inside Claude Code — nested claude sessions are blocked.[/yellow]\n"
+            "Printing the review prompt below. Execute this review inline, write the artifact to\n"
+            "handoff_results/review_<item_id>_<timestamp>.md, then run: backlog ingest <result_file>\n"
+            "\n--- REVIEW PROMPT ---"
         )
-        raise typer.Exit(1)
+        console.print(prompt, markup=False)
+        raise typer.Exit(0)
 
     console.print(f"[dim]Invoking claude for item {target.get('id')} ...[/dim]")
     try:
