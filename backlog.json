@@ -1,5 +1,5 @@
 {
-  "version": 624,
+  "version": 632,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -2865,7 +2865,7 @@
     {
       "id": "sbi0my84",
       "title": "Add CI workflow to run pytest on every push",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 9,
       "complexity": "low",
       "category": "feature",
@@ -2874,16 +2874,105 @@
         "testing",
         "infrastructure"
       ],
-      "description": "Create .github/workflows/test.yml that runs pytest tests/ on every push and PR to main. No external dependencies required \u2014 tests are deterministic. This is the foundation that makes the test suite actually useful as a regression gate.",
+      "description": "Create .github/workflows/test.yml that runs the full pytest suite under skills/backlog-manager/tests/ on every push to main and every PR targeting main. No external dependencies required \u2014 tests are deterministic. This is the foundation that makes the test suite actually useful as a regression gate.\n\n## Spec\n\n**Acceptance criteria**\n- .github/workflows/test.yml exists and is valid GitHub Actions YAML\n- Workflow triggers on: push to main, pull_request targeting main\n- Runs: pip install -e . (inside skills/backlog-manager/) then pytest tests/\n- All existing tests pass in CI (green on first run)\n- Workflow name and job names are readable (e.g. 'Test' / 'run-tests')\n\n**Failure modes**\n- If pip install fails \u2192 workflow fails with clear error, no silent pass\n- If any test fails \u2192 workflow fails and blocks merge (default pytest exit code behavior)\n- No fallback or continue-on-error \u2014 failures must be visible\n\n**Edge cases**\n- Python version pinned to 3.11 (matches requires-python in pyproject.toml)\n- Working directory set correctly so pytest finds the tests/ folder\n- No caching needed for now \u2014 suite is small and fast",
       "links": [],
-      "threads": [],
-      "lane_history": [],
-      "execution_history": [],
-      "gate_from": 0,
+      "threads": [
+        {
+          "id": "bzq47w6k",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "pytest not installed in CI \u2014 add it via a dev optional-dep group (pip install -e '.[dev]') or an explicit pip install pytest step before running tests",
+          "created_at": "2026-05-12T14:41:37.185472+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-12T14:33:30.577083+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-12T14:35:07.294998+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-12T14:37:28.635855+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-12T14:41:37.185658+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-12T14:42:00.085991+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-12T14:42:12.492307+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T14:33:30.577310+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-12T14:35:07.161189+00:00",
+          "detail": "unassigned \u2192 ci-agent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T14:35:07.295198+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T14:37:28.636054+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-12T14:41:37.185663+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-12T14:42:00.086171+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-12T14:42:12.492313+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 4,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-12T03:30:30.171710+00:00",
-      "updated_at": "2026-05-12T03:30:30.171710+00:00"
+      "updated_at": "2026-05-12T14:42:12.492309+00:00",
+      "assigned_to": "reviewer",
+      "reviewer": "backend-dev",
+      "reviewer_history": [
+        "reviewer",
+        "backend-dev"
+      ]
     },
     {
       "id": "lsthvv2k",
