@@ -734,10 +734,15 @@ class BacklogStore:
         self.write(data, expected_version=data.get("version", 0))
 
         # Include branch_name in outcome when a review passes — orchestrator needs
-        # it to run git merge.
+        # it to run git merge. Prefer the value stored on item metadata (set by
+        # the prior work-result ingest), but fall back to the field in the review
+        # report itself so callers that embed branch_name directly still work.
         outcome_branch_name: str | None = None
         if verdict == "pass":
-            outcome_branch_name = target.get("metadata", {}).get("branch_name")
+            outcome_branch_name = (
+                target.get("metadata", {}).get("branch_name")
+                or report.get("branch_name")
+            )
 
         return {
             "item_id": item_id,
