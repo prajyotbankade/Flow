@@ -426,7 +426,7 @@ class BacklogStore:
             "status": "backlog",
             "priority": fields.get("priority"),
             "priority_weight": fields.get("priority_weight", 5),
-            "complexity": fields.get("complexity"),
+            "complexity": fields.get("complexity") or "medium",
             "category": fields.get("category"),
             "tags": fields.get("tags", []),
             "description": fields.get("description", ""),

@@ -133,6 +133,11 @@ class TestAdd:
         pw = item.get("priority_weight")
         assert pw is None or pw == 5
 
+    def test_add_default_complexity_is_medium(self, empty_file):
+        runner.invoke(app, ["add", "Complexity check", "--file", empty_file])
+        data = json.loads(Path(empty_file).read_text())
+        assert data["items"][0]["complexity"] == "medium"
+
     def test_add_default_tags_is_empty_list(self, empty_file):
         runner.invoke(app, ["add", "Tags check", "--file", empty_file])
         data = json.loads(Path(empty_file).read_text())
@@ -281,7 +286,8 @@ class TestPick:
         assert "ready" in result.output.lower() or "no" in result.output.lower()
 
     def test_pick_picks_first_ready_item(self, tmp_path):
-        # Two ready items — first one (position 0) should be picked
+        # pick_item selects by position (first ready item in array), not by score.
+        # Two ready items — position-0 item is picked, position-1 remains ready.
         p = self._ready_backlog(tmp_path, "First Ready", "Second Ready")
         runner.invoke(app, ["pick", "bob", "--file", p])
         data = json.loads(Path(p).read_text())
@@ -362,8 +368,8 @@ class TestDiscard:
         assert data["items"][0]["status"] == "discarded"
         # Invoking once more should not crash (idempotent behavior)
         result = runner.invoke(app, ["discard", "1", "--file", backlog_file])
-        # Either success or it remains discarded — no exception
-        assert result.exit_code in (0, 1)
+        # Spec says discard-on-already-discarded must be idempotent — clean exit
+        assert result.exit_code == 0
         data = json.loads(Path(backlog_file).read_text())
         assert data["items"][0]["status"] == "discarded"
 
