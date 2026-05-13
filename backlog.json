@@ -1,5 +1,5 @@
 {
-  "version": 632,
+  "version": 637,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -2977,7 +2977,7 @@
     {
       "id": "lsthvv2k",
       "title": "Add core CLI integration tests (add, move, done, pick, assign, discard, restore)",
-      "status": "backlog",
+      "status": "in-progress",
       "priority_weight": 8,
       "complexity": "medium",
       "category": "feature",
@@ -2986,16 +2986,58 @@
         "cli",
         "core"
       ],
-      "description": "Write tests/test_cli_core.py covering the most-used commands. Cover: add item creates correct JSON shape with defaults, move enforces gate rules, done requires in-progress first, pick claims top ready item and sets assigned_to, assign/unassign, discard from any lane, restore always goes to backlog, edit updates fields.",
+      "description": "Write tests/test_cli_core.py covering the most-used commands. Cover: add item creates correct JSON shape with defaults, move enforces gate rules, done requires in-progress first, pick claims top ready item and sets assigned_to, assign/unassign, discard from any lane, restore always goes to backlog, edit updates fields.\n\n## Spec\n\n**Acceptance criteria**\n- `backlog add \"Title\"` creates an item with correct JSON shape: id (8-char alphanumeric), title, status=backlog, priority_weight=5, complexity=medium, tags=[], threads=[], links=[], lane_history=[]\n- `backlog move N <status>` enforces gate rules \u2014 e.g. backlog\u2192refined allowed, backlog\u2192done rejected with non-zero exit\n- `backlog done N` fails (non-zero exit) when item is not in-progress; succeeds and sets status=done when it is\n- `backlog pick <name>` claims the top ready item: sets status=in-progress and assigned_to=<name>\n- `backlog assign N <name>` sets assigned_to; `backlog assign N` (no name) clears it\n- `backlog discard N` sets status=discarded from any lane (no gate)\n- `backlog restore N` always sets status=backlog regardless of prior status\n- `backlog edit N --title \"New\"` updates only the specified fields, leaves others unchanged\n- All tests use a tmp_path-isolated backlog.json via BACKLOG_FILE env var (no global state)\n- All tests pass with `pytest tests/test_cli_core.py` from the skill root\n\n**Failure modes**\n- Invalid status transitions must exit non-zero and print a human-readable error (not a traceback)\n- `backlog done N` on a non-in-progress item must exit non-zero\n- `backlog pick` with no ready items must exit non-zero or print \"no items ready\"\n- `backlog restore N` on a non-existent item ID must exit non-zero\n\n**Edge cases**\n- `backlog add` with no optional flags \u2192 all defaults applied correctly\n- `backlog pick` when multiple ready items exist \u2192 picks highest-scored one\n- `backlog discard` on an already-discarded item \u2192 idempotent (no error)\n- `backlog edit` updating a field that does not exist \u2192 rejected gracefully\n- Tests must not share state: each test uses its own tmp backlog file",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-13T21:32:39.427517+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-13T21:34:19.322168+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-13T21:35:28.750913+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-13T21:32:39.428009+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-13T21:34:19.322342+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-13T21:34:25.377119+00:00",
+          "detail": "unassigned \u2192 qa-agent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-13T21:35:28.751091+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-12T03:30:30.307366+00:00",
-      "updated_at": "2026-05-12T03:30:30.307366+00:00"
+      "updated_at": "2026-05-13T21:35:28.751088+00:00",
+      "assigned_to": "qa-agent"
     },
     {
       "id": "2f03sg7d",
