@@ -222,8 +222,11 @@ class TestHandoffHappyPath:
         assert "My Feature" in result.output
         assert "Review Brief" in result.output
 
-    def test_claude_code_entrypoint_prints_prompt_exits_0(self, backlog_file):
+    def test_claude_code_entrypoint_prints_prompt_exits_0(self, backlog_file, monkeypatch):
         """When CLAUDE_CODE_ENTRYPOINT is set, handoff should print prompt and exit 0."""
+        # Mock shutil.which so the 'claude not found' guard does not fire in CI
+        # environments where the claude CLI is not installed.
+        monkeypatch.setattr("shutil.which", lambda name: "/usr/local/bin/claude" if name == "claude" else None)
         result = runner.invoke(
             app,
             ["handoff", "dev", "--file", backlog_file, "--item", "1"],
@@ -325,14 +328,12 @@ class TestIngestEdgeCases:
             "verdict": "pass",
             "summary": "Done and merged.",
             "issues": [],
-            "branch_name": "feat/item-abcd1234-my-feature",
+            "branch_name": "feat/my-branch",
         })
         result = runner.invoke(app, ["ingest", result_path, "--file", backlog_file])
         assert result.exit_code == 0, result.output
-        # branch_name may appear in output for pass verdict
-        # The CLI shows branch note only for non-review (work) verdicts
-        # For review pass (verdict=pass), branch_name is not carried through
-        # Just verify exit 0 and done status
         data = json.loads(Path(backlog_file).read_text())
         item = next(i for i in data["items"] if i["id"] == _ITEM_ID)
         assert item["status"] == "done"
+        # branch_name provided in review pass result should appear in CLI output
+        assert "feat/my-branch" in result.output
