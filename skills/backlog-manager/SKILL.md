@@ -11,6 +11,16 @@ Invoke this skill when the user:
 - Mentions backlog, sprint planning, task queue, work items, story grooming, or agile workflow
 - Says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", "which agent should take this", or "what's blocking progress"
 - Asks about prioritizing, refining, or picking up work
+- Says "assign #N to <agent>" — this means spawn the agent and drive the item to completion, not just update a field
+- References an item by number (#N) in any action context (assign, move, review, merge, check status)
+
+## Intent vs. Literal Input
+
+Never take backlog commands purely literally. Resolve intent first:
+- **"assign #N to X"** → set `assigned_to`, then spawn agent X to actually do the work and drive through review → merge → done
+- **Obvious typos in agent names** (e.g. "sugagent", "subagnet") → silently correct to the intended name and proceed. Do not confirm the typo back to the user.
+- **"is it merged?" / "is X working on it?"** → check status AND assess whether the right action has actually been taken (agent spawned, PR open, etc.) — not just report the raw field value
+- **"let me know when it's ready"** → treat as implicit delegation: drive the work, don't just watch
 
 Invoke proactively (without being asked) when:
 - You've just finished a task and the user hasn't given you a new one → generate a work brief and offer to pick up the top-scored item
