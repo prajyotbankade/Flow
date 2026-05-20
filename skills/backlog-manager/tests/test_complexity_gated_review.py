@@ -170,6 +170,22 @@ class TestRunSubleadagentReview:
         assert "hidden dependencies" in prompt or "dependencies" in prompt
         assert "edge cases" in prompt
 
+    def test_findings_with_curly_braces_returns_correct_result(self):
+        """Findings text containing { } must not break JSON extraction.
+
+        Regression: the old re.search(r'\\{.*?\\}') stops at the first },
+        producing truncated invalid JSON when findings mention dict patterns.
+        """
+        response = (
+            '{"passed": false, "findings": '
+            '["Missing {config} key in the payload", "Dict pattern {k: v} not validated"]}'
+        )
+        with patch("subprocess.run", return_value=_mock_claude_run(response)):
+            passed, findings = _run_subleadagent_review("Config item", "needs {config}", [])
+        assert passed is False
+        assert len(findings) == 2
+        assert "Missing {config} key in the payload" in findings
+
 
 # ── _auto_refine_tick ──────────────────────────────────────────────────────────
 
@@ -329,6 +345,32 @@ class TestAutoRefineTick:
              patch("shutil.which", return_value="/usr/bin/claude"):
             _auto_refine_tick(bl_file, "lead-dev", dry_run=False)
         mock_run.assert_not_called()
+
+    def test_human_complexity_override_skips_assess_complexity(self, tmp_path):
+        """When an item already has complexity='simple' set, _assess_complexity must NOT
+        be called and the item should move straight to ready without a sub-lead review.
+
+        Regression: previously _assess_complexity was called unconditionally every tick,
+        so a human running 'backlog edit N --complexity simple' had no effect.
+        """
+        bl_file = _make_backlog_file(tmp_path, [
+            {"title": "Pre-labelled item", "status": "backlog", "tags": [], "complexity": "simple"}
+        ])
+        # Only ONE subprocess call expected: the readiness check.
+        # If _assess_complexity is called, it would be a second call and the test would fail
+        # because there is no second response in the sequence.
+        responses = self._claude_sequence([
+            '{"ready": true}',  # readiness check only
+        ])
+        with patch("subprocess.run", side_effect=responses) as mock_run, \
+             patch("shutil.which", return_value="/usr/bin/claude"), \
+             patch("backlog.cli._assess_complexity") as mock_assess:
+            _auto_refine_tick(bl_file, "lead-dev", dry_run=False)
+
+        mock_assess.assert_not_called()
+
+        data = json.loads(Path(bl_file).read_text())
+        assert data["items"][0]["status"] == "ready"
 
     def test_complexity_label_notification_is_printed(self, tmp_path, capsys):
         """Human must see the proposed complexity label so they can override it."""

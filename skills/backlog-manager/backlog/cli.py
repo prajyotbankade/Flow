@@ -1345,8 +1345,6 @@ def _run_subleadagent_review(
     findings contains blocker strings if passed=False, or praise if passed=True.
     Falls back to (True, []) if Claude is unavailable — do not block on tool absence.
     """
-    import re
-
     tags_str = ", ".join(tags) if tags else "(none)"
     checklist = (
         "1. Are acceptance criteria testable and specific (not vague promises)?\n"
@@ -1374,11 +1372,27 @@ def _run_subleadagent_review(
             ["claude", "--print", prompt],
             capture_output=True, text=True, timeout=90,
         )
-        m = re.search(r'\{.*?\}', result.stdout, re.DOTALL)
-        if not m:
+        text = result.stdout
+        # Robust JSON extraction: find outermost { } via bracket counting
+        # so that findings strings containing { or } don't truncate the match.
+        start = text.find('{')
+        if start == -1:
             console.print(f"{log_prefix} sub-lead review: could not parse response — treating as passed")
             return (True, [])
-        parsed = json.loads(m.group(0))
+        depth = 0
+        end = -1
+        for idx in range(start, len(text)):
+            if text[idx] == '{':
+                depth += 1
+            elif text[idx] == '}':
+                depth -= 1
+                if depth == 0:
+                    end = idx
+                    break
+        if end == -1:
+            console.print(f"{log_prefix} sub-lead review: could not parse response — treating as passed")
+            return (True, [])
+        parsed = json.loads(text[start:end + 1])
         passed = bool(parsed.get("passed", True))
         findings = parsed.get("findings", [])
         return (passed, findings)
@@ -1466,9 +1480,15 @@ def _auto_refine_tick(
 
     if parsed.get("ready"):
         # ── Step 1: assign complexity label ──────────────────────────────────
-        complexity_label, complexity_reason = _assess_complexity(
-            title, description, tags, log_prefix=log_prefix
-        )
+        stored_complexity = candidate.get("complexity")
+        if stored_complexity in ("simple", "complex"):
+            # Human already set an explicit complexity — honour it, skip Claude call.
+            complexity_label = stored_complexity
+            complexity_reason = "human override"
+        else:
+            complexity_label, complexity_reason = _assess_complexity(
+                title, description, tags, log_prefix=log_prefix
+            )
         console.print(
             f"{log_prefix} item #{pos} complexity → [bold]{complexity_label}[/bold] "
             f"({complexity_reason})"
