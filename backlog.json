@@ -1,5 +1,5 @@
 {
-  "version": 637,
+  "version": 650,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -3105,6 +3105,165 @@
       "skip_count": 0,
       "created_at": "2026-05-12T03:30:30.776264+00:00",
       "updated_at": "2026-05-12T03:30:30.776264+00:00"
+    },
+    {
+      "id": "l7kl6zwj",
+      "title": "Add complexity-gated sub-lead-agent review step to refinement workflow",
+      "status": "done",
+      "priority_weight": 6,
+      "complexity": "medium",
+      "category": "workflow",
+      "tags": [
+        "workflow",
+        "refinement",
+        "lead-agent",
+        "orchestration"
+      ],
+      "description": "After lead agent refines an item with the human, introduce a sub-lead-agent review pass \u2014 but only for complex items, to avoid unnecessary token and time overhead.\n\nWorkflow:\n1. Lead agent completes refinement with human\n2. Lead agent assigns complexity: simple | complex with a one-line reason\n3. Human accepts or overrides the complexity label before refinement closes\n4. If complex: sub-lead-agent runs a focused readiness review\n5. If simple: item moves directly to ready via spec gate as usual\n\nSub-lead-agent review checklist (complex items only):\n- Acceptance criteria are testable, not vague\n- No hidden dependencies on unbuilt or unplanned pieces\n- Estimate is realistic given current codebase state\n- Edge cases and failure modes are called out\n- Scope is clearly bounded with no implicit follow-on work\n\nComplexity heuristics for lead agent:\n- complex: touches auth/security/data integrity, spans multiple components, introduces new patterns, has unclear edge cases, or estimate is high\n- simple: single-file change, well-understood pattern, clear acceptance criteria, estimate is low or medium\n\nHuman override: human can bump simple to complex or complex to simple before refinement closes. The sub-lead only triggers after the label is finalized.\n\n## Spec\nAcceptance criteria: Lead agent proposes complexity label at end of refinement. Human can override via backlog edit before closing. Sub-lead review runs only when complexity is complex. Simple items skip directly to ready via spec gate. Sub-lead review checklist covers: testable AC, no hidden deps, realistic estimate, edge cases called out, bounded scope.\nFailure modes: If Claude is unavailable for complexity assessment, default to complex (safe fallback). If sub-lead review fails, item stays in refined with a waiting_on thread.\nEdge cases: Human explicitly overrides to simple \u2014 stored complexity field must be respected on next tick, Claude must not re-classify. Findings text containing curly braces must not break JSON parsing.",
+      "assigned_to": "lead-dev",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-20T16:04:29.701141+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-20T16:04:29.842075+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-20T16:12:40.337973+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-20T16:18:10.451089+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:04:29.701377+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:04:29.842277+00:00",
+          "detail": "refined \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:12:40.338265+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-20T16:18:10.451095+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-20T16:04:09.089498+00:00",
+      "updated_at": "2026-05-20T16:18:10.451091+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "janlm69z",
+      "title": "Fix _assess_complexity to use bracket-counting JSON parser (non-greedy regex still present)",
+      "status": "backlog",
+      "priority_weight": 4,
+      "complexity": "low",
+      "category": "tech-debt",
+      "tags": [
+        "backlog-manager",
+        "python",
+        "tech-debt"
+      ],
+      "description": "The blocker fix in _run_subleadagent_review replaced the non-greedy regex with a bracket-counting loop, but _assess_complexity still uses re.search(r'\\{.*?\\}', re.DOTALL). Fallback is safe (defaults to complex) but produces a misleading parse-error log when the reason string contains braces. Port the same bracket-counting approach from _run_subleadagent_review.",
+      "links": [
+        {
+          "item_id": "l7kl6zwj",
+          "type": "follow-up",
+          "reason": "Incomplete fix from #69 \u2014 same regex issue in _assess_complexity was not ported"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-20T16:23:26.090089+00:00",
+      "updated_at": "2026-05-20T16:24:05.313631+00:00"
+    },
+    {
+      "id": "p8jsx275",
+      "title": "backlog ingest should accept position number (#N) in addition to internal item_id",
+      "status": "in-progress",
+      "priority_weight": 4,
+      "complexity": "low",
+      "category": "ux",
+      "tags": [
+        "backlog-manager",
+        "cli",
+        "ux"
+      ],
+      "description": "Currently backlog ingest requires the internal 8-char item_id (e.g. l7kl6zwj) in the JSON result file. The human-readable position number should also be accepted, but ONLY via explicit #N format (e.g. \"item_id\": \"#69\").\n\nImplementation constraint: internal IDs are 8-char alphanumeric (a-z + 0-9), so an all-digit ID like 12345678 is technically valid. Bare digit strings (e.g. \"item_id\": \"69\") must NOT be treated as position lookups \u2014 that would cause silent misrouting if an internal ID happens to be all digits. Only the explicit # prefix (\"#69\") triggers a position lookup.\n\nDisambiguation logic:\n- item_id matches #\\d+ \u2192 position lookup\n- anything else \u2192 internal ID lookup (existing behavior unchanged)",
+      "links": [
+        {
+          "item_id": "l7kl6zwj",
+          "type": "follow-up",
+          "reason": "UX friction surfaced during #69 review cycle \u2014 internal item_id in artifacts is unreadable"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-20T16:38:16.426134+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-20T16:31:13.444742+00:00",
+          "detail": "unassigned \u2192 sugagent"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-20T16:34:28.638033+00:00",
+          "detail": "sugagent \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:38:16.426330+00:00",
+          "detail": "backlog \u2192 in-progress (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-20T16:23:26.244363+00:00",
+      "updated_at": "2026-05-20T16:38:16.426326+00:00",
+      "assigned_to": "subagent"
     }
   ],
   "config": {

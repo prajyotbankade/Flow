@@ -1273,6 +1273,134 @@ def _get_orchestrator_mode(data: dict, mode_override: Optional[str] = None) -> s
     return data.get("config", {}).get("orchestrator", {}).get("mode", "supervised")
 
 
+def _assess_complexity(
+    title: str,
+    description: str,
+    tags: list,
+    log_prefix: str = "[auto]",
+) -> tuple:
+    """Ask Claude to classify item complexity as 'simple' or 'complex' with a reason.
+
+    Heuristics used in the prompt:
+    - complex: touches auth/security/data integrity, spans multiple components,
+               introduces new patterns, has unclear edge cases, or estimate is high
+    - simple:  single-file change, well-understood pattern, clear acceptance
+               criteria, estimate is low or medium
+
+    Returns (label, reason) where label is 'simple' or 'complex'.
+    Falls back to 'complex' if the call fails (safer default).
+    """
+    import re
+
+    tags_str = ", ".join(tags) if tags else "(none)"
+    prompt = (
+        "You are a lead agent classifying a backlog item's complexity before refinement closes.\n\n"
+        f"Item title: {title}\n"
+        f"Item description:\n{description or '(no description)'}\n"
+        f"Tags: {tags_str}\n\n"
+        "Classify as 'simple' or 'complex' using these heuristics:\n"
+        "  complex — touches auth/security/data integrity, spans multiple components,\n"
+        "            introduces new patterns, has unclear edge cases, or estimate is high\n"
+        "  simple  — single-file change, well-understood pattern, clear acceptance\n"
+        "            criteria, estimate is low or medium\n\n"
+        'Reply with JSON only: {"complexity": "simple" | "complex", "reason": "<one-line reason>"}'
+    )
+
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=True, text=True, timeout=60,
+        )
+        m = re.search(r'\{.*?\}', result.stdout, re.DOTALL)
+        if not m:
+            console.print(f"{log_prefix} could not parse complexity response — defaulting to complex")
+            return ("complex", "parse error — defaulting to complex (safer)")
+        parsed = json.loads(m.group(0))
+        label = parsed.get("complexity", "complex")
+        if label not in ("simple", "complex"):
+            label = "complex"
+        reason = parsed.get("reason", "")
+        return (label, reason)
+    except Exception as e:
+        console.print(f"{log_prefix} complexity assessment error: {e} — defaulting to complex")
+        return ("complex", f"error: {e} — defaulting to complex")
+
+
+def _run_subleadagent_review(
+    title: str,
+    description: str,
+    tags: list,
+    log_prefix: str = "[auto]",
+) -> tuple:
+    """Run a focused readiness review for complex items via Claude sub-lead-agent.
+
+    Checklist evaluated:
+    1. Acceptance criteria are testable, not vague
+    2. No hidden dependencies on unbuilt or unplanned pieces
+    3. Estimate is realistic given typical codebase scope
+    4. Edge cases and failure modes are called out
+    5. Scope is clearly bounded with no implicit follow-on work
+
+    Returns (passed: bool, findings: list[str]).
+    findings contains blocker strings if passed=False, or praise if passed=True.
+    Falls back to (True, []) if Claude is unavailable — do not block on tool absence.
+    """
+    tags_str = ", ".join(tags) if tags else "(none)"
+    checklist = (
+        "1. Are acceptance criteria testable and specific (not vague promises)?\n"
+        "2. Are there hidden dependencies on unbuilt or unplanned pieces?\n"
+        "3. Is the estimate realistic given a typical medium-sized codebase?\n"
+        "4. Are edge cases and failure modes explicitly called out?\n"
+        "5. Is scope clearly bounded with no implicit follow-on work?"
+    )
+    prompt = (
+        "You are a sub-lead agent running a focused readiness review for a complex backlog item.\n"
+        "Your job is to decide whether this item is ready to be worked on — not to review code.\n\n"
+        f"Item title: {title}\n"
+        f"Item description:\n{description or '(no description)'}\n"
+        f"Tags: {tags_str}\n\n"
+        f"Readiness checklist:\n{checklist}\n\n"
+        "For each checklist item, note pass or fail. Then give an overall verdict.\n\n"
+        "Reply with JSON only:\n"
+        '{"passed": true | false, "findings": ["<finding1>", "<finding2>"]}\n'
+        "findings = list of problems if passed=false, or list of strengths if passed=true.\n"
+        "Keep each finding to one sentence."
+    )
+
+    try:
+        result = subprocess.run(
+            ["claude", "--print", prompt],
+            capture_output=True, text=True, timeout=90,
+        )
+        text = result.stdout
+        # Robust JSON extraction: find outermost { } via bracket counting
+        # so that findings strings containing { or } don't truncate the match.
+        start = text.find('{')
+        if start == -1:
+            console.print(f"{log_prefix} sub-lead review: could not parse response — treating as passed")
+            return (True, [])
+        depth = 0
+        end = -1
+        for idx in range(start, len(text)):
+            if text[idx] == '{':
+                depth += 1
+            elif text[idx] == '}':
+                depth -= 1
+                if depth == 0:
+                    end = idx
+                    break
+        if end == -1:
+            console.print(f"{log_prefix} sub-lead review: could not parse response — treating as passed")
+            return (True, [])
+        parsed = json.loads(text[start:end + 1])
+        passed = bool(parsed.get("passed", True))
+        findings = parsed.get("findings", [])
+        return (passed, findings)
+    except Exception as e:
+        console.print(f"{log_prefix} sub-lead review error: {e} — treating as passed")
+        return (True, [])
+
+
 def _auto_refine_tick(
     backlog_file: str,
     lead_name: str,
@@ -1282,6 +1410,10 @@ def _auto_refine_tick(
     """Auto mode: lead agent picks the highest-priority unstarted item and either
     moves it to ready (if actionable) or opens a thread asking the human blocking
     questions (max 2, most important first).
+
+    After determining readiness the lead agent assigns a complexity label
+    ('simple' | 'complex') and asks the human to confirm or override it.
+    For complex items a sub-lead-agent readiness review runs before the spec gate.
 
     Items already waiting for human input (waiting_on='user' unresolved thread)
     are skipped — we don't pile on more questions.
@@ -1312,6 +1444,7 @@ def _auto_refine_tick(
     pos = _item_position(data, item_id)
     title = candidate.get("title", "")
     description = candidate.get("description", "")
+    tags = candidate.get("tags", [])
 
     console.print(f"{log_prefix} auto mode — assessing item #{pos} '{title}'")
 
@@ -1346,6 +1479,78 @@ def _auto_refine_tick(
         return
 
     if parsed.get("ready"):
+        # ── Step 1: assign complexity label ──────────────────────────────────
+        stored_complexity = candidate.get("complexity")
+        if stored_complexity in ("simple", "complex"):
+            # Human already set an explicit complexity — honour it, skip Claude call.
+            complexity_label = stored_complexity
+            complexity_reason = "human override"
+        else:
+            complexity_label, complexity_reason = _assess_complexity(
+                title, description, tags, log_prefix=log_prefix
+            )
+        console.print(
+            f"{log_prefix} item #{pos} complexity → [bold]{complexity_label}[/bold] "
+            f"({complexity_reason})"
+        )
+
+        # Notify human of the proposed label so they can override before refinement closes
+        console.print(
+            f"[yellow]COMPLEXITY LABEL:[/yellow] Item #{pos} '{title}' — "
+            f"proposed as [bold]{complexity_label}[/bold]: {complexity_reason}\n"
+            f"  To override: backlog edit {pos} --complexity <simple|complex>"
+        )
+
+        # ── Step 2: for complex items, run sub-lead-agent readiness review ────
+        if complexity_label == "complex":
+            console.print(
+                f"{log_prefix} running sub-lead-agent readiness review for complex item #{pos} …"
+            )
+            passed, findings = _run_subleadagent_review(
+                title, description, tags, log_prefix=log_prefix
+            )
+
+            if not passed:
+                findings_text = "\n".join(f"- {f}" for f in findings)
+                console.print(
+                    f"{log_prefix} sub-lead review: item #{pos} has readiness issues — opening thread"
+                )
+                if not dry_run:
+                    data2 = store.read()
+                    items2 = data2.get("items", [])
+                    target = next((i for i in items2 if i.get("id") == item_id), None)
+                    if target is not None:
+                        from .core import _now_iso, _generate_id
+                        target.setdefault("threads", []).append({
+                            "id": _generate_id(),
+                            "topic": "Sub-lead readiness review — complex item",
+                            "waiting_on": "user",
+                            "body": (
+                                f"Sub-lead-agent readiness review found issues "
+                                f"for this complex item:\n{findings_text}\n\n"
+                                "Please address these before refinement closes."
+                            ),
+                            "created_at": _now_iso(),
+                            "resolved": False,
+                        })
+                        target["updated_at"] = _now_iso()
+                        store.write(data2, expected_version=data2.get("version", 0))
+                console.print(
+                    f"[yellow]NOTIFICATION:[/yellow] Item #{pos} '{title}' failed sub-lead "
+                    "readiness review. Issues added as a thread."
+                )
+                return  # Do not move to ready until issues are resolved
+
+            # Review passed — log praise/notes if any
+            if findings:
+                console.print(
+                    f"{log_prefix} sub-lead review passed for #{pos}. "
+                    f"Notes: {'; '.join(findings)}"
+                )
+            else:
+                console.print(f"{log_prefix} sub-lead review passed for #{pos} — no issues found")
+
+        # ── Step 3: move to ready (spec gate applies as usual) ────────────────
         console.print(f"{log_prefix} item #{pos} is actionable → moving to ready")
         if not dry_run:
             try:
