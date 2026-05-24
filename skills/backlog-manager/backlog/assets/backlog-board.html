@@ -2129,10 +2129,10 @@
       if (!item) return;
 
       editingItemId = id;
-      document.getElementById('modal-title').textContent = 'Edit Item';
       const itemPos = backlog.items.indexOf(item) + 1;
+      document.getElementById('modal-title').textContent = itemPos > 0 ? `Edit Item: #${itemPos}` : 'Edit Item';
       const numBadge = document.getElementById('modal-item-number');
-      if (numBadge) numBadge.textContent = itemPos > 0 ? `#${itemPos}` : '';
+      if (numBadge) numBadge.textContent = '';
       document.getElementById('item-title').value = item.title;
       document.getElementById('item-desc').value = item.description || '';
       document.getElementById('item-status').value = item.status;
