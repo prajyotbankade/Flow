@@ -506,7 +506,8 @@ class BacklogStore:
             raise ValueError("Use move_item() to change status — gate rules apply.")
         data, item = self.get_item(position)
         allowed = {"title", "description", "priority", "priority_weight",
-                   "complexity", "category", "tags", "assigned_to"}
+                   "complexity", "category", "tags", "assigned_to",
+                   "refinement_gate"}
         for k, v in fields.items():
             if k in allowed:
                 item[k] = v
