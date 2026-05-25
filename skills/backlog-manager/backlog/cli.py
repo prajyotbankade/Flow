@@ -440,6 +440,7 @@ def edit(
     category: Optional[str] = typer.Option(None, "--category"),
     tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags"),
     assigned_to: Optional[str] = typer.Option(None, "--assigned-to"),
+    refinement_gate: Optional[str] = typer.Option(None, "--refinement-gate", help="simple/complex"),
 ) -> None:
     """Edit fields on an item (use 'move' to change status)."""
     store = _store(file)
@@ -452,6 +453,7 @@ def edit(
     if category is not None:       fields["category"] = category
     if tags is not None:           fields["tags"] = [t.strip() for t in tags.split(",")]
     if assigned_to is not None:    fields["assigned_to"] = assigned_to
+    if refinement_gate is not None: fields["refinement_gate"] = refinement_gate
     if not fields:
         err_console.print("[yellow]No fields to update.[/yellow]")
         raise typer.Exit(1)
@@ -1479,26 +1481,26 @@ def _auto_refine_tick(
         return
 
     if parsed.get("ready"):
-        # ── Step 1: assign complexity label ──────────────────────────────────
-        stored_complexity = candidate.get("complexity")
-        if stored_complexity in ("simple", "complex"):
-            # Human already set an explicit complexity — honour it, skip Claude call.
-            complexity_label = stored_complexity
+        # ── Step 1: assign refinement_gate label ─────────────────────────────
+        stored_refinement_gate = candidate.get("refinement_gate")
+        if stored_refinement_gate in ("simple", "complex"):
+            # Human already set an explicit refinement_gate — honour it, skip Claude call.
+            complexity_label = stored_refinement_gate
             complexity_reason = "human override"
         else:
             complexity_label, complexity_reason = _assess_complexity(
                 title, description, tags, log_prefix=log_prefix
             )
         console.print(
-            f"{log_prefix} item #{pos} complexity → [bold]{complexity_label}[/bold] "
+            f"{log_prefix} item #{pos} refinement_gate → [bold]{complexity_label}[/bold] "
             f"({complexity_reason})"
         )
 
         # Notify human of the proposed label so they can override before refinement closes
         console.print(
-            f"[yellow]COMPLEXITY LABEL:[/yellow] Item #{pos} '{title}' — "
+            f"[yellow]REFINEMENT GATE:[/yellow] Item #{pos} '{title}' — "
             f"proposed as [bold]{complexity_label}[/bold]: {complexity_reason}\n"
-            f"  To override: backlog edit {pos} --complexity <simple|complex>"
+            f"  To override: backlog edit {pos} --refinement-gate <simple|complex>"
         )
 
         # ── Step 2: for complex items, run sub-lead-agent readiness review ────
