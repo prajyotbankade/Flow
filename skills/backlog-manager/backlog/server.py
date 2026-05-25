@@ -2484,6 +2484,11 @@ def main():
         default=os.environ.get("BACKLOG_FILE", "backlog.json"),
         help="Path to backlog.json (or set BACKLOG_FILE env var)"
     )
+    parser.add_argument(
+        "--host", type=str,
+        default=os.environ.get("BACKLOG_HOST", "0.0.0.0"),
+        help="Host to bind to (default: 0.0.0.0, or set BACKLOG_HOST env var)"
+    )
     parser.add_argument("--no-open", action="store_true", help="Don't auto-open the browser")
     parser.add_argument(
         "--no-git-check",
@@ -2507,8 +2512,11 @@ def main():
         no_git_check=args.no_git_check,
     )
 
-    server = HTTPServer(("localhost", args.port), BacklogHandler)
-    url = f"http://localhost:{args.port}"
+    if args.host == "0.0.0.0":
+        print("WARNING: Binding to all interfaces (0.0.0.0) — the board will be reachable from other machines on the network.")
+    server = HTTPServer((args.host, args.port), BacklogHandler)
+    display_host = "localhost" if args.host == "0.0.0.0" else args.host
+    url = f"http://{display_host}:{args.port}"
 
     project_root = str(Path(backlog_file).parent)
     file_agents = parse_agent_files(project_root)

@@ -1,5 +1,5 @@
 {
-  "version": 667,
+  "version": 698,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -3498,6 +3498,405 @@
       "skip_count": 0,
       "created_at": "2026-05-25T03:27:17.888277+00:00",
       "updated_at": "2026-05-25T04:10:43.869753+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "grbi3kis",
+      "title": "backlog init should run git update-index --skip-worktree on backlog.json",
+      "status": "backlog",
+      "priority": "7",
+      "complexity": "low",
+      "tags": [
+        "cli",
+        "reliability",
+        "git",
+        "init"
+      ],
+      "description": "",
+      "links": [
+        {
+          "item_id": "gxp1kds9",
+          "type": "related",
+          "reason": "Complements startup/shutdown git protection \u2014 prevents git pull/checkout from overwriting local backlog.json"
+        },
+        {
+          "item_id": "menjy7de",
+          "type": "related",
+          "reason": "Complements auto-commit on shutdown \u2014 skip-worktree prevents git replacing the file even after a commit exists"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T04:26:26.247048+00:00",
+      "updated_at": "2026-05-25T04:26:38.567431+00:00"
+    },
+    {
+      "id": "6yt4bdyy",
+      "title": "Declare anthropic SDK as explicit dependency in pyproject.toml",
+      "status": "code-review",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "infra",
+      "tags": [
+        "packaging",
+        "deps",
+        "public-release"
+      ],
+      "description": "server.py uses anthropic for policy evaluation but it's missing from pyproject.toml, causing silent runtime crashes on first use.\n\n## Spec\n**Acceptance criteria:** pyproject.toml lists anthropic>=0.25 under [project.dependencies]; pip install -e . on a clean env pulls it in.\n**Failure modes:** Wrong version floor breaks policy eval \u2014 pin to actual minimum used.\n**Edge cases:** Must be in [project.dependencies], not [dev] dependencies.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.766902+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.585198+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:37.355180+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.767084+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:34.195906+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.585785+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:37.355453+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:41:53.911761+00:00",
+      "updated_at": "2026-05-25T16:48:37.355448+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "39jmvlto",
+      "title": "Make Ollama opt-in in eval suite, not hardcoded default",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "low",
+      "category": "infra",
+      "tags": [
+        "evals",
+        "config",
+        "public-release"
+      ],
+      "description": "eval_flow_skill.py defaults to localhost:11434 + specific model; should be skippable or configurable so public users without Ollama don't fail on first run",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.117332+00:00",
+      "updated_at": "2026-05-25T16:42:10.117332+00:00"
+    },
+    {
+      "id": "lcjyyk3a",
+      "title": "Fix server binding: use 0.0.0.0 instead of localhost",
+      "status": "code-review",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "backend",
+      "tags": [
+        "server",
+        "config",
+        "public-release"
+      ],
+      "description": "server.py binds to localhost which blocks Docker, WSL, and remote dev environments.\n\n## Spec\n**Acceptance criteria:** Server binds to 0.0.0.0 by default; overridable via --host flag or BACKLOG_HOST env var. Logs a warning when binding to all interfaces.\n**Failure modes:** Binding 0.0.0.0 exposes on all interfaces \u2014 warning in logs is required.\n**Edge cases:** User wanting localhost-only uses BACKLOG_HOST=127.0.0.1.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.915864+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.750555+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:37.536657+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.916062+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:34.349731+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.751049+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:37.536859+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.364890+00:00",
+      "updated_at": "2026-05-25T16:48:37.536853+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "urs27qrn",
+      "title": "Sync version numbers and add migration story",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "docs",
+      "tags": [
+        "versioning",
+        "docs",
+        "public-release"
+      ],
+      "description": "plugin manifest says 2.0.0, pyproject.toml says 0.1.0; add CHANGELOG and document backlog.json schema migration path for users upgrading",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.585228+00:00",
+      "updated_at": "2026-05-25T16:42:10.585228+00:00"
+    },
+    {
+      "id": "xz32xzpz",
+      "title": "Add backlog init command with helpful guidance",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "ux",
+        "cli",
+        "public-release"
+      ],
+      "description": "missing backlog.json gives cryptic JSON errors instead of a helpful 'run backlog init first' message; implement init command that creates backlog.json and wires up CLAUDE.md",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.797898+00:00",
+      "updated_at": "2026-05-25T16:42:10.797898+00:00"
+    },
+    {
+      "id": "sctl75wg",
+      "title": "Write complete installation docs with version requirements",
+      "status": "backlog",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "docs",
+        "public-release"
+      ],
+      "description": "README missing explicit requirements: Python 3.11+, Flask, Typer, Rich, Anthropic SDK version specs; add a Requirements section",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.956009+00:00",
+      "updated_at": "2026-05-25T16:42:10.956009+00:00"
+    },
+    {
+      "id": "n6ae9jml",
+      "title": "Add LICENSE file",
+      "status": "code-review",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "infra",
+      "tags": [
+        "legal",
+        "public-release"
+      ],
+      "description": "README declares MIT license but no LICENSE file exists in repo root; required for open source distribution.\n\n## Spec\n**Acceptance criteria:** LICENSE file exists in repo root containing standard MIT text with year 2026 and author Prajyot Bankade.\n**Failure modes:** N/A \u2014 static file.\n**Edge cases:** None.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.472461+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.253779+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:36.496928+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.472686+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:33.817552+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.253932+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:36.497156+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:11.173255+00:00",
+      "updated_at": "2026-05-25T16:48:36.497151+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "mg76o5ip",
+      "title": "Link schema.md from README",
+      "status": "code-review",
+      "priority_weight": 5,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "docs",
+        "public-release"
+      ],
+      "description": "schema.md exists in references/ but isn't linked from README; users customizing statuses have no way to discover it.\n\n## Spec\n**Acceptance criteria:** README contains a clickable link to references/schema.md in a logical place (near config/customization section).\n**Failure modes:** N/A \u2014 doc edit.\n**Edge cases:** None.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.620410+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.435721+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:36.967111+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.620614+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:34.030693+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.435900+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:36.967365+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:11.484153+00:00",
+      "updated_at": "2026-05-25T16:48:36.967359+00:00",
+      "assigned_to": "subagent",
       "reviewer": "reviewer",
       "reviewer_history": [
         "reviewer"
