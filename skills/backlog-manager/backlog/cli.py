@@ -453,7 +453,10 @@ def edit(
     if category is not None:       fields["category"] = category
     if tags is not None:           fields["tags"] = [t.strip() for t in tags.split(",")]
     if assigned_to is not None:    fields["assigned_to"] = assigned_to
-    if refinement_gate is not None: fields["refinement_gate"] = refinement_gate
+    if refinement_gate is not None:
+        if refinement_gate not in ("simple", "complex"):
+            raise typer.BadParameter("Must be 'simple' or 'complex'", param_hint="--refinement-gate")
+        fields["refinement_gate"] = refinement_gate
     if not fields:
         err_console.print("[yellow]No fields to update.[/yellow]")
         raise typer.Exit(1)
@@ -1502,6 +1505,17 @@ def _auto_refine_tick(
             f"proposed as [bold]{complexity_label}[/bold]: {complexity_reason}\n"
             f"  To override: backlog edit {pos} --refinement-gate <simple|complex>"
         )
+
+        # Write assessed label back to item (only if not already set by human)
+        if not dry_run:
+            data2 = store.read()
+            items2 = data2.get("items", [])
+            target = next((i for i in items2 if i.get("id") == item_id), None)
+            if target is not None and not target.get("refinement_gate"):
+                from .core import _now_iso
+                target["refinement_gate"] = complexity_label
+                target["updated_at"] = _now_iso()
+                store.write(data2, expected_version=data2.get("version", 0))
 
         # ── Step 2: for complex items, run sub-lead-agent readiness review ────
         if complexity_label == "complex":
