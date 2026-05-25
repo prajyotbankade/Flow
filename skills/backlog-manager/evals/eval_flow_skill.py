@@ -21,9 +21,10 @@ GRAPH_URL     = f"{BASE_URL}/api/graph"
 PULSE_URL     = f"{BASE_URL}/api/pulse"
 
 # ---------------------------------------------------------------------------
-# LLM backend toggle: set EVAL_LLM=openai to use OpenAI, defaults to ollama
+# LLM backend toggle: set EVAL_LLM=openai or EVAL_LLM=ollama to enable LLM.
+# Defaults to None — LLM-dependent evals are skipped when unset.
 # ---------------------------------------------------------------------------
-EVAL_LLM = os.environ.get("EVAL_LLM", "ollama").lower()
+EVAL_LLM = (os.environ.get("EVAL_LLM") or "").lower() or None
 
 OLLAMA_URL    = "http://localhost:11434/api/generate"
 OLLAMA_MODEL  = "qwen2.5-coder:7b"
@@ -59,6 +60,8 @@ def _track_tokens(data, category="generation"):
 
 def _call_llm(prompt: str) -> str:
     """Call the configured LLM backend and track tokens."""
+    if not EVAL_LLM:
+        raise RuntimeError("Set EVAL_LLM=openai or EVAL_LLM=ollama to run LLM-dependent evals")
     if EVAL_LLM == "openai":
         resp = _openai_client.chat.completions.create(
             model=OPENAI_MODEL,

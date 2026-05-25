@@ -12,16 +12,23 @@ requires_anthropic = pytest.mark.skipif(
     reason="ANTHROPIC_API_KEY not set — policy engine LLM tests skipped",
 )
 
+requires_llm = pytest.mark.skipif(
+    not EVAL_LLM,
+    reason="EVAL_LLM not set — LLM-dependent tests skipped (set EVAL_LLM=openai or EVAL_LLM=ollama)",
+)
+
 BACKLOG_URL = "http://localhost:8089/api/backlog"
 
 # Judge model — OpenAI for accuracy, Ollama for free local runs
 if EVAL_LLM == "openai":
     judge_model = "gpt-4o-mini"
-else:
+elif EVAL_LLM == "ollama":
     from deepeval.models import OllamaModel
     judge_model = OllamaModel(model="qwen2.5-coder:14b")
+else:
+    judge_model = None
 
-relevancy_metric = AnswerRelevancyMetric(threshold=0.6, model=judge_model)
+relevancy_metric = AnswerRelevancyMetric(threshold=0.6, model=judge_model) if judge_model else None
 
 # ---------------------------------------------------------------------------
 # Scenarios
@@ -192,6 +199,7 @@ def restore_backlog():
 # Tests
 # ---------------------------------------------------------------------------
 @pytest.mark.timeout(300)
+@requires_llm
 @pytest.mark.parametrize("scenario", SCENARIOS, ids=[s["name"] for s in SCENARIOS])
 def test_flow_skill_live(scenario):
     # 1. SETUP — get current version
@@ -443,6 +451,7 @@ TRIBUNAL_SCENARIOS = [
 
 
 @pytest.mark.timeout(300)
+@requires_llm
 @pytest.mark.parametrize(
     "scenario", TRIBUNAL_SCENARIOS, ids=[s["name"] for s in TRIBUNAL_SCENARIOS]
 )
@@ -759,6 +768,7 @@ GRAPH_SCENARIOS = [
 
 
 @pytest.mark.timeout(300)
+@requires_llm
 @pytest.mark.parametrize(
     "scenario", GRAPH_SCENARIOS, ids=[s["name"] for s in GRAPH_SCENARIOS]
 )
@@ -1027,6 +1037,7 @@ POLICY_SCENARIOS = [
 
 
 @pytest.mark.timeout(300)
+@requires_llm
 @requires_anthropic
 @pytest.mark.parametrize(
     "scenario", POLICY_SCENARIOS, ids=[s["name"] for s in POLICY_SCENARIOS]
@@ -1354,6 +1365,7 @@ STRATEGIC_SCENARIOS = [
 
 
 @pytest.mark.timeout(300)
+@requires_llm
 @pytest.mark.parametrize(
     "scenario", STRATEGIC_SCENARIOS, ids=[s["name"] for s in STRATEGIC_SCENARIOS]
 )
