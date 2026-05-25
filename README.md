@@ -23,6 +23,22 @@ Flow turns Claude into a project partner that thinks in backlogs and decides wha
 - **Multi-agent support** — filtered views for worker agents, assignment tracking, `@Agent` tagging, configurable agent profiles with skills and capacity
 - **Concurrency safe** — optimistic versioning + atomic writes prevent data loss when multiple agents or the board write simultaneously
 
+## Requirements
+
+- **Python 3.11+** — required by the CLI package
+- **pip** — to install the `backlog` CLI
+
+The skill CLI (`pip install -e .`) installs these packages automatically:
+
+| Package | Minimum version |
+|---------|----------------|
+| `typer` | 0.12 |
+| `flask` | 3.0 |
+| `rich` | 13.0 |
+| `anthropic` | 0.25 |
+
+> **Running evals?** See [Eval environment setup](#eval-environment-setup-one-time) — the eval suite needs Python 3.12 and additional packages (`deepeval`, `pytest`, `openai`).
+
 ## Quick Start
 
 There are two ways to install Flow depending on how you want to use it.
