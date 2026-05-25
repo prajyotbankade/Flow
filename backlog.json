@@ -1,5 +1,5 @@
 {
-  "version": 694,
+  "version": 698,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -3540,7 +3540,7 @@
     {
       "id": "6yt4bdyy",
       "title": "Declare anthropic SDK as explicit dependency in pyproject.toml",
-      "status": "in-progress",
+      "status": "code-review",
       "priority_weight": 8,
       "complexity": "low",
       "category": "infra",
@@ -3562,6 +3562,11 @@
           "lane": "ready",
           "at": "2026-05-25T16:47:40.585198+00:00",
           "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:37.355180+00:00",
+          "by": "user"
         }
       ],
       "execution_history": [
@@ -3582,14 +3587,24 @@
           "actor": "user",
           "at": "2026-05-25T16:47:40.585785+00:00",
           "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:37.355453+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:41:53.911761+00:00",
-      "updated_at": "2026-05-25T16:47:40.585778+00:00",
-      "assigned_to": "subagent"
+      "updated_at": "2026-05-25T16:48:37.355448+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "39jmvlto",
@@ -3617,7 +3632,7 @@
     {
       "id": "lcjyyk3a",
       "title": "Fix server binding: use 0.0.0.0 instead of localhost",
-      "status": "in-progress",
+      "status": "code-review",
       "priority_weight": 8,
       "complexity": "low",
       "category": "backend",
@@ -3639,6 +3654,11 @@
           "lane": "ready",
           "at": "2026-05-25T16:47:40.750555+00:00",
           "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:37.536657+00:00",
+          "by": "user"
         }
       ],
       "execution_history": [
@@ -3659,14 +3679,24 @@
           "actor": "user",
           "at": "2026-05-25T16:47:40.751049+00:00",
           "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:37.536859+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:10.364890+00:00",
-      "updated_at": "2026-05-25T16:47:40.750967+00:00",
-      "assigned_to": "subagent"
+      "updated_at": "2026-05-25T16:48:37.536853+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "urs27qrn",
@@ -3739,7 +3769,7 @@
     {
       "id": "n6ae9jml",
       "title": "Add LICENSE file",
-      "status": "in-progress",
+      "status": "code-review",
       "priority_weight": 6,
       "complexity": "low",
       "category": "infra",
@@ -3759,6 +3789,11 @@
         {
           "lane": "ready",
           "at": "2026-05-25T16:47:40.253779+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:36.496928+00:00",
           "by": "user"
         }
       ],
@@ -3780,19 +3815,29 @@
           "actor": "user",
           "at": "2026-05-25T16:47:40.253932+00:00",
           "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:36.497156+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:11.173255+00:00",
-      "updated_at": "2026-05-25T16:47:40.253927+00:00",
-      "assigned_to": "subagent"
+      "updated_at": "2026-05-25T16:48:36.497151+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "mg76o5ip",
       "title": "Link schema.md from README",
-      "status": "in-progress",
+      "status": "code-review",
       "priority_weight": 5,
       "complexity": "low",
       "category": "docs",
@@ -3812,6 +3857,11 @@
         {
           "lane": "ready",
           "at": "2026-05-25T16:47:40.435721+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:36.967111+00:00",
           "by": "user"
         }
       ],
@@ -3833,14 +3883,24 @@
           "actor": "user",
           "at": "2026-05-25T16:47:40.435900+00:00",
           "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:36.967365+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:11.484153+00:00",
-      "updated_at": "2026-05-25T16:47:40.435895+00:00",
-      "assigned_to": "subagent"
+      "updated_at": "2026-05-25T16:48:36.967359+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     }
   ],
   "config": {
