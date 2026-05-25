@@ -371,7 +371,7 @@ All scoring parameters are tunable in `config.scoring`:
 }
 ```
 
-See `references/schema.md` for the full list of configurable weights and thresholds.
+See [`references/schema.md`](skills/backlog-manager/references/schema.md) for the full list of configurable weights and thresholds.
 
 ### Eval environment setup (one-time)
 
