@@ -153,10 +153,18 @@ Example questions for a concurrent write operation:
 - `reject:<blocker summary>` — one or more blockers found. Move item back to `in-progress` with a thread listing only the blockers and exactly what must change.
 
 **Review artifact** — write `handoff_results/review_<item_id>_<timestamp>.json` after every review (pass or reject):
-```
-# Review: <item title>
-**Item**: #N  **Verdict**: pass | reject  **Reviewer**: reviewer  **Timestamp**: <ISO>
-## Blockers / ## Important / ## Nits / ## Praise   (omit empty sections)
+```json
+{
+  "item_id": "<item_id>",
+  "verdict": "pass | reject",
+  "summary": "...",
+  "issues": [
+    {
+      "description": "...",
+      "severity": "blocker | warning"
+    }
+  ]
+}
 ```
 
 A reviewer who passes code with a known bug and logs a follow-up ticket has failed at their job.
