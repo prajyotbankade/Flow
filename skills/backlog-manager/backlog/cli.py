@@ -46,6 +46,15 @@ def _store(file_flag: Optional[str]) -> BacklogStore:
     return BacklogStore(_resolve_file(file_flag))
 
 
+def _require_store(file_flag: Optional[str]) -> BacklogStore:
+    path = _resolve_file(file_flag)
+    if not os.path.exists(path):
+        err_console.print(f"[red]No backlog.json found at {path}.[/red]")
+        err_console.print("Run [bold]backlog init[/bold] to create one and get started.")
+        raise typer.Exit(1)
+    return BacklogStore(path)
+
+
 # ── Exception handling ────────────────────────────────────────────────────────
 
 def _handle(fn):
@@ -205,7 +214,7 @@ def list(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Show the backlog grouped by lane."""
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
     _print_board(data, filter_status=status, filter_assigned=assigned_to, as_json=json_out)
 
@@ -218,7 +227,7 @@ def top(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Show the top N prioritized items, ranked by tribunal. No server needed."""
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
     all_items = data.get("items", [])
 
@@ -299,7 +308,7 @@ def show(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Show full detail for one item."""
-    store = _store(file)
+    store = _require_store(file)
     _, item = store.get_item(position)
     _print_item(item, position, as_json=json_out)
 
@@ -318,7 +327,7 @@ def add(
     assigned_to: Optional[str] = typer.Option(None, "--assigned-to"),
 ) -> None:
     """Add a new item to the bottom of the backlog."""
-    store = _store(file)
+    store = _require_store(file)
     tag_list = [t.strip() for t in tags.split(",")] if tags else []
     item = store.add_item(
         title,
@@ -343,7 +352,7 @@ def move(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Move an item to a different lane (gate rules enforced)."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.move_item(position, target_status, moved_by="user")
     console.print(f"[green]Moved[/green] #{position} \"{item['title']}\" → {target_status}")
 
@@ -355,7 +364,7 @@ def done(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Move an item to done."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.move_item(position, "done", moved_by="user")
     console.print(f"[green]Done[/green] #{position} \"{item['title']}\"")
 
@@ -368,7 +377,7 @@ def assign(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Assign an item to an agent or person."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.assign_item(position, to)
     console.print(f"[green]Assigned[/green] #{position} \"{item['title']}\" → {to}")
 
@@ -380,7 +389,7 @@ def unassign(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Remove assignment from an item."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.unassign_item(position)
     console.print(f"[green]Unassigned[/green] #{position} \"{item['title']}\"")
 
@@ -392,7 +401,7 @@ def discard(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Discard an item (always allowed from any lane)."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.discard_item(position, moved_by="user")
     console.print(f"[dim]Discarded[/dim] #{position} \"{item['title']}\"")
 
@@ -404,7 +413,7 @@ def restore(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Restore a discarded item back to backlog."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.restore_item(position, moved_by="user")
     console.print(f"[green]Restored[/green] #{position} \"{item['title']}\" → backlog")
 
@@ -417,7 +426,7 @@ def pick(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Pick the highest-priority ready item, move to in-progress, and assign it."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.pick_item(agent)
     if json_out:
         console.print_json(json.dumps(item))
@@ -443,7 +452,7 @@ def edit(
     refinement_gate: Optional[str] = typer.Option(None, "--refinement-gate", help="simple/complex"),
 ) -> None:
     """Edit fields on an item (use 'move' to change status)."""
-    store = _store(file)
+    store = _require_store(file)
     fields = {}
     if title is not None:          fields["title"] = title
     if description is not None:    fields["description"] = description
@@ -677,7 +686,7 @@ def handoff(
     import datetime
     import shutil
 
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
     backlog_path = store.file_path
 
@@ -994,7 +1003,7 @@ def ingest(
         err_console.print(f"[red]Error:[/red] Result file is not valid JSON: {e}")
         raise typer.Exit(1)
 
-    store = _store(file)
+    store = _require_store(file)
     outcome = store.ingest_result(report)
 
     if json_out:
@@ -1037,7 +1046,7 @@ def staged(
     json_out: bool = JSON_OPT,
 ) -> None:
     """List pending staged actions for an item."""
-    store = _store(file)
+    store = _require_store(file)
     _, item = store.get_item(position)
     actions = [a for a in item.get("staged_actions", []) if a.get("status") == "pending"]
 
@@ -1075,7 +1084,7 @@ def approve(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Approve a pending staged action."""
-    store = _store(file)
+    store = _require_store(file)
     action = store.approve_action(position, action_id, approved_by="cli")
     console.print(
         f"[green]Approved[/green] action [cyan]{action_id}[/cyan] "
@@ -1092,7 +1101,7 @@ def reject(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Reject a pending staged action."""
-    store = _store(file)
+    store = _require_store(file)
     action = store.reject_action(position, action_id, rejected_by="cli", reason=reason)
     msg = f"[red]Rejected[/red] action [cyan]{action_id}[/cyan] ({action.get('type', '')})"
     if reason:
@@ -1143,7 +1152,7 @@ def link_cmd(
       backlog link <source> --type <type> --target <target> --reason "<reason>"
       backlog link --list <item>
     """
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
 
     # ── --list mode ───────────────────────────────────────────────────────────
@@ -1227,7 +1236,7 @@ def unlink_cmd(
     target: str = typer.Option(..., "--target", help="Target item — position number or item ID"),
 ) -> None:
     """Remove a link from source item to target item."""
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
 
     src_pos, src_item = _resolve_item_ref(data, source)

@@ -349,6 +349,15 @@ def test_init_fails_if_file_exists(tmp_backlog):
     assert result.exit_code == 1, result.output
 
 
+def test_commands_without_backlog_show_init_hint(tmp_path):
+    """Commands run against a missing file should guide the user to run backlog init."""
+    missing = str(tmp_path / "nonexistent.json")
+    for cmd in [["top", "--file", missing], ["list", "--file", missing]]:
+        result = runner.invoke(app, cmd)
+        assert result.exit_code == 1, f"{cmd}: {result.output}"
+        assert "backlog init" in result.output, f"{cmd}: expected hint in output, got: {result.output}"
+
+
 # ── Test: version conflict ────────────────────────────────────────────────────
 
 def test_conflict_on_stale_version(tmp_backlog):
