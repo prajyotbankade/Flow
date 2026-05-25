@@ -119,7 +119,7 @@ When the user describes a feature to build:
 
 Skipping step 1 and spawning an Agent tool call directly produces an unstructured markdown file that `backlog ingest` cannot parse. The item will appear done but the gate was never properly closed. This is a protocol violation — not an acceptable shortcut.
 
-**When running inside Claude Code** (nested `claude` sessions are blocked): `backlog handoff reviewer --item N --review` will print the review prompt to stdout instead of launching a subprocess. When you see `--- REVIEW PROMPT ---` in the output, execute the review inline using that prompt, write the artifact to `handoff_results/review_<item_id>_<timestamp>.md` in the exact format specified below, then run `backlog ingest <result_file>`.
+**When running inside Claude Code** (nested `claude` sessions are blocked): `backlog handoff reviewer --item N --review` will print the review prompt to stdout instead of launching a subprocess. When you see `--- REVIEW PROMPT ---` in the output, execute the review inline using that prompt, write the artifact to `handoff_results/review_<item_id>_<timestamp>.json` in the exact format specified below, then run `backlog ingest <result_file>`.
 
 When reviewing an item in `code-review`, a **reject verdict blocks the merge**. Do not pass and log a follow-up ticket — if you can see the bug, it must be fixed before done.
 
@@ -152,11 +152,19 @@ Example questions for a concurrent write operation:
 - `pass` — zero blockers. Important issues and nits are noted in the review artifact and follow-up threads.
 - `reject:<blocker summary>` — one or more blockers found. Move item back to `in-progress` with a thread listing only the blockers and exactly what must change.
 
-**Review artifact** — write `handoff_results/review_<item_id>_<timestamp>.md` after every review (pass or reject):
-```
-# Review: <item title>
-**Item**: #N  **Verdict**: pass | reject  **Reviewer**: reviewer  **Timestamp**: <ISO>
-## Blockers / ## Important / ## Nits / ## Praise   (omit empty sections)
+**Review artifact** — write `handoff_results/review_<item_id>_<timestamp>.json` after every review (pass or reject):
+```json
+{
+  "item_id": "<item_id>",
+  "verdict": "pass | reject",
+  "summary": "...",
+  "issues": [
+    {
+      "description": "...",
+      "severity": "blocker | warning"
+    }
+  ]
+}
 ```
 
 A reviewer who passes code with a known bug and logs a follow-up ticket has failed at their job.
