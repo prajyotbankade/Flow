@@ -191,12 +191,18 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 **Lead agent — PR monitoring and merge protocol:**
 1. After a subagent reports a PR URL, check if CI is configured: `gh pr checks <PR-number>`
-2. If no CI checks are present (project has no CI yet): skip to step 4 and note "no CI configured" in your report to the user
+2. If no CI checks are present (project has no CI yet): skip to step 3 and note "no CI configured"
 3. If CI is still running: poll until it completes (re-run `gh pr checks` after a short wait)
 4. If CI fails: report the failure to the user with the failing step, move the backlog item back to `in-progress`, and ask the subagent to fix
-5. If CI is green (or no CI): report to the user — "PR #N is green. Ready to merge. Confirm?" — and wait
-6. **Only merge after the user explicitly confirms** — `gh pr merge <PR-number> --squash --delete-branch`
-7. After merge: move the backlog item to `done` and close any open threads
+5. **If CI is green (or no CI): run the code review gate — do NOT ask the user about merging yet:**
+   - `backlog move N code-review`
+   - `backlog handoff reviewer --item N --review`
+   - `backlog ingest <result_file>`
+   - If rejected: move back to `in-progress`, send fixes to the subagent, restart from step 1
+   - If passed: proceed to step 6
+6. Report to the user — "PR #N passed review. Ready to merge. Confirm?" — and wait
+7. **Only merge after the user explicitly confirms** — `gh pr merge <PR-number> --squash --delete-branch`
+8. After merge: the `backlog ingest` on a passing review already moved the item to `done` — verify with `backlog show N`
 
 **Why:** The user is the final gate before anything lands on `main`. The lead agent does the legwork (CI monitoring, status reporting) but never merges autonomously. Squash merge keeps `main` history clean; `--delete-branch` prevents stale branch accumulation.
 
