@@ -1,5 +1,5 @@
 {
-  "version": 665,
+  "version": 667,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -3467,13 +3467,41 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
-      "gate_from": 0,
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T04:09:55.364052+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T04:10:43.869185+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T04:09:55.364254+00:00",
+          "detail": "backlog \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T04:10:43.869761+00:00",
+          "detail": "code-review \u2192 backlog (backward)"
+        }
+      ],
+      "gate_from": 2,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T03:27:17.888277+00:00",
-      "updated_at": "2026-05-25T03:36:38.920919+00:00"
+      "updated_at": "2026-05-25T04:10:43.869753+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     }
   ],
   "config": {
