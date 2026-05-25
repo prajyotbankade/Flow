@@ -275,17 +275,17 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 **Complete** — `status: done`. Add brief completion note. Offer next item from ready queue.
 
-**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. When moving to `ready`, the spec gate applies (see below). Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null.
+**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null. **Before closing refinement and moving to `ready`, you MUST run the refinement gate below** — propose `refinement_gate: simple` or `refinement_gate: complex`, wait for human confirmation, and (if complex) run the sub-lead-agent readiness review. Do not skip to the spec gate without completing this step.
 
-**Complexity-gated sub-lead-agent review (end of refinement):**
+**Refinement-gate sub-lead-agent review (end of refinement) — REQUIRED before any `→ ready` move:**
 
-After lead agent completes refinement with the human, assign a complexity label before closing refinement:
+This gate is mandatory. Do not move an item to `ready` or run the spec gate without completing it first. After all refinement questions are resolved, do the following:
 
-1. Lead agent proposes `simple` or `complex` with a one-line reason:
+1. Lead agent proposes `refinement_gate: simple` or `refinement_gate: complex` with a one-line reason:
    - `complex` — touches auth/security/data integrity, spans multiple components, introduces new patterns, has unclear edge cases, or estimate is high
    - `simple` — single-file change, well-understood pattern, clear acceptance criteria, estimate is low or medium
-2. Human confirms or overrides the label (`backlog edit N --complexity <simple|complex>`). Sub-lead only triggers **after** the label is finalised.
-3. If `complex`: run a sub-lead-agent readiness review before the spec gate. The checklist:
+2. Human confirms or overrides the label (`backlog edit N --refinement-gate <simple|complex>`). Sub-lead only triggers **after** the label is finalised.
+3. If `refinement_gate: complex`: run a sub-lead-agent readiness review before the spec gate. The checklist:
    - Acceptance criteria are testable, not vague
    - No hidden dependencies on unbuilt or unplanned pieces
    - Estimate is realistic given current codebase state
@@ -293,9 +293,9 @@ After lead agent completes refinement with the human, assign a complexity label 
    - Scope is clearly bounded with no implicit follow-on work
    - If the review finds issues: open a thread (`waiting_on: "user"`), do **not** move to `ready`. Wait for resolution.
    - If the review passes: proceed to the spec gate as usual.
-4. If `simple`: item moves directly to `ready` via spec gate as usual — no sub-lead review.
+4. If `refinement_gate: simple`: item moves directly to `ready` via spec gate as usual — no sub-lead review.
 
-In auto mode the orchestrator handles steps 1–4 automatically. In supervised mode the lead agent performs the complexity assessment and, if complex, runs the sub-lead review inline before surfacing the item to the human as ready.
+In auto mode the orchestrator handles steps 1–4 automatically. In supervised mode the lead agent proposes the `refinement_gate` label to the human, waits for confirmation or override, and then (if complex) runs the sub-lead readiness review inline before proceeding to the spec gate.
 
 **Spec gate (any `→ ready` move):** Before moving any item to `ready` — regardless of its current status — check two things: (1) does a `spec_written` signal exist on the item, or (2) does the item description already contain a `## Spec` block? If either is true, the gate passes — proceed with the `ready` move. If neither exists, surface these three questions and wait for answers before proceeding:
 1. *Acceptance criteria* — What does done look like exactly? How will you verify it?

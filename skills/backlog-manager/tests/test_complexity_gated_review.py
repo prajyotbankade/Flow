@@ -41,6 +41,10 @@ def _make_backlog_file(tmp_path, items_data) -> str:
             "created_at": "2024-01-01T00:00:00+00:00",
             "updated_at": "2024-01-01T00:00:00+00:00",
         }
+        # Pass through optional fields that tests may need (e.g. refinement_gate)
+        for optional_field in ("refinement_gate",):
+            if optional_field in spec:
+                item[optional_field] = spec[optional_field]
         items.append(item)
     data = {
         "version": 1,
@@ -347,14 +351,17 @@ class TestAutoRefineTick:
         mock_run.assert_not_called()
 
     def test_human_complexity_override_skips_assess_complexity(self, tmp_path):
-        """When an item already has complexity='simple' set, _assess_complexity must NOT
+        """When an item already has refinement_gate='simple' set, _assess_complexity must NOT
         be called and the item should move straight to ready without a sub-lead review.
 
         Regression: previously _assess_complexity was called unconditionally every tick,
-        so a human running 'backlog edit N --complexity simple' had no effect.
+        so a human running 'backlog edit N --refinement-gate simple' had no effect.
+
+        Note: `complexity` no longer drives assessment skipping — `refinement_gate` does.
+        The two fields are independent; setting only `complexity` will NOT skip the assessment.
         """
         bl_file = _make_backlog_file(tmp_path, [
-            {"title": "Pre-labelled item", "status": "backlog", "tags": [], "complexity": "simple"}
+            {"title": "Pre-labelled item", "status": "backlog", "tags": [], "refinement_gate": "simple"}
         ])
         # Only ONE subprocess call expected: the readiness check.
         # If _assess_complexity is called, it would be a second call and the test would fail
