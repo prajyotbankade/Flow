@@ -27,6 +27,7 @@ DEFAULT_STATUSES = [
 
 STARTER_BACKLOG = {
     "version": 0,
+    "schema_version": 1,
     "config": {
         "scope": "project",
         "project_name": "",

@@ -1,6 +1,6 @@
 {
   "name": "flow",
-  "version": "2.0.0",
+  "version": "0.1.0",
   "description": "AI-driven work intelligence engine for Claude Code — scores, prioritizes, assigns, and picks up work items with a scoring engine, reprioritization triggers, assignment intelligence, and a visual Kanban board.",
   "author": {
     "name": "Prajyot Bankade",
