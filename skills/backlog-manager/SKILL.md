@@ -243,7 +243,9 @@ Look for these files to determine the test runner:
 | File present | Language | Test runner |
 |---|---|---|
 | `package.json` | JS/TS | Jest |
-| `requirements.txt` or `pyproject.toml` | Python | pytest |
+| `requirements.txt` | Python | pytest |
+| `pyproject.toml` | Python | pytest |
+| None of the above | Unknown | Ask the user which language/runner is in use, or skip CI setup with a warning note explaining why it was skipped. |
 
 ### Step 3 — Create or patch the workflow
 
@@ -279,10 +281,35 @@ jobs:
 Also add `jest-junit` as a devDependency if it is missing:
 
 ```bash
-grep -q '"jest-junit"' package.json || npm install --save-dev jest-junit
+grep -q '"jest-junit"' package.json || npm install --save-dev jest-junit || { echo "jest-junit install failed"; exit 1; }
 ```
 
-For Python projects:
+For Python projects detected via `requirements.txt`:
+
+```yaml
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest tests/ --junit-xml=test-results.xml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
+
+For Python projects detected via `pyproject.toml`:
 
 ```yaml
 name: Test
@@ -307,7 +334,14 @@ jobs:
           files: test-results.xml
 ```
 
-**If `.github/workflows/` exists but lacks `EnricoMi/publish-unit-test-result-action`** — patch the existing workflow to add the junit reporter step and the publish action. Do not replace the whole file; append only what is missing.
+**If `.github/workflows/` exists but lacks `EnricoMi/publish-unit-test-result-action`** — patch the existing workflow to add the junit reporter step and the publish action. Do not replace the whole file; append only what is missing. Specifically: (1) add `--junit-xml=test-results.xml` (pytest) or `--reporters=jest-junit` with `JEST_JUNIT_OUTPUT_FILE: test-results.xml` (Jest) to the test run step, and (2) append the following step immediately after the test run step:
+
+```yaml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
 
 ### Step 4 — Commit the CI file before tests
 
