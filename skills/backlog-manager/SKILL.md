@@ -178,6 +178,13 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 **Required steps for any code-producing task (subagent):**
 1. Create a feature branch: `git checkout -b <item-id>-<short-description>`
 2. Do the work and commit on that branch
+4a. Run the full test suite locally before pushing:
+    - JS/TS: `npm test` or `npx jest --ci`
+    - Python: `pytest tests/`
+    - If the test command is unknown: skip with a warning note in the PR description
+    - If tests fail: fix the code before pushing — do not open a red PR
+    - If no test suite exists yet: skip and note it in the PR description
+    This step is mandatory. CI is a second confirmation, not the first signal.
 3. Push the branch: `git push -u origin <branch>`
 4. Open a PR targeting `main` using this body format:
    ```
