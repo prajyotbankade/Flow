@@ -218,6 +218,120 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 ---
 
+## CI Setup (run once per project)
+
+This is **mandatory**, not advisory. Agents must complete this before writing any tests. Invisible test results are not shippable — CI with junit reporting is part of the definition of done for every code task.
+
+### Step 1 — Detect CI state
+
+At the start of any code task, check two things:
+
+1. Does `.github/workflows/` exist in the project root?
+2. If a workflow exists, does it include `EnricoMi/publish-unit-test-result-action`?
+
+Run these checks before writing any production code or tests:
+
+```bash
+ls .github/workflows/ 2>/dev/null || echo "NO_CI"
+grep -r "publish-unit-test-result-action" .github/workflows/ 2>/dev/null || echo "NO_JUNIT_REPORTER"
+```
+
+### Step 2 — Detect language
+
+Look for these files to determine the test runner:
+
+| File present | Language | Test runner |
+|---|---|---|
+| `package.json` | JS/TS | Jest |
+| `requirements.txt` or `pyproject.toml` | Python | pytest |
+
+### Step 3 — Create or patch the workflow
+
+**If `.github/workflows/` does not exist** — create `test.yml` before writing any tests.
+
+For JS/TS projects:
+
+```yaml
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx jest --ci --reporters=default --reporters=jest-junit
+        env:
+          JEST_JUNIT_OUTPUT_FILE: test-results.xml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
+
+Also add `jest-junit` as a devDependency if it is missing:
+
+```bash
+grep -q '"jest-junit"' package.json || npm install --save-dev jest-junit
+```
+
+For Python projects:
+
+```yaml
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e . pytest
+      - run: pytest tests/ --junit-xml=test-results.xml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
+
+**If `.github/workflows/` exists but lacks `EnricoMi/publish-unit-test-result-action`** — patch the existing workflow to add the junit reporter step and the publish action. Do not replace the whole file; append only what is missing.
+
+### Step 4 — Commit the CI file before tests
+
+Commit the workflow file as a standalone commit on the feature branch **before** the test commit:
+
+```bash
+git add .github/workflows/test.yml
+git commit -m "ci: add test workflow with junit reporting"
+```
+
+This ordering matters: if CI is missing and the test commit lands first, the first PR has no coverage signal.
+
+### Definition of done for CI
+
+An item is not `done` until:
+- `.github/workflows/` contains a workflow that runs on push and pull_request to main
+- The workflow emits a junit XML file
+- `EnricoMi/publish-unit-test-result-action@v2` is present with `if: always()` so results appear in the Actions Summary tab even on failure
+- The first PR on the project shows CI checks in `gh pr checks <PR>`
+
+If `gh pr checks <PR>` returns no checks after CI was added, the workflow file likely has a syntax error or branch filter mismatch — fix it before marking done.
+
+---
+
 ## Delegating to a Sub-Agent
 
 When spawning a sub-agent for an assigned task, include in the prompt:
