@@ -337,3 +337,99 @@ class TestIngestEdgeCases:
         assert item["status"] == "done"
         # branch_name provided in review pass result should appear in CLI output
         assert "feat/my-branch" in result.output
+
+
+# ── ingest: position-number (#N) lookup ──────────────────────────────────────
+
+
+class TestIngestPositionLookup:
+    """Tests for the #N position-based item_id disambiguation in backlog ingest."""
+
+    def test_hash_position_resolves_to_correct_item(self, backlog_file, tmp_path):
+        """item_id '#1' should resolve to the first item (position 1) in the backlog."""
+        result_path = write_result_file(tmp_path, {
+            "item_id": "#1",
+            "verdict": "pass",
+            "summary": "Resolved by position.",
+            "issues": [],
+        })
+        result = runner.invoke(app, ["ingest", result_path, "--file", backlog_file])
+        assert result.exit_code == 0, result.output
+        data = json.loads(Path(backlog_file).read_text())
+        item = next(i for i in data["items"] if i["id"] == _ITEM_ID)
+        assert item["status"] == "done"
+
+    def test_hash_position_second_item(self, backlog_file, tmp_path):
+        """item_id '#2' should resolve to the second item in the backlog."""
+        # First move item 2 to code-review so it can be ingested
+        runner.invoke(app, ["move", "2", "code-review", "--file", backlog_file])
+        result_path = write_result_file(tmp_path, {
+            "item_id": "#2",
+            "verdict": "pass",
+            "summary": "Second item resolved by position.",
+            "issues": [],
+        })
+        result = runner.invoke(app, ["ingest", result_path, "--file", backlog_file])
+        assert result.exit_code == 0, result.output
+        data = json.loads(Path(backlog_file).read_text())
+        item = next(i for i in data["items"] if i["id"] == _ITEM_ID_2)
+        assert item["status"] == "done"
+
+    def test_bare_digit_string_treated_as_internal_id(self, backlog_file, tmp_path):
+        """item_id '1' (no # prefix) must NOT be treated as a position lookup."""
+        result_path = write_result_file(tmp_path, {
+            "item_id": "1",
+            "verdict": "pass",
+            "summary": "Should fail — bare digit is not a position lookup.",
+            "issues": [],
+        })
+        result = runner.invoke(app, ["ingest", result_path, "--file", backlog_file])
+        # '1' is not a valid internal ID in this backlog, so it should exit 1
+        assert result.exit_code == 1
+        assert "not found" in result.output.lower() or "error" in result.output.lower()
+
+    def test_all_digit_internal_id_still_works(self, tmp_path):
+        """An 8-digit all-numeric internal ID must be looked up as-is, not as a position."""
+        digit_id = "12345678"
+        data = make_backlog(
+            {"id": digit_id, "title": "All-digit ID item", "status": "code-review"},
+        )
+        p = tmp_path / "backlog.json"
+        p.write_text(json.dumps(data, indent=2))
+        result_path = write_result_file(tmp_path, {
+            "item_id": digit_id,
+            "verdict": "pass",
+            "summary": "Internal all-digit ID lookup.",
+            "issues": [],
+        })
+        result = runner.invoke(app, ["ingest", result_path, "--file", str(p)])
+        assert result.exit_code == 0, result.output
+        updated = json.loads(p.read_text())
+        item = next(i for i in updated["items"] if i["id"] == digit_id)
+        assert item["status"] == "done"
+
+    def test_hash_position_out_of_range_exits_1(self, backlog_file, tmp_path):
+        """item_id '#999' where position 999 does not exist should exit 1."""
+        result_path = write_result_file(tmp_path, {
+            "item_id": "#999",
+            "verdict": "pass",
+            "summary": "Out of range position.",
+            "issues": [],
+        })
+        result = runner.invoke(app, ["ingest", result_path, "--file", backlog_file])
+        assert result.exit_code == 1
+        assert "out of range" in result.output.lower() or "error" in result.output.lower()
+
+    def test_hash_position_json_flag_returns_resolved_id(self, backlog_file, tmp_path):
+        """--json output after #N lookup should contain the resolved internal item_id."""
+        result_path = write_result_file(tmp_path, {
+            "item_id": "#1",
+            "verdict": "pass",
+            "summary": "Position-based JSON output.",
+            "issues": [],
+        })
+        result = runner.invoke(app, ["ingest", result_path, "--file", backlog_file, "--json"])
+        assert result.exit_code == 0, result.output
+        parsed = json.loads(result.output)
+        # The returned item_id should be the resolved internal ID, not "#1"
+        assert parsed["item_id"] == _ITEM_ID

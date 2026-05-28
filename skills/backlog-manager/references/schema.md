@@ -124,6 +124,7 @@ Maps item complexity to recommended AI model. Advisory — appears in work brief
   "status": "string — must match one of the status IDs from config.statuses",
   "assigned_to": "string | null — name of the agent or person assigned to this item",
   "complexity": "low | medium | high | null — estimated effort, drives model routing and scoring",
+  "refinement_gate": "simple | complex | null — set at end of refinement to control whether a secondary sub-lead-agent readiness review runs before the item moves to ready; independent of complexity",
   "priority_weight": "number (1-10) | null — explicit priority override; when null, array position is used",
   "category": "bug | feature | chore | tech-debt | null — item classification; critical bugs trigger reprioritization",
   "tags": ["string — free-form tags for categorization and agent skill matching (e.g., 'auth', 'frontend')"],
@@ -141,6 +142,7 @@ Maps item complexity to recommended AI model. Advisory — appears in work brief
 ```
 
 - `complexity`: Optional estimate of item effort. Used by the scoring engine (low complexity = bonus, high = cost) and for model routing recommendations (low → haiku, medium → sonnet, high → opus). When null, treated as medium for scoring purposes.
+- `refinement_gate`: Optional string (`simple` or `complex`). Set at the end of refinement by the lead agent (after human confirmation) to indicate whether a secondary sub-lead-agent readiness review is required before the item can move to `ready`. `complex` triggers the review; `simple` skips it. When absent, no sub-lead review runs (existing behaviour preserved). Independent of `complexity` — the two fields serve different purposes.
 - `priority_weight`: Explicit priority value on a 1-10 scale. When set, overrides position-based priority in the scoring formula. When null, the scoring engine derives a base priority from the item's array position.
 - `category`: Classifies the item type. Items with `category: "bug"` and `priority_weight >= 9` are treated as critical bugs, triggering automatic reprioritization.
 - `tags`: Free-form string array for categorization. Used by the assignment engine to match items to agents with relevant skills. Example: `["auth", "backend", "database"]`.
@@ -256,6 +258,7 @@ A record of an item moving through a lane. Appended to `lane_history` every time
 - `reopen_count` is automatically incremented by the server when an item's status changes backward from `done`. Never manually set or decrement.
 - `skip_count` is incremented by the agent during work brief generation for items that are evaluated but not recommended. Reset to 0 when an item is picked up.
 - `complexity`, `priority_weight`, `category`, and `tags` are optional on all items. The scoring engine uses sensible defaults when they are absent (null complexity = medium, null priority_weight = position-derived, null category = no boost, empty tags = no skill matching).
+- `refinement_gate` is optional on all items. When absent, the sub-lead-agent readiness review does not run and the item proceeds normally. Existing items without this field are unaffected.
 - `readiness_signals` is optional on items. When absent, readiness is derived from status alone. Append signals via `POST /api/items/<id>/signal` — never write them directly unless migrating data.
 - All `config.scoring`, `config.readiness`, `config.agents`, `config.thresholds`, and `config.model_routing` sections are optional. When absent, hardcoded defaults apply. Existing backlogs work without any migration.
 - Scoring is computed at evaluation time, never persisted as a field on items. The `GET /api/scores` endpoint computes fresh scores on every request.

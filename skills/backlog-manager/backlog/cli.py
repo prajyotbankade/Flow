@@ -46,6 +46,15 @@ def _store(file_flag: Optional[str]) -> BacklogStore:
     return BacklogStore(_resolve_file(file_flag))
 
 
+def _require_store(file_flag: Optional[str]) -> BacklogStore:
+    path = _resolve_file(file_flag)
+    if not os.path.exists(path):
+        err_console.print(f"[red]No backlog.json found at {path}.[/red]")
+        err_console.print("Run [bold]backlog init[/bold] to create one and get started.")
+        raise typer.Exit(1)
+    return BacklogStore(path)
+
+
 # ── Exception handling ────────────────────────────────────────────────────────
 
 def _handle(fn):
@@ -205,7 +214,7 @@ def list(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Show the backlog grouped by lane."""
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
     _print_board(data, filter_status=status, filter_assigned=assigned_to, as_json=json_out)
 
@@ -218,7 +227,7 @@ def top(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Show the top N prioritized items, ranked by tribunal. No server needed."""
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
     all_items = data.get("items", [])
 
@@ -299,7 +308,7 @@ def show(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Show full detail for one item."""
-    store = _store(file)
+    store = _require_store(file)
     _, item = store.get_item(position)
     _print_item(item, position, as_json=json_out)
 
@@ -318,7 +327,7 @@ def add(
     assigned_to: Optional[str] = typer.Option(None, "--assigned-to"),
 ) -> None:
     """Add a new item to the bottom of the backlog."""
-    store = _store(file)
+    store = _require_store(file)
     tag_list = [t.strip() for t in tags.split(",")] if tags else []
     item = store.add_item(
         title,
@@ -343,7 +352,7 @@ def move(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Move an item to a different lane (gate rules enforced)."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.move_item(position, target_status, moved_by="user")
     console.print(f"[green]Moved[/green] #{position} \"{item['title']}\" → {target_status}")
 
@@ -355,7 +364,7 @@ def done(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Move an item to done."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.move_item(position, "done", moved_by="user")
     console.print(f"[green]Done[/green] #{position} \"{item['title']}\"")
 
@@ -368,7 +377,7 @@ def assign(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Assign an item to an agent or person."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.assign_item(position, to)
     console.print(f"[green]Assigned[/green] #{position} \"{item['title']}\" → {to}")
 
@@ -380,7 +389,7 @@ def unassign(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Remove assignment from an item."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.unassign_item(position)
     console.print(f"[green]Unassigned[/green] #{position} \"{item['title']}\"")
 
@@ -392,7 +401,7 @@ def discard(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Discard an item (always allowed from any lane)."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.discard_item(position, moved_by="user")
     console.print(f"[dim]Discarded[/dim] #{position} \"{item['title']}\"")
 
@@ -404,7 +413,7 @@ def restore(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Restore a discarded item back to backlog."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.restore_item(position, moved_by="user")
     console.print(f"[green]Restored[/green] #{position} \"{item['title']}\" → backlog")
 
@@ -417,7 +426,7 @@ def pick(
     json_out: bool = JSON_OPT,
 ) -> None:
     """Pick the highest-priority ready item, move to in-progress, and assign it."""
-    store = _store(file)
+    store = _require_store(file)
     item = store.pick_item(agent)
     if json_out:
         console.print_json(json.dumps(item))
@@ -440,9 +449,10 @@ def edit(
     category: Optional[str] = typer.Option(None, "--category"),
     tags: Optional[str] = typer.Option(None, "--tags", help="Comma-separated tags"),
     assigned_to: Optional[str] = typer.Option(None, "--assigned-to"),
+    refinement_gate: Optional[str] = typer.Option(None, "--refinement-gate", help="simple/complex"),
 ) -> None:
     """Edit fields on an item (use 'move' to change status)."""
-    store = _store(file)
+    store = _require_store(file)
     fields = {}
     if title is not None:          fields["title"] = title
     if description is not None:    fields["description"] = description
@@ -452,6 +462,10 @@ def edit(
     if category is not None:       fields["category"] = category
     if tags is not None:           fields["tags"] = [t.strip() for t in tags.split(",")]
     if assigned_to is not None:    fields["assigned_to"] = assigned_to
+    if refinement_gate is not None:
+        if refinement_gate not in ("simple", "complex"):
+            raise typer.BadParameter("Must be 'simple' or 'complex'", param_hint="--refinement-gate")
+        fields["refinement_gate"] = refinement_gate
     if not fields:
         err_console.print("[yellow]No fields to update.[/yellow]")
         raise typer.Exit(1)
@@ -672,7 +686,7 @@ def handoff(
     import datetime
     import shutil
 
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
     backlog_path = store.file_path
 
@@ -989,7 +1003,7 @@ def ingest(
         err_console.print(f"[red]Error:[/red] Result file is not valid JSON: {e}")
         raise typer.Exit(1)
 
-    store = _store(file)
+    store = _require_store(file)
     outcome = store.ingest_result(report)
 
     if json_out:
@@ -1032,7 +1046,7 @@ def staged(
     json_out: bool = JSON_OPT,
 ) -> None:
     """List pending staged actions for an item."""
-    store = _store(file)
+    store = _require_store(file)
     _, item = store.get_item(position)
     actions = [a for a in item.get("staged_actions", []) if a.get("status") == "pending"]
 
@@ -1070,7 +1084,7 @@ def approve(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Approve a pending staged action."""
-    store = _store(file)
+    store = _require_store(file)
     action = store.approve_action(position, action_id, approved_by="cli")
     console.print(
         f"[green]Approved[/green] action [cyan]{action_id}[/cyan] "
@@ -1087,7 +1101,7 @@ def reject(
     file: Optional[str] = FILE_OPT,
 ) -> None:
     """Reject a pending staged action."""
-    store = _store(file)
+    store = _require_store(file)
     action = store.reject_action(position, action_id, rejected_by="cli", reason=reason)
     msg = f"[red]Rejected[/red] action [cyan]{action_id}[/cyan] ({action.get('type', '')})"
     if reason:
@@ -1138,7 +1152,7 @@ def link_cmd(
       backlog link <source> --type <type> --target <target> --reason "<reason>"
       backlog link --list <item>
     """
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
 
     # ── --list mode ───────────────────────────────────────────────────────────
@@ -1222,7 +1236,7 @@ def unlink_cmd(
     target: str = typer.Option(..., "--target", help="Target item — position number or item ID"),
 ) -> None:
     """Remove a link from source item to target item."""
-    store = _store(file)
+    store = _require_store(file)
     data = store.read()
 
     src_pos, src_item = _resolve_item_ref(data, source)
@@ -1345,8 +1359,6 @@ def _run_subleadagent_review(
     findings contains blocker strings if passed=False, or praise if passed=True.
     Falls back to (True, []) if Claude is unavailable — do not block on tool absence.
     """
-    import re
-
     tags_str = ", ".join(tags) if tags else "(none)"
     checklist = (
         "1. Are acceptance criteria testable and specific (not vague promises)?\n"
@@ -1374,11 +1386,27 @@ def _run_subleadagent_review(
             ["claude", "--print", prompt],
             capture_output=True, text=True, timeout=90,
         )
-        m = re.search(r'\{.*?\}', result.stdout, re.DOTALL)
-        if not m:
+        text = result.stdout
+        # Robust JSON extraction: find outermost { } via bracket counting
+        # so that findings strings containing { or } don't truncate the match.
+        start = text.find('{')
+        if start == -1:
             console.print(f"{log_prefix} sub-lead review: could not parse response — treating as passed")
             return (True, [])
-        parsed = json.loads(m.group(0))
+        depth = 0
+        end = -1
+        for idx in range(start, len(text)):
+            if text[idx] == '{':
+                depth += 1
+            elif text[idx] == '}':
+                depth -= 1
+                if depth == 0:
+                    end = idx
+                    break
+        if end == -1:
+            console.print(f"{log_prefix} sub-lead review: could not parse response — treating as passed")
+            return (True, [])
+        parsed = json.loads(text[start:end + 1])
         passed = bool(parsed.get("passed", True))
         findings = parsed.get("findings", [])
         return (passed, findings)
@@ -1465,21 +1493,38 @@ def _auto_refine_tick(
         return
 
     if parsed.get("ready"):
-        # ── Step 1: assign complexity label ──────────────────────────────────
-        complexity_label, complexity_reason = _assess_complexity(
-            title, description, tags, log_prefix=log_prefix
-        )
+        # ── Step 1: assign refinement_gate label ─────────────────────────────
+        stored_refinement_gate = candidate.get("refinement_gate")
+        if stored_refinement_gate in ("simple", "complex"):
+            # Human already set an explicit refinement_gate — honour it, skip Claude call.
+            complexity_label = stored_refinement_gate
+            complexity_reason = "human override"
+        else:
+            complexity_label, complexity_reason = _assess_complexity(
+                title, description, tags, log_prefix=log_prefix
+            )
         console.print(
-            f"{log_prefix} item #{pos} complexity → [bold]{complexity_label}[/bold] "
+            f"{log_prefix} item #{pos} refinement_gate → [bold]{complexity_label}[/bold] "
             f"({complexity_reason})"
         )
 
         # Notify human of the proposed label so they can override before refinement closes
         console.print(
-            f"[yellow]COMPLEXITY LABEL:[/yellow] Item #{pos} '{title}' — "
+            f"[yellow]REFINEMENT GATE:[/yellow] Item #{pos} '{title}' — "
             f"proposed as [bold]{complexity_label}[/bold]: {complexity_reason}\n"
-            f"  To override: backlog edit {pos} --complexity <simple|complex>"
+            f"  To override: backlog edit {pos} --refinement-gate <simple|complex>"
         )
+
+        # Write assessed label back to item (only if not already set by human)
+        if not dry_run:
+            data2 = store.read()
+            items2 = data2.get("items", [])
+            target = next((i for i in items2 if i.get("id") == item_id), None)
+            if target is not None and not target.get("refinement_gate"):
+                from .core import _now_iso
+                target["refinement_gate"] = complexity_label
+                target["updated_at"] = _now_iso()
+                store.write(data2, expected_version=data2.get("version", 0))
 
         # ── Step 2: for complex items, run sub-lead-agent readiness review ────
         if complexity_label == "complex":

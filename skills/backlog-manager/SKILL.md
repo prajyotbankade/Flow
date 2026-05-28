@@ -11,6 +11,16 @@ Invoke this skill when the user:
 - Mentions backlog, sprint planning, task queue, work items, story grooming, or agile workflow
 - Says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", "which agent should take this", or "what's blocking progress"
 - Asks about prioritizing, refining, or picking up work
+- Says "assign #N to <agent>" — this means spawn the agent and drive the item to completion, not just update a field
+- References an item by number (#N) in any action context (assign, move, review, merge, check status)
+
+## Intent vs. Literal Input
+
+Never take backlog commands purely literally. Resolve intent first:
+- **"assign #N to X"** → set `assigned_to`, then spawn agent X to actually do the work and drive through review → merge → done
+- **Obvious typos in agent names** (e.g. "sugagent", "subagnet") → silently correct to the intended name and proceed. Do not confirm the typo back to the user.
+- **"is it merged?" / "is X working on it?"** → check status AND assess whether the right action has actually been taken (agent spawned, PR open, etc.) — not just report the raw field value
+- **"let me know when it's ready"** → treat as implicit delegation: drive the work, don't just watch
 
 Invoke proactively (without being asked) when:
 - You've just finished a task and the user hasn't given you a new one → generate a work brief and offer to pick up the top-scored item
@@ -109,7 +119,7 @@ When the user describes a feature to build:
 
 Skipping step 1 and spawning an Agent tool call directly produces an unstructured markdown file that `backlog ingest` cannot parse. The item will appear done but the gate was never properly closed. This is a protocol violation — not an acceptable shortcut.
 
-**When running inside Claude Code** (nested `claude` sessions are blocked): `backlog handoff reviewer --item N --review` will print the review prompt to stdout instead of launching a subprocess. When you see `--- REVIEW PROMPT ---` in the output, execute the review inline using that prompt, write the artifact to `handoff_results/review_<item_id>_<timestamp>.md` in the exact format specified below, then run `backlog ingest <result_file>`.
+**When running inside Claude Code** (nested `claude` sessions are blocked): `backlog handoff reviewer --item N --review` will print the review prompt to stdout instead of launching a subprocess. When you see `--- REVIEW PROMPT ---` in the output, execute the review inline using that prompt, write the artifact to `handoff_results/review_<item_id>_<timestamp>.json` in the exact format specified below, then run `backlog ingest <result_file>`.
 
 When reviewing an item in `code-review`, a **reject verdict blocks the merge**. Do not pass and log a follow-up ticket — if you can see the bug, it must be fixed before done.
 
@@ -142,11 +152,19 @@ Example questions for a concurrent write operation:
 - `pass` — zero blockers. Important issues and nits are noted in the review artifact and follow-up threads.
 - `reject:<blocker summary>` — one or more blockers found. Move item back to `in-progress` with a thread listing only the blockers and exactly what must change.
 
-**Review artifact** — write `handoff_results/review_<item_id>_<timestamp>.md` after every review (pass or reject):
-```
-# Review: <item title>
-**Item**: #N  **Verdict**: pass | reject  **Reviewer**: reviewer  **Timestamp**: <ISO>
-## Blockers / ## Important / ## Nits / ## Praise   (omit empty sections)
+**Review artifact** — write `handoff_results/review_<item_id>_<timestamp>.json` after every review (pass or reject):
+```json
+{
+  "item_id": "<item_id>",
+  "verdict": "pass | reject",
+  "summary": "...",
+  "issues": [
+    {
+      "description": "...",
+      "severity": "blocker | warning"
+    }
+  ]
+}
 ```
 
 A reviewer who passes code with a known bug and logs a follow-up ticket has failed at their job.
@@ -160,6 +178,13 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 **Required steps for any code-producing task (subagent):**
 1. Create a feature branch: `git checkout -b <item-id>-<short-description>`
 2. Do the work and commit on that branch
+2a. Run the full test suite locally before pushing:
+    - JS/TS: `npm test` or `npx jest --ci`
+    - Python: `pytest tests/`
+    - If the test command is unknown: skip with a warning note in the PR description
+    - If tests fail: fix the code before pushing — do not open a red PR
+    - If no test suite exists yet: skip and note it in the PR description
+    This step is mandatory. CI is a second confirmation, not the first signal.
 3. Push the branch: `git push -u origin <branch>`
 4. Open a PR targeting `main` using this body format:
    ```
@@ -181,16 +206,170 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 **Lead agent — PR monitoring and merge protocol:**
 1. After a subagent reports a PR URL, check if CI is configured: `gh pr checks <PR-number>`
-2. If no CI checks are present (project has no CI yet): skip to step 4 and note "no CI configured" in your report to the user
+2. If no CI checks are present (project has no CI yet): skip to step 3 and note "no CI configured"
 3. If CI is still running: poll until it completes (re-run `gh pr checks` after a short wait)
 4. If CI fails: report the failure to the user with the failing step, move the backlog item back to `in-progress`, and ask the subagent to fix
-5. If CI is green (or no CI): report to the user — "PR #N is green. Ready to merge. Confirm?" — and wait
-6. **Only merge after the user explicitly confirms** — `gh pr merge <PR-number> --squash --delete-branch`
-7. After merge: move the backlog item to `done` and close any open threads
+5. **If CI is green (or no CI): run the code review gate — do NOT ask the user about merging yet:**
+   - `backlog move N code-review`
+   - `backlog handoff reviewer --item N --review`
+   - `backlog ingest <result_file>`
+   - If rejected: move back to `in-progress`, send fixes to the subagent, restart from step 1
+   - If passed: proceed to step 6
+6. Report to the user — "PR #N passed review. Ready to merge. Confirm?" — and wait
+7. **Only merge after the user explicitly confirms** — `gh pr merge <PR-number> --squash --delete-branch`
+8. After merge: the `backlog ingest` on a passing review already moved the item to `done` — verify with `backlog show N`
 
 **Why:** The user is the final gate before anything lands on `main`. The lead agent does the legwork (CI monitoring, status reporting) but never merges autonomously. Squash merge keeps `main` history clean; `--delete-branch` prevents stale branch accumulation.
 
 **Exception:** Pure doc or config changes with zero code risk may go direct to `main` after explicit user approval — but when in doubt, use a PR.
+
+---
+
+## CI Setup (run once per project)
+
+This is **mandatory**, not advisory. Agents must complete this before writing any tests. Invisible test results are not shippable — CI with junit reporting is part of the definition of done for every code task.
+
+### Step 1 — Detect CI state
+
+At the start of any code task, check two things:
+
+1. Does `.github/workflows/` exist in the project root?
+2. If a workflow exists, does it include `EnricoMi/publish-unit-test-result-action`?
+
+Run these checks before writing any production code or tests:
+
+```bash
+ls .github/workflows/ 2>/dev/null || echo "NO_CI"
+grep -r "publish-unit-test-result-action" .github/workflows/ 2>/dev/null || echo "NO_JUNIT_REPORTER"
+```
+
+### Step 2 — Detect language
+
+Look for these files to determine the test runner:
+
+| File present | Language | Test runner |
+|---|---|---|
+| `package.json` | JS/TS | Jest |
+| `requirements.txt` | Python | pytest |
+| `pyproject.toml` | Python | pytest |
+| None of the above | Unknown | Ask the user which language/runner is in use, or skip CI setup with a warning note explaining why it was skipped. |
+
+### Step 3 — Create or patch the workflow
+
+**If `.github/workflows/` does not exist** — create `test.yml` before writing any tests.
+
+For JS/TS projects:
+
+```yaml
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm ci
+      - run: npx jest --ci --reporters=default --reporters=jest-junit
+        env:
+          JEST_JUNIT_OUTPUT_FILE: test-results.xml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
+
+Also add `jest-junit` as a devDependency if it is missing:
+
+```bash
+grep -q '"jest-junit"' package.json || npm install --save-dev jest-junit || { echo "jest-junit install failed"; exit 1; }
+```
+
+For Python projects detected via `requirements.txt`:
+
+```yaml
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -r requirements.txt pytest
+      - run: pytest tests/ --junit-xml=test-results.xml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
+
+For Python projects detected via `pyproject.toml`:
+
+```yaml
+name: Test
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - run: pip install -e . pytest
+      - run: pytest tests/ --junit-xml=test-results.xml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
+
+**If `.github/workflows/` exists but lacks `EnricoMi/publish-unit-test-result-action`** — patch the existing workflow to add the junit reporter step and the publish action. Do not replace the whole file; append only what is missing. Specifically: (1) add `--junit-xml=test-results.xml` (pytest) or `--reporters=jest-junit` with `JEST_JUNIT_OUTPUT_FILE: test-results.xml` (Jest) to the test run step, and (2) append the following step immediately after the test run step:
+
+```yaml
+      - uses: EnricoMi/publish-unit-test-result-action@v2
+        if: always()
+        with:
+          files: test-results.xml
+```
+
+### Step 4 — Commit the CI file before tests
+
+Commit the workflow file as a standalone commit on the feature branch **before** the test commit:
+
+```bash
+git add .github/workflows/test.yml
+git commit -m "ci: add test workflow with junit reporting"
+```
+
+This ordering matters: if CI is missing and the test commit lands first, the first PR has no coverage signal.
+
+### Definition of done for CI
+
+An item is not `done` until:
+- `.github/workflows/` contains a workflow that runs on push and pull_request to main
+- The workflow emits a junit XML file
+- `EnricoMi/publish-unit-test-result-action@v2` is present with `if: always()` so results appear in the Actions Summary tab even on failure
+- The first PR on the project shows CI checks in `gh pr checks <PR>`
+
+If `gh pr checks <PR>` returns no checks after CI was added, the workflow file likely has a syntax error or branch filter mismatch — fix it before marking done.
 
 ---
 
@@ -265,7 +444,27 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 **Complete** — `status: done`. Add brief completion note. Offer next item from ready queue.
 
-**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. When moving to `ready`, the spec gate applies (see below). Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null.
+**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null. **Before closing refinement and moving to `ready`, you MUST run the refinement gate below** — propose `refinement_gate: simple` or `refinement_gate: complex`, wait for human confirmation, and (if complex) run the sub-lead-agent readiness review. Do not skip to the spec gate without completing this step.
+
+**Refinement-gate sub-lead-agent review (end of refinement) — REQUIRED before any `→ ready` move:**
+
+This gate is mandatory. Do not move an item to `ready` or run the spec gate without completing it first. After all refinement questions are resolved, do the following:
+
+1. Lead agent proposes `refinement_gate: simple` or `refinement_gate: complex` with a one-line reason:
+   - `complex` — touches auth/security/data integrity, spans multiple components, introduces new patterns, has unclear edge cases, or estimate is high
+   - `simple` — single-file change, well-understood pattern, clear acceptance criteria, estimate is low or medium
+2. Human confirms or overrides the label (`backlog edit N --refinement-gate <simple|complex>`). Sub-lead only triggers **after** the label is finalised.
+3. If `refinement_gate: complex`: run a sub-lead-agent readiness review before the spec gate. The checklist:
+   - Acceptance criteria are testable, not vague
+   - No hidden dependencies on unbuilt or unplanned pieces
+   - Estimate is realistic given current codebase state
+   - Edge cases and failure modes are called out
+   - Scope is clearly bounded with no implicit follow-on work
+   - If the review finds issues: open a thread (`waiting_on: "user"`), do **not** move to `ready`. Wait for resolution.
+   - If the review passes: proceed to the spec gate as usual.
+4. If `refinement_gate: simple`: item moves directly to `ready` via spec gate as usual — no sub-lead review.
+
+In auto mode the orchestrator handles steps 1–4 automatically. In supervised mode the lead agent proposes the `refinement_gate` label to the human, waits for confirmation or override, and then (if complex) runs the sub-lead readiness review inline before proceeding to the spec gate.
 
 **Complexity-gated sub-lead-agent review (end of refinement):**
 

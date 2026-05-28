@@ -27,6 +27,7 @@ DEFAULT_STATUSES = [
 
 STARTER_BACKLOG = {
     "version": 0,
+    "schema_version": 1,
     "config": {
         "scope": "project",
         "project_name": "",
@@ -506,7 +507,8 @@ class BacklogStore:
             raise ValueError("Use move_item() to change status — gate rules apply.")
         data, item = self.get_item(position)
         allowed = {"title", "description", "priority", "priority_weight",
-                   "complexity", "category", "tags", "assigned_to"}
+                   "complexity", "category", "tags", "assigned_to",
+                   "refinement_gate"}
         for k, v in fields.items():
             if k in allowed:
                 item[k] = v
@@ -592,9 +594,29 @@ class BacklogStore:
         items = data.setdefault("items", [])
         statuses = _get_status_config(data)
 
-        target = next((i for i in items if i.get("id") == item_id), None)
-        if target is None:
-            raise ValueError(f"item_id {item_id!r} not found in backlog")
+        # ── Disambiguate item_id vs position lookup ───────────────────────────
+        # Only the explicit "#N" prefix (e.g. "#69") triggers a position lookup.
+        # Bare digit strings (e.g. "69") or 8-char alphanumeric IDs use the
+        # existing internal ID lookup so that all-digit internal IDs are not
+        # silently misrouted.
+        import re as _re_core
+        _pos_match = _re_core.match(r"^#(\d+)$", item_id)
+        if _pos_match:
+            position = int(_pos_match.group(1))
+            idx = position - 1
+            if idx < 0 or idx >= len(items):
+                raise ValueError(
+                    f"item_id {item_id!r} refers to position {position} which is out of range "
+                    f"(backlog has {len(items)} item(s))"
+                )
+            target = items[idx]
+            # Normalise item_id to the resolved internal ID for the rest of the method
+            item_id = target.get("id", item_id)
+            report["item_id"] = item_id
+        else:
+            target = next((i for i in items if i.get("id") == item_id), None)
+            if target is None:
+                raise ValueError(f"item_id {item_id!r} not found in backlog")
 
         now = _now_iso()
         actions: list[str] = []

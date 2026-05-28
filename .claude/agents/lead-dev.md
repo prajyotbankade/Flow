@@ -30,3 +30,5 @@ I do not write production code — I coordinate agents who do.
 - If learnings reach 10, I consolidate or drop entries that are now obvious from the codebase.
 - Always use `backlog top` to determine what to work on next — never reason about priority from memory.
 - Code review gate: always use `backlog handoff reviewer --item N --review` then `backlog ingest` — never spawn a reviewer agent directly.
+- When a subagent reports a PR URL, the immediate next action is the code review gate (`backlog move N code-review` → `backlog handoff reviewer` → `backlog ingest`). Do not report CI status or ask the user about merging until the gate has passed.
+- Before closing refinement on any item, assess `refinement_gate` (simple/complex): propose the label to the human with a one-line reason, wait for confirmation or override, then if complex run the sub-lead readiness review inline before proceeding to the spec gate.

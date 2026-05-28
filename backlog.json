@@ -1,5 +1,5 @@
 {
-  "version": 637,
+  "version": 698,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -3105,6 +3105,802 @@
       "skip_count": 0,
       "created_at": "2026-05-12T03:30:30.776264+00:00",
       "updated_at": "2026-05-12T03:30:30.776264+00:00"
+    },
+    {
+      "id": "l7kl6zwj",
+      "title": "Add complexity-gated sub-lead-agent review step to refinement workflow",
+      "status": "done",
+      "priority_weight": 6,
+      "complexity": "medium",
+      "category": "workflow",
+      "tags": [
+        "workflow",
+        "refinement",
+        "lead-agent",
+        "orchestration"
+      ],
+      "description": "After lead agent refines an item with the human, introduce a sub-lead-agent review pass \u2014 but only for complex items, to avoid unnecessary token and time overhead.\n\nWorkflow:\n1. Lead agent completes refinement with human\n2. Lead agent assigns complexity: simple | complex with a one-line reason\n3. Human accepts or overrides the complexity label before refinement closes\n4. If complex: sub-lead-agent runs a focused readiness review\n5. If simple: item moves directly to ready via spec gate as usual\n\nSub-lead-agent review checklist (complex items only):\n- Acceptance criteria are testable, not vague\n- No hidden dependencies on unbuilt or unplanned pieces\n- Estimate is realistic given current codebase state\n- Edge cases and failure modes are called out\n- Scope is clearly bounded with no implicit follow-on work\n\nComplexity heuristics for lead agent:\n- complex: touches auth/security/data integrity, spans multiple components, introduces new patterns, has unclear edge cases, or estimate is high\n- simple: single-file change, well-understood pattern, clear acceptance criteria, estimate is low or medium\n\nHuman override: human can bump simple to complex or complex to simple before refinement closes. The sub-lead only triggers after the label is finalized.\n\n## Spec\nAcceptance criteria: Lead agent proposes complexity label at end of refinement. Human can override via backlog edit before closing. Sub-lead review runs only when complexity is complex. Simple items skip directly to ready via spec gate. Sub-lead review checklist covers: testable AC, no hidden deps, realistic estimate, edge cases called out, bounded scope.\nFailure modes: If Claude is unavailable for complexity assessment, default to complex (safe fallback). If sub-lead review fails, item stays in refined with a waiting_on thread.\nEdge cases: Human explicitly overrides to simple \u2014 stored complexity field must be respected on next tick, Claude must not re-classify. Findings text containing curly braces must not break JSON parsing.",
+      "assigned_to": "lead-dev",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-20T16:04:29.701141+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-05-20T16:04:29.842075+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-20T16:12:40.337973+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-20T16:18:10.451089+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:04:29.701377+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:04:29.842277+00:00",
+          "detail": "refined \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:12:40.338265+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-20T16:18:10.451095+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-20T16:04:09.089498+00:00",
+      "updated_at": "2026-05-20T16:18:10.451091+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "janlm69z",
+      "title": "Fix _assess_complexity to use bracket-counting JSON parser (non-greedy regex still present)",
+      "status": "backlog",
+      "priority_weight": 4,
+      "complexity": "low",
+      "category": "tech-debt",
+      "tags": [
+        "backlog-manager",
+        "python",
+        "tech-debt"
+      ],
+      "description": "The blocker fix in _run_subleadagent_review replaced the non-greedy regex with a bracket-counting loop, but _assess_complexity still uses re.search(r'\\{.*?\\}', re.DOTALL). Fallback is safe (defaults to complex) but produces a misleading parse-error log when the reason string contains braces. Port the same bracket-counting approach from _run_subleadagent_review.",
+      "links": [
+        {
+          "item_id": "l7kl6zwj",
+          "type": "follow-up",
+          "reason": "Incomplete fix from #69 \u2014 same regex issue in _assess_complexity was not ported"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-20T16:23:26.090089+00:00",
+      "updated_at": "2026-05-20T16:24:05.313631+00:00"
+    },
+    {
+      "id": "p8jsx275",
+      "title": "backlog ingest should accept position number (#N) in addition to internal item_id",
+      "status": "done",
+      "priority_weight": 4,
+      "complexity": "low",
+      "category": "ux",
+      "tags": [
+        "backlog-manager",
+        "cli",
+        "ux"
+      ],
+      "description": "Currently backlog ingest requires the internal 8-char item_id (e.g. l7kl6zwj) in the JSON result file. The human-readable position number should also be accepted, but ONLY via explicit #N format (e.g. \"item_id\": \"#69\").\n\nImplementation constraint: internal IDs are 8-char alphanumeric (a-z + 0-9), so an all-digit ID like 12345678 is technically valid. Bare digit strings (e.g. \"item_id\": \"69\") must NOT be treated as position lookups \u2014 that would cause silent misrouting if an internal ID happens to be all digits. Only the explicit # prefix (\"#69\") triggers a position lookup.\n\nDisambiguation logic:\n- item_id matches #\\d+ \u2192 position lookup\n- anything else \u2192 internal ID lookup (existing behavior unchanged)",
+      "links": [
+        {
+          "item_id": "l7kl6zwj",
+          "type": "follow-up",
+          "reason": "UX friction surfaced during #69 review cycle \u2014 internal item_id in artifacts is unreadable"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-20T16:38:16.426134+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-20T16:45:56.832772+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-20T16:49:56.782112+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-20T16:31:13.444742+00:00",
+          "detail": "unassigned \u2192 sugagent"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-20T16:34:28.638033+00:00",
+          "detail": "sugagent \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:38:16.426330+00:00",
+          "detail": "backlog \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-20T16:45:56.833009+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-20T16:49:56.782118+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-20T16:23:26.244363+00:00",
+      "updated_at": "2026-05-20T16:49:56.782115+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "pnx7sppf",
+      "title": "Introduce refinement_gate field and sub-lead review UI/UX",
+      "status": "done",
+      "priority": "8",
+      "complexity": "medium",
+      "tags": [
+        "cli",
+        "ui",
+        "skill",
+        "docs",
+        "refinement"
+      ],
+      "description": "Introduce a new `refinement_gate` field (simple | complex) separate from the existing `complexity` field (low / medium / high), and wire it through the CLI, board UI, skill instructions, and agent persona files.\n\n## Spec\n\n### Acceptance criteria\n- `refinement_gate` is a new optional field on backlog items, independent of `complexity`. Setting it to `simple` or `complex` never affects scoring, model routing, or the complexity dot on the board.\n- CLI: `_auto_refine_tick` reads/writes `refinement_gate` (not `complexity`) when running the sub-lead gate. `backlog edit N --refinement-gate <simple|complex>` is the override command.\n- Board edit modal: new `Refinement Gate` selector (Not set / Simple / Complex). When Complex is selected, an inline note reads: \"Complex items will be reviewed by a secondary agent before moving to ready, to ensure no details are missed.\"\n- Board card: when `refinement_gate: complex`, show a small badge (e.g. '2nd review') on the card so it is visible without opening the item.\n- SKILL.md: complexity gate section updated to reference `refinement_gate`; override instruction updated to `backlog edit N --refinement-gate <simple|complex>`.\n- `lead-dev.md`: new Rules entry \u2014 before closing refinement, assess refinement_gate (simple/complex), propose to human, wait for confirmation, and if complex run the sub-lead review inline.\n- README.md and schema docs: `refinement_gate` field documented.\n\n### Failure modes\n- If `refinement_gate` is absent, existing behaviour is unchanged \u2014 no sub-lead review runs.\n- Board saves `refinement_gate: null` when selector is \"Not set\", which the CLI treats as absent.\n- If the sub-lead review Claude call fails or times out, the gate falls back to passed (same as today).\n\n### Edge cases\n- Items created before this change have no `refinement_gate` \u2014 must be treated as unset, not as simple or complex.\n- Human sets `refinement_gate: simple` after Claude proposed `complex` \u2014 CLI must honour the override and skip the sub-lead review.\n- `complexity` field remains unchanged on all existing items; no migration needed.",
+      "links": [],
+      "threads": [
+        {
+          "id": "8i8pjck7",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "_auto_refine_tick never writes complexity_label back to the item as refinement_gate after Claude assesses it. Only the human-set value is read. When Claude proposes 'complex' and the tick completes (pass path moves item to ready; fail path opens a thread), the label is never persisted \u2014 so the next tick on the same item re-assesses from scratch. This violates the AC ('reads/writes refinement_gate'), breaks idempotency on the complex+pass path if move_item throws, and makes the human override flow unworkable (nothing to override since the field is never written by the tick).",
+          "created_at": "2026-05-25T02:13:53.866633+00:00",
+          "resolved": false
+        },
+        {
+          "id": "wcyfqycn",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "`edit_item` allowlist does not include `refinement_gate`. Field is validated in cli.py line 457-458 and appears to be set, but `if k in allowed` at line 511 silently drops it. `backlog edit N --refinement-gate simple` prints 'Updated #N' but writes nothing to the file. The human override path referenced by `_auto_refine_tick` and documented in SKILL.md is non-functional.",
+          "created_at": "2026-05-25T02:21:35.452827+00:00",
+          "resolved": false
+        },
+        {
+          "id": "wry6ctai",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "Override logic now checks `candidate.get('refinement_gate')` but the pre-existing test (and documented contract) used `complexity='simple'` as the override. The `complexity` field override path was removed without updating the test, breaking `test_human_complexity_override_skips_assess_complexity`. Fix: either (a) also honour `complexity` as a fallback when `refinement_gate` is absent, or (b) update the test to use `refinement_gate='simple'` and document that `complexity` no longer drives the assessment skip.",
+          "created_at": "2026-05-25T02:30:07.073108+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T02:02:39.139021+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T02:10:35.611216+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T02:13:53.866883+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T02:16:29.697809+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T02:21:35.453032+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T02:22:30.467847+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T02:30:07.073303+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T02:36:44.604081+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T03:24:07.808840+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T02:02:39.139255+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T02:10:35.611449+00:00",
+          "detail": "ready \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T02:13:53.866890+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T02:16:29.698282+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T02:21:35.453038+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T02:22:30.468039+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T02:30:07.073310+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T02:36:44.605227+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T03:24:07.808847+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 7,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T01:56:34.664642+00:00",
+      "updated_at": "2026-05-25T03:24:07.808843+00:00",
+      "reviewer": "backend-dev",
+      "reviewer_history": [
+        "reviewer",
+        "backend-dev"
+      ],
+      "assigned_to": "reviewer"
+    },
+    {
+      "id": "m9vryhsn",
+      "title": "Add CLI guard: warn when item moves to done without a passing review artifact",
+      "status": "backlog",
+      "priority": "9",
+      "complexity": "low",
+      "tags": [
+        "cli",
+        "review-gate",
+        "reliability"
+      ],
+      "description": "",
+      "links": [
+        {
+          "item_id": "pnx7sppf",
+          "type": "discovered-during",
+          "reason": "Lead agent skipped code review gate on #72 \u2014 mechanical guard needed to catch this"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T04:09:55.364052+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T04:10:43.869185+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T04:09:55.364254+00:00",
+          "detail": "backlog \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T04:10:43.869761+00:00",
+          "detail": "code-review \u2192 backlog (backward)"
+        }
+      ],
+      "gate_from": 2,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T03:27:17.888277+00:00",
+      "updated_at": "2026-05-25T04:10:43.869753+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "grbi3kis",
+      "title": "backlog init should run git update-index --skip-worktree on backlog.json",
+      "status": "backlog",
+      "priority": "7",
+      "complexity": "low",
+      "tags": [
+        "cli",
+        "reliability",
+        "git",
+        "init"
+      ],
+      "description": "",
+      "links": [
+        {
+          "item_id": "gxp1kds9",
+          "type": "related",
+          "reason": "Complements startup/shutdown git protection \u2014 prevents git pull/checkout from overwriting local backlog.json"
+        },
+        {
+          "item_id": "menjy7de",
+          "type": "related",
+          "reason": "Complements auto-commit on shutdown \u2014 skip-worktree prevents git replacing the file even after a commit exists"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T04:26:26.247048+00:00",
+      "updated_at": "2026-05-25T04:26:38.567431+00:00"
+    },
+    {
+      "id": "6yt4bdyy",
+      "title": "Declare anthropic SDK as explicit dependency in pyproject.toml",
+      "status": "code-review",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "infra",
+      "tags": [
+        "packaging",
+        "deps",
+        "public-release"
+      ],
+      "description": "server.py uses anthropic for policy evaluation but it's missing from pyproject.toml, causing silent runtime crashes on first use.\n\n## Spec\n**Acceptance criteria:** pyproject.toml lists anthropic>=0.25 under [project.dependencies]; pip install -e . on a clean env pulls it in.\n**Failure modes:** Wrong version floor breaks policy eval \u2014 pin to actual minimum used.\n**Edge cases:** Must be in [project.dependencies], not [dev] dependencies.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.766902+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.585198+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:37.355180+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.767084+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:34.195906+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.585785+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:37.355453+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:41:53.911761+00:00",
+      "updated_at": "2026-05-25T16:48:37.355448+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "39jmvlto",
+      "title": "Make Ollama opt-in in eval suite, not hardcoded default",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "low",
+      "category": "infra",
+      "tags": [
+        "evals",
+        "config",
+        "public-release"
+      ],
+      "description": "eval_flow_skill.py defaults to localhost:11434 + specific model; should be skippable or configurable so public users without Ollama don't fail on first run",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.117332+00:00",
+      "updated_at": "2026-05-25T16:42:10.117332+00:00"
+    },
+    {
+      "id": "lcjyyk3a",
+      "title": "Fix server binding: use 0.0.0.0 instead of localhost",
+      "status": "code-review",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "backend",
+      "tags": [
+        "server",
+        "config",
+        "public-release"
+      ],
+      "description": "server.py binds to localhost which blocks Docker, WSL, and remote dev environments.\n\n## Spec\n**Acceptance criteria:** Server binds to 0.0.0.0 by default; overridable via --host flag or BACKLOG_HOST env var. Logs a warning when binding to all interfaces.\n**Failure modes:** Binding 0.0.0.0 exposes on all interfaces \u2014 warning in logs is required.\n**Edge cases:** User wanting localhost-only uses BACKLOG_HOST=127.0.0.1.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.915864+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.750555+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:37.536657+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.916062+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:34.349731+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.751049+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:37.536859+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.364890+00:00",
+      "updated_at": "2026-05-25T16:48:37.536853+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "urs27qrn",
+      "title": "Sync version numbers and add migration story",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "docs",
+      "tags": [
+        "versioning",
+        "docs",
+        "public-release"
+      ],
+      "description": "plugin manifest says 2.0.0, pyproject.toml says 0.1.0; add CHANGELOG and document backlog.json schema migration path for users upgrading",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.585228+00:00",
+      "updated_at": "2026-05-25T16:42:10.585228+00:00"
+    },
+    {
+      "id": "xz32xzpz",
+      "title": "Add backlog init command with helpful guidance",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "ux",
+        "cli",
+        "public-release"
+      ],
+      "description": "missing backlog.json gives cryptic JSON errors instead of a helpful 'run backlog init first' message; implement init command that creates backlog.json and wires up CLAUDE.md",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.797898+00:00",
+      "updated_at": "2026-05-25T16:42:10.797898+00:00"
+    },
+    {
+      "id": "sctl75wg",
+      "title": "Write complete installation docs with version requirements",
+      "status": "backlog",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "docs",
+        "public-release"
+      ],
+      "description": "README missing explicit requirements: Python 3.11+, Flask, Typer, Rich, Anthropic SDK version specs; add a Requirements section",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:10.956009+00:00",
+      "updated_at": "2026-05-25T16:42:10.956009+00:00"
+    },
+    {
+      "id": "n6ae9jml",
+      "title": "Add LICENSE file",
+      "status": "code-review",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "infra",
+      "tags": [
+        "legal",
+        "public-release"
+      ],
+      "description": "README declares MIT license but no LICENSE file exists in repo root; required for open source distribution.\n\n## Spec\n**Acceptance criteria:** LICENSE file exists in repo root containing standard MIT text with year 2026 and author Prajyot Bankade.\n**Failure modes:** N/A \u2014 static file.\n**Edge cases:** None.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.472461+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.253779+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:36.496928+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.472686+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:33.817552+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.253932+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:36.497156+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:11.173255+00:00",
+      "updated_at": "2026-05-25T16:48:36.497151+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "mg76o5ip",
+      "title": "Link schema.md from README",
+      "status": "code-review",
+      "priority_weight": 5,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "docs",
+        "public-release"
+      ],
+      "description": "schema.md exists in references/ but isn't linked from README; users customizing statuses have no way to discover it.\n\n## Spec\n**Acceptance criteria:** README contains a clickable link to references/schema.md in a logical place (near config/customization section).\n**Failure modes:** N/A \u2014 doc edit.\n**Edge cases:** None.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:45:53.620410+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:47:40.435721+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:48:36.967111+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:45:53.620614+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:46:34.030693+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:47:40.435900+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:48:36.967365+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:42:11.484153+00:00",
+      "updated_at": "2026-05-25T16:48:36.967359+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     }
   ],
   "config": {
