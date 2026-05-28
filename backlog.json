@@ -1,5 +1,5 @@
 {
-  "version": 698,
+  "version": 790,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -2749,7 +2749,7 @@
     {
       "id": "v1vy32x0",
       "title": "Add CLI integration tests for backlog ingest and handoff flow",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 8,
       "complexity": "medium",
       "category": "feature",
@@ -2759,16 +2759,66 @@
         "ingest",
         "handoff"
       ],
-      "description": "Write tests for the full handoff\u2192ingest pipeline. Cover: ingest with pass verdict advances item to done, ingest with reject verdict moves item back to in-progress and opens thread, ingest with malformed JSON exits 1, ingest with missing file exits 1, nested Claude Code session fallback (CLAUDE_CODE_ENTRYPOINT set) prints prompt and exits 0.",
+      "description": "Write tests for the full handoff\u2192ingest pipeline. Cover: ingest with pass verdict advances item to done, ingest with reject verdict moves item back to in-progress and opens thread, ingest with malformed JSON exits 1, ingest with missing file exits 1, nested Claude Code session fallback (CLAUDE_CODE_ENTRYPOINT set) prints prompt and exits 0.\n\n## Spec\n\n**Acceptance criteria**\n- `backlog ingest <file>` with a pass verdict JSON advances item to `done`\n- `backlog ingest <file>` with a reject verdict JSON moves item back to `in-progress` and opens a thread with blocker details\n- `backlog ingest <file>` with malformed JSON exits non-zero\n- `backlog ingest <file>` with a missing file exits non-zero\n- `backlog handoff reviewer --item N --review` when CLAUDE_CODE_ENTRYPOINT is set prints the review prompt to stdout and exits 0 (nested Claude Code fallback)\n- All tests use tmp_path-isolated backlog.json (no global state)\n- All tests pass with `pytest tests/test_cli_ingest_handoff.py` from the skill root\n\n**Failure modes**\n- Malformed JSON in result file must exit non-zero with a human-readable error\n- Missing result file must exit non-zero\n- Ingest on a non-existent item ID must exit non-zero\n\n**Edge cases**\n- Reject verdict opens a thread \u2014 thread must contain the blocker summary from the review artifact\n- Pass verdict on an item already in `done` should be idempotent or exit cleanly\n- Tests must not share state: each test uses its own tmp backlog file",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-28T01:55:52.473198+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-28T01:55:52.613302+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-28T01:55:52.754527+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-28T01:57:10.439242+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T01:55:52.473355+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T01:55:52.613477+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T01:55:52.754717+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-28T01:57:10.439246+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-12T03:03:42.628052+00:00",
-      "updated_at": "2026-05-12T03:03:42.628052+00:00"
+      "updated_at": "2026-05-28T01:57:10.439244+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "8f7zscxn",
@@ -2977,7 +3027,7 @@
     {
       "id": "lsthvv2k",
       "title": "Add core CLI integration tests (add, move, done, pick, assign, discard, restore)",
-      "status": "in-progress",
+      "status": "done",
       "priority_weight": 8,
       "complexity": "medium",
       "category": "feature",
@@ -3004,6 +3054,16 @@
           "lane": "ready",
           "at": "2026-05-13T21:35:28.750913+00:00",
           "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-28T01:29:23.995396+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-28T01:35:14.203089+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -3030,19 +3090,35 @@
           "actor": "user",
           "at": "2026-05-13T21:35:28.751091+00:00",
           "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T01:29:23.995603+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-28T01:35:14.203093+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-12T03:30:30.307366+00:00",
-      "updated_at": "2026-05-13T21:35:28.751088+00:00",
-      "assigned_to": "qa-agent"
+      "updated_at": "2026-05-28T01:35:14.203091+00:00",
+      "assigned_to": "qa-agent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "2f03sg7d",
       "title": "Add write safety and version conflict unit tests",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 8,
       "complexity": "medium",
       "category": "feature",
@@ -3051,16 +3127,73 @@
         "write-safety",
         "concurrency"
       ],
-      "description": "Write tests/test_write_safety.py targeting BacklogStore directly. Cover: write increments version, write with stale expected_version raises conflict, concurrent write simulation (read-modify-write race), apply_lane_transition is required for status changes (raw field write is rejected), re-read-and-retry pattern.",
+      "description": "Write tests/test_write_safety.py targeting BacklogStore directly. Cover: write increments version, write with stale expected_version raises conflict, concurrent write simulation (read-modify-write race), apply_lane_transition is required for status changes (raw field write is rejected), re-read-and-retry pattern.\n\n## Spec\n\n**Acceptance criteria**\n- `BacklogStore.write(data)` increments `data['version']` by 1 on each call\n- `BacklogStore.write(data, expected_version=N)` raises `ConflictError` when file's current version > N\n- A simulated read-modify-write race (two readers, first writer wins) causes the second write to raise `ConflictError`\n- `apply_lane_transition` is the required path for status changes \u2014 a raw `item['status'] = 'done'` followed by `write()` must NOT bypass gate rules (test that gates are enforced through the transition helper)\n- Re-read-and-retry pattern: after a `ConflictError`, re-reading and re-applying the change succeeds\n- All tests use tmp_path-isolated backlog.json (no global state)\n- All tests pass with `pytest tests/test_write_safety.py` from the skill root\n\n**Failure modes**\n- `write(data, expected_version=N)` where N < current version must raise `ConflictError` (not silently overwrite)\n- `ConflictError` message must be human-readable (contain version numbers)\n- `apply_lane_transition` with an invalid transition must raise `GateViolationError`\n\n**Edge cases**\n- `write(data, expected_version=None)` (no version check) must always succeed regardless of current version\n- First write to a new file sets version to 1\n- Retry after conflict: re-read, re-apply mutation, write with new expected_version succeeds\n- Tests must not share state: each test uses its own tmp backlog file",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-28T01:59:25.624334+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-28T02:02:10.304509+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-28T02:07:00.754612+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-28T02:07:49.724095+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T01:59:25.624523+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-28T02:02:10.127437+00:00",
+          "detail": "unassigned \u2192 qa-agent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:02:10.304700+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:07:00.754784+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-28T02:07:49.724099+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-12T03:30:30.511671+00:00",
-      "updated_at": "2026-05-12T03:30:30.511671+00:00"
+      "updated_at": "2026-05-28T02:07:49.724097+00:00",
+      "assigned_to": "qa-agent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "ni4s7dsl",
@@ -3540,7 +3673,7 @@
     {
       "id": "6yt4bdyy",
       "title": "Declare anthropic SDK as explicit dependency in pyproject.toml",
-      "status": "code-review",
+      "status": "done",
       "priority_weight": 8,
       "complexity": "low",
       "category": "infra",
@@ -3567,6 +3700,11 @@
           "lane": "in-progress",
           "at": "2026-05-25T16:48:37.355180+00:00",
           "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T16:50:59.929026+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -3593,13 +3731,19 @@
           "actor": "user",
           "at": "2026-05-25T16:48:37.355453+00:00",
           "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T16:50:59.929032+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:41:53.911761+00:00",
-      "updated_at": "2026-05-25T16:48:37.355448+00:00",
+      "updated_at": "2026-05-25T16:50:59.929028+00:00",
       "assigned_to": "subagent",
       "reviewer": "reviewer",
       "reviewer_history": [
@@ -3609,7 +3753,7 @@
     {
       "id": "39jmvlto",
       "title": "Make Ollama opt-in in eval suite, not hardcoded default",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 7,
       "complexity": "low",
       "category": "infra",
@@ -3618,21 +3762,60 @@
         "config",
         "public-release"
       ],
-      "description": "eval_flow_skill.py defaults to localhost:11434 + specific model; should be skippable or configurable so public users without Ollama don't fail on first run",
+      "description": "eval_flow_skill.py defaults to localhost:11434 + specific model; should be skippable or configurable so public users without Ollama don't fail on first run\n\n## Spec\n\n**Acceptance criteria**\n- `EVAL_LLM` defaults to `None` (not `\"ollama\"`) in eval_flow_skill.py\n- When `EVAL_LLM` is unset, `_call_llm` raises a clear `RuntimeError` (e.g. \"Set EVAL_LLM=openai or EVAL_LLM=ollama to run LLM-dependent evals\")\n- test_flow_live.py adds a `requires_llm` skip marker (`pytest.mark.skipif(not EVAL_LLM, reason=\"...\")`) applied to all test functions that call `run_flow`, `run_flow_tribunal`, `run_flow_graph`, or `run_flow_policy`\n- The `judge_model` initialization block in test_flow_live.py is guarded so it does not attempt to import `OllamaModel` when `EVAL_LLM` is None\n- Running `pytest test_flow_live.py` without `EVAL_LLM` set results in all LLM-dependent tests being SKIPPED (not ERROR or FAIL)\n- `EVAL_LLM=openai` and `EVAL_LLM=ollama` continue to work exactly as before\n\n**Failure modes**\n- If a test imports `OllamaModel` at module level when Ollama is not installed, the entire module fails to import \u2014 guard with the `EVAL_LLM` check before the import\n- Do not use `pytest.skip()` inside `_call_llm` (it's not a pytest context) \u2014 raise `RuntimeError` there and let the test's `skipif` handle it at the test level\n\n**Edge cases**\n- `EVAL_LLM=ollama` (explicitly set) should behave exactly as before \u2014 no regression\n- The `requires_anthropic` marker already in test_flow_live.py is unrelated \u2014 do not remove or alter it\n- Non-LLM tests (fixture tests that don't call run_flow*) should still run without `EVAL_LLM` set",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T17:55:55.454413+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T18:00:18.290367+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T18:00:18.481002+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T17:55:55.454630+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T18:00:18.290562+00:00",
+          "detail": "ready \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T18:00:18.481009+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:10.117332+00:00",
-      "updated_at": "2026-05-25T16:42:10.117332+00:00"
+      "updated_at": "2026-05-25T18:00:18.481005+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "lcjyyk3a",
       "title": "Fix server binding: use 0.0.0.0 instead of localhost",
-      "status": "code-review",
+      "status": "done",
       "priority_weight": 8,
       "complexity": "low",
       "category": "backend",
@@ -3659,6 +3842,11 @@
           "lane": "in-progress",
           "at": "2026-05-25T16:48:37.536657+00:00",
           "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T16:51:00.085020+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -3685,13 +3873,19 @@
           "actor": "user",
           "at": "2026-05-25T16:48:37.536859+00:00",
           "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T16:51:00.085025+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:10.364890+00:00",
-      "updated_at": "2026-05-25T16:48:37.536853+00:00",
+      "updated_at": "2026-05-25T16:51:00.085022+00:00",
       "assigned_to": "subagent",
       "reviewer": "reviewer",
       "reviewer_history": [
@@ -3701,7 +3895,7 @@
     {
       "id": "urs27qrn",
       "title": "Sync version numbers and add migration story",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 7,
       "complexity": "medium",
       "category": "docs",
@@ -3710,21 +3904,78 @@
         "docs",
         "public-release"
       ],
-      "description": "plugin manifest says 2.0.0, pyproject.toml says 0.1.0; add CHANGELOG and document backlog.json schema migration path for users upgrading",
+      "description": "plugin manifest says 2.0.0, pyproject.toml says 0.1.0; sync both to 0.1.0, add schema_version field to backlog.json, and create CHANGELOG.md.\n\n## Spec\n**Acceptance criteria:**\n1. plugin.json version changed from 2.0.0 to 0.1.0\n2. pyproject.toml version stays at 0.1.0 (already correct)\n3. backlog init command adds schema_version: 1 to newly created backlog.json files\n4. CHANGELOG.md created at repo root documenting v0.1.0 as first public release, schema v1, with a note: 'If upgrading between versions, back up backlog.json first. Migration guides will appear here when schema breaks.'\n\n**Failure modes:** backlog init must not overwrite an existing backlog.json \u2014 guard against this or it is data loss.\n**Edge cases:** Existing backlog.json files do not need schema_version backfilled \u2014 only new files created by init get it. No backlog migrate command needed yet.",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T22:55:12.804917+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T22:57:19.855250+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T23:01:18.298020+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T23:03:00.154529+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T22:55:12.805169+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T22:57:19.716058+00:00",
+          "detail": "unassigned \u2192 backend-dev"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T22:57:19.855459+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T23:01:18.298333+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T23:03:00.154536+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:10.585228+00:00",
-      "updated_at": "2026-05-25T16:42:10.585228+00:00"
+      "updated_at": "2026-05-25T23:03:00.154531+00:00",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "xz32xzpz",
       "title": "Add backlog init command with helpful guidance",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 7,
       "complexity": "low",
       "category": "feature",
@@ -3733,21 +3984,60 @@
         "cli",
         "public-release"
       ],
-      "description": "missing backlog.json gives cryptic JSON errors instead of a helpful 'run backlog init first' message; implement init command that creates backlog.json and wires up CLAUDE.md",
+      "description": "missing backlog.json gives cryptic JSON errors instead of a helpful 'run backlog init first' message; implement init command that creates backlog.json and wires up CLAUDE.md\n\n## Spec\n\n**Acceptance criteria**\n- `backlog init` already exists and works \u2014 do NOT rewrite it; only the missing-file detection is needed\n- Add a `_require_store(file_flag)` helper in cli.py that: resolves the path, checks `os.path.exists(path)`, and if missing prints a helpful message and exits(1):\n  `\"No backlog.json found. Run backlog init to create one.\"`\n- Replace `store = _store(file)` with `store = _require_store(file)` in all read/write commands: `list`, `top`, `show`, `add`, `move`, `done`, `assign`, `unassign`, `discard`, `edit`, `pick`, `link`, `unlink`, and any other command that calls `_store(file)`. Leave `init` as-is (it uses `BacklogStore` directly).\n- Test coverage: add at least one test in `test_cli.py` \u2014 run `backlog top` with a non-existent file path and assert exit_code=1 and the hint message contains \"backlog init\"\n\n**Failure modes**\n- `backlog init` must not be broken \u2014 it uses `BacklogStore` directly without `_store()`, so this change does not affect it\n- Commands that currently auto-create the file on write (add, move) should now also show the hint and exit \u2014 consistent UX is more important than silent auto-creation for a first-run scenario\n\n**Edge cases**\n- If `BACKLOG_FILE` env var is set to a non-existent path, the message should include the resolved path so the user knows which file is missing\n- `_store()` remains in place (used internally/by tests that pass an existing tmp file) \u2014 add `_require_store()` as a new helper alongside it",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T18:05:02.511907+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T18:08:23.917535+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T18:09:57.664802+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T18:05:02.512089+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T18:08:23.917710+00:00",
+          "detail": "ready \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T18:09:57.664807+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:10.797898+00:00",
-      "updated_at": "2026-05-25T16:42:10.797898+00:00"
+      "updated_at": "2026-05-25T18:09:57.664804+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "sctl75wg",
       "title": "Write complete installation docs with version requirements",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 6,
       "complexity": "low",
       "category": "docs",
@@ -3755,21 +4045,71 @@
         "docs",
         "public-release"
       ],
-      "description": "README missing explicit requirements: Python 3.11+, Flask, Typer, Rich, Anthropic SDK version specs; add a Requirements section",
+      "description": "README missing explicit requirements: Python 3.11+, Flask, Typer, Rich, Anthropic SDK version specs; add a Requirements section\n\n## Spec\n\n**Acceptance criteria**\n- A new '## Requirements' section exists in README.md, placed immediately before '## Quick Start'\n- The section lists Python 3.11+ and pip as prerequisites\n- A markdown table lists the 4 auto-installed packages with their minimum versions: typer>=0.12, flask>=3.0, rich>=13.0, anthropic>=0.25 (sourced from pyproject.toml)\n- A callout note mentions that running evals requires Python 3.12 and links to the existing 'Eval environment setup' section\n\n**Failure modes**\n- N/A \u2014 pure doc change, no runtime path\n\n**Edge cases**\n- Versions must stay in sync with pyproject.toml \u2014 do not invent or modify version numbers\n- Anchor link in the callout must match the existing heading id ('#eval-environment-setup-one-time')",
       "links": [],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T17:03:48.242962+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T17:52:07.372822+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T17:52:54.770878+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T17:52:54.934915+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T17:03:48.243134+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T17:52:07.372827+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T17:52:54.771224+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T17:52:54.934925+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:10.956009+00:00",
-      "updated_at": "2026-05-25T16:42:10.956009+00:00"
+      "updated_at": "2026-05-25T17:52:54.934921+00:00",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "n6ae9jml",
       "title": "Add LICENSE file",
-      "status": "code-review",
+      "status": "done",
       "priority_weight": 6,
       "complexity": "low",
       "category": "infra",
@@ -3795,6 +4135,11 @@
           "lane": "in-progress",
           "at": "2026-05-25T16:48:36.496928+00:00",
           "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T16:50:59.645010+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -3821,13 +4166,19 @@
           "actor": "user",
           "at": "2026-05-25T16:48:36.497156+00:00",
           "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T16:50:59.645015+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:11.173255+00:00",
-      "updated_at": "2026-05-25T16:48:36.497151+00:00",
+      "updated_at": "2026-05-25T16:50:59.645012+00:00",
       "assigned_to": "subagent",
       "reviewer": "reviewer",
       "reviewer_history": [
@@ -3837,7 +4188,7 @@
     {
       "id": "mg76o5ip",
       "title": "Link schema.md from README",
-      "status": "code-review",
+      "status": "done",
       "priority_weight": 5,
       "complexity": "low",
       "category": "docs",
@@ -3863,6 +4214,11 @@
           "lane": "in-progress",
           "at": "2026-05-25T16:48:36.967111+00:00",
           "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T16:50:59.785801+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -3889,14 +4245,728 @@
           "actor": "user",
           "at": "2026-05-25T16:48:36.967365+00:00",
           "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T16:50:59.785807+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T16:42:11.484153+00:00",
-      "updated_at": "2026-05-25T16:48:36.967359+00:00",
+      "updated_at": "2026-05-25T16:50:59.785804+00:00",
       "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "dyrywpoy",
+      "title": "Fix review artifact extension in SKILL.md from .md to .json",
+      "status": "done",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "skill",
+        "review-gate",
+        "public-release"
+      ],
+      "description": "SKILL.md instructs agents to write review artifacts as .md files but backlog ingest expects JSON. The two conflict causing a failed ingest every time. Change the handoff_results/review_<item_id>_<timestamp>.md pattern to .json throughout SKILL.md.",
+      "links": [],
+      "threads": [
+        {
+          "id": "ei89htt4",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "Review Artifact section shows a markdown-formatted template (# Review:, **Item**:, ## Blockers, etc.) but the file extension is now .json. The template must be replaced with the JSON output contract format: {item_id, verdict, summary, issues[]}.",
+          "created_at": "2026-05-25T16:58:41.242262+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-25T16:54:22.245999+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-25T16:56:27.947321+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:57:06.896319+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T16:58:41.242467+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-25T16:59:38.793939+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-25T17:00:08.936016+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:54:22.246193+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-25T16:54:22.399876+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:56:27.947517+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:57:06.896504+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T16:58:41.242473+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-25T16:59:38.794128+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-25T17:00:08.936023+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 4,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-25T16:53:55.092576+00:00",
+      "updated_at": "2026-05-25T17:00:08.936019+00:00",
+      "assigned_to": "reviewer",
+      "reviewer": "backend-dev",
+      "reviewer_history": [
+        "reviewer",
+        "backend-dev"
+      ]
+    },
+    {
+      "id": "l9qhnuik",
+      "title": "Add public-facing README to backlog-manager skill",
+      "status": "done",
+      "priority": "6",
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "docs",
+        "backlog-manager",
+        "release-prep"
+      ],
+      "description": "The skills/backlog-manager/ directory has no README.md. GitHub visitors landing on the subdirectory see raw source files with no context.\n\nAudience: Claude Code users and developers doing AI-assisted / vibe coding.\n\nSections to cover:\n- What is this? (one-paragraph pitch \u2014 why this vs. a plain task list)\n- Core concepts: lanes, scoring/tribunal, gates\n- Quick start: clone repo \u2192 pip install -e . \u2192 backlog init \u2192 first 3 commands\n- CLI: highlight key commands (top, pick, move, handoff, ingest), link to REFERENCE.md\n- Board: mention backlog board as the visual management layer\n- Links: SKILL.md (Claude instruction set), REFERENCE.md (full API/scoring/policy docs)\n\nInstallation path: clone-based (gives users access to SKILL.md and REFERENCE.md alongside the package).",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-26T01:04:37.558668+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-26T01:13:59.766322+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-26T01:17:09.139303+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-26T01:19:40.788770+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T01:04:37.559328+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-26T01:13:59.624186+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T01:13:59.766532+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T01:17:09.139508+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-26T01:19:40.788776+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-26T00:59:47.814411+00:00",
+      "updated_at": "2026-05-26T01:19:40.788773+00:00",
+      "assigned_to": "subagent",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "6y6bjs3v",
+      "title": "Auto-setup CI test visibility when no .github/workflows/ exists \u2014 skill should detect missing CI, create minimal workflow with junit reporter + EnricoMi/publish-unit-test-result-action, support jest-junit (JS/TS) and pytest --junit-xml (Python). Part of 'done' definition in TDD skill.",
+      "status": "done",
+      "complexity": "medium",
+      "tags": [
+        "ci",
+        "testing",
+        "skill",
+        "tdd"
+      ],
+      "description": "Auto-setup CI test visibility when no .github/workflows/ exists \u2014 skill should detect missing CI, create minimal workflow with junit reporter + EnricoMi/publish-unit-test-result-action, support jest-junit (JS/TS) and pytest --junit-xml (Python). Part of 'done' definition in TDD skill.\n\n## Spec\n**Acceptance criteria:**\n- Skill checks for .github/workflows/ at task start; if missing, creates it as part of setup\n- Generates minimal test.yml: triggers on push+PR to main, installs deps, runs tests with junit reporter, publishes results via EnricoMi/publish-unit-test-result-action@v2\n- JS/TS projects: uses jest-junit + --reporters=jest-junit; adds jest-junit as devDependency if missing\n- Python projects: uses pytest --junit-xml=test-results.xml\n- CI setup is treated as part of 'done' \u2014 not optional, not gated on user request\n- If CI already exists but lacks junit reporting, adds the reporter step\n\n**Failure modes:**\n- If language cannot be detected: default to asking user or skip with a warning note\n- If jest-junit install fails: surface the error, do not silently continue\n\n**Edge cases:**\n- .github/ exists but workflows/ does not \u2192 create workflows/ and add test.yml\n- CI already fully configured \u2192 skip, no changes\n- Monorepo with multiple package.json \u2192 scope to root or working directory",
+      "links": [],
+      "threads": [
+        {
+          "id": "fmocpx25",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "[SKILL.md:302] Python workflow install step is 'pip install -e . pytest'. Projects detected via requirements.txt are not installable packages \u2014 'pip install -e .' requires a setup.py or pyproject.toml with build config. For a standard requirements.txt project this step fails before any tests run ('ERROR: File not found: setup.py'). The template should use 'pip install -r requirements.txt pytest' for requirements.txt projects and 'pip install -e . pytest' only for pyproject.toml projects, or at minimum provide a conditional. This breaks the most common Python layout covered by the spec.; [SKILL.md:239-246] Language detection table covers package.json and requirements.txt/pyproject.toml but provides no instruction when none of these files are found. The spec explicitly requires: 'If language cannot be detected: default to asking user or skip with a warning note.' This failure mode is entirely absent \u2014 an agent following the instructions has no defined branch for unknown language.",
+          "created_at": "2026-05-26T01:59:11.757827+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-26T01:48:42.023577+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-26T01:49:59.091776+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-26T01:54:25.100297+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-26T01:59:11.758146+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-26T02:02:59.625676+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-26T02:06:51.078591+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T01:48:42.023870+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-26T01:49:58.943818+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T01:49:59.092180+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T01:54:25.100473+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-26T01:59:11.758154+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T02:02:59.625949+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-26T02:06:51.078598+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 4,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-26T01:46:51.225266+00:00",
+      "updated_at": "2026-05-26T02:06:51.078594+00:00",
+      "priority_weight": 7,
+      "category": "feature",
+      "assigned_to": "reviewer",
+      "reviewer": "backend-dev",
+      "reviewer_history": [
+        "reviewer",
+        "backend-dev"
+      ]
+    },
+    {
+      "id": "08ys04f1",
+      "title": "Require subagent to run tests locally before opening PR \u2014 add mandatory test-run step between commit and push in Git Workflow section of SKILL.md. If tests fail, fix before pushing. CI becomes second confirmation, not first signal.",
+      "status": "done",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "ci",
+        "testing",
+        "skill",
+        "tdd"
+      ],
+      "description": "Require subagent to run tests locally before opening PR \u2014 add mandatory test-run step between commit and push in Git Workflow section of SKILL.md. If tests fail, fix before pushing. CI becomes second confirmation, not first signal.\n\n## Spec\n**Acceptance criteria:**\n- Git Workflow section in SKILL.md has a new step 4a between 'commit' and 'push/open PR'\n- Step instructs: run full test suite locally (npm test / pytest tests/ / equivalent) before pushing\n- If tests fail: fix the code before pushing \u2014 do not open a red PR\n- Step is marked mandatory, not advisory\n- Applies to both new test files and changes to existing code\n\n**Failure modes:**\n- If test command is unknown (language not detected): skip with a warning note, do not block the push entirely\n- If tests take too long: subagent runs them anyway \u2014 it is not the agent's call to skip\n\n**Edge cases:**\n- No test suite exists yet: skip this step, note it in the PR description\n- Test command exits non-zero: agent must fix, not ignore",
+      "links": [],
+      "threads": [
+        {
+          "id": "q6f2aro6",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "Step is labeled '4a' but is positioned between step 2 (commit) and step 3 (push). The label '4a' signals 'sub-step of 4 (open PR)' to any reader parsing the numbered list. An agent following the list in label order (1, 2, 3, 4, 4a) would run tests after the PR is already open \u2014 defeating the requirement. Must be relabeled '2a' or the full list renumbered (1, 2, 3-test, 4-push, 5-PR).",
+          "created_at": "2026-05-26T02:32:23.314739+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-26T02:12:32.424890+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-26T02:22:20.123589+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-26T02:26:17.727897+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-26T02:32:23.315637+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-26T02:34:02.931816+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-26T02:36:41.471768+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T02:12:32.425080+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-26T02:22:19.958525+00:00",
+          "detail": "unassigned \u2192 subagent"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T02:22:20.123812+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T02:26:17.729792+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-26T02:32:23.315647+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-26T02:34:02.932023+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-26T02:36:41.471776+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 4,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-26T02:12:02.838082+00:00",
+      "updated_at": "2026-05-26T02:36:41.471771+00:00",
+      "assigned_to": "reviewer",
+      "reviewer": "backend-dev",
+      "reviewer_history": [
+        "reviewer",
+        "backend-dev"
+      ]
+    },
+    {
+      "id": "3tf4t599",
+      "title": "Fix pick command to select highest-scored ready item or update spec to match position-based behavior",
+      "status": "backlog",
+      "priority_weight": 5,
+      "complexity": "medium",
+      "tags": [
+        "testing",
+        "cli",
+        "spec",
+        "pick"
+      ],
+      "description": "test_pick_picks_first_ready_item documents that pick selects by array position, not score. Spec AC says 'picks highest-scored one'. Either fix the implementation to sort by score before picking, or update the spec/AC to reflect position-based selection. Discovered during review of #65.",
+      "links": [
+        {
+          "item_id": "lsthvv2k",
+          "type": "discovered-during",
+          "reason": "pick ordering mismatch found during code review of #65 test suite"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-28T01:36:59.869011+00:00",
+      "updated_at": "2026-05-28T01:37:16.493624+00:00"
+    },
+    {
+      "id": "7zfixnfx",
+      "title": "Add unit tests for server.py scoring engine (compute_scores, evaluate_tribunal, lens functions)",
+      "status": "done",
+      "priority_weight": 6,
+      "complexity": "low",
+      "tags": [
+        "testing",
+        "test-coverage",
+        "scoring",
+        "tribunal"
+      ],
+      "description": "",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-28T02:18:25.872227+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-28T02:32:03.803781+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-28T02:34:03.321926+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:18:25.872428+00:00",
+          "detail": "backlog \u2192 in-progress (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-28T02:18:29.512410+00:00",
+          "detail": "unassigned \u2192 claude"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:32:03.803995+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-28T02:34:03.321932+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-28T02:15:17.124400+00:00",
+      "updated_at": "2026-05-28T02:34:03.321929+00:00",
+      "assigned_to": "claude",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "fwkwgvsq",
+      "title": "Add unit tests for server.py policy engine (run_policy_engine, detect_policy_conflicts, execute_policy_actions)",
+      "status": "done",
+      "priority_weight": 6,
+      "complexity": "low",
+      "tags": [
+        "testing",
+        "test-coverage",
+        "policies"
+      ],
+      "description": "Add unit tests for server.py policy engine (run_policy_engine, detect_policy_conflicts, execute_policy_actions)\n\n## Spec\n\n**Acceptance criteria:**\n- Tests live in `skills/backlog-manager/tests/test_server_policy_engine.py`\n- `detect_policy_conflicts`: test no-conflict path (clean list returned), conflicting actions on same item (conflicts list populated), mixed (some clean + some conflicting), empty input\n- `execute_policy_actions`: test each action type (reprioritize, reassign, escalate, block, notify, skip_force), item-not-found \u2192 status=skipped, unknown action type \u2192 status=skipped, exception in action \u2192 status=error\n- `run_policy_engine`: test no active policies returns zero-fire result, all policies fire but no conflicts \u2192 actions executed, conflict detected \u2192 resolved actions executed, no policies fire \u2192 log written and zero result\n- All tests use pytest with no live server (pure unit tests, mock `read_policies`, `get_policies_path`, `evaluate_policy_structured`, `evaluate_policy_with_llm`, `append_policy_log_entry` as needed)\n- Tests pass under `pytest tests/test_server_policy_engine.py`\n\n**Failure modes:**\n- Policy with missing `id`/`name` \u2192 should not crash, action entries fall back gracefully\n- `execute_policy_actions` exception per-action \u2192 caught, status=error, remaining actions still processed\n\n**Edge cases:**\n- Empty `fired_policies` list \u2192 `detect_policy_conflicts` returns `{conflicts:[], clean:[]}`\n- Action with `item_id=None` or `item_id='__global__'` \u2192 item lookup returns None, action skipped\n- `escalate` on item already at priority_weight=9 \u2192 stays at 9 (max guard)",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-28T02:54:19.371511+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-05-28T02:54:28.154535+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-28T02:59:29.670177+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-28T12:24:47.430086+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:54:19.371862+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:54:28.154729+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:59:29.670333+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-28T12:24:47.430091+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-28T02:15:17.266168+00:00",
+      "updated_at": "2026-05-28T12:24:47.430089+00:00",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "jj85qv59",
+      "title": "Add unit tests for cli.py orchestration (orchestrate_tick, run_handoff, run_ingest, select_agent)",
+      "status": "backlog",
+      "priority_weight": 5,
+      "complexity": "low",
+      "tags": [
+        "testing",
+        "test-coverage",
+        "orchestration",
+        "cli"
+      ],
+      "description": "",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-28T02:15:17.405000+00:00",
+      "updated_at": "2026-05-28T02:15:17.405000+00:00"
+    },
+    {
+      "id": "c89qjhiq",
+      "title": "Add unit tests for core.py gaps (validate_lane_transition, migrate_to_flow_schema, normalize_lane_history)",
+      "status": "backlog",
+      "priority_weight": 4,
+      "complexity": "low",
+      "tags": [
+        "testing",
+        "test-coverage",
+        "core"
+      ],
+      "description": "",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-28T02:15:17.543747+00:00",
+      "updated_at": "2026-05-28T02:15:17.543747+00:00"
+    },
+    {
+      "id": "icln4pks",
+      "title": "Fix two weak tests in test_server_scoring.py: wrong link key in test_blocking_item_gets_unblock_bonus and vacuous assertion in test_readiness_level_ready",
+      "status": "done",
+      "priority_weight": 4,
+      "complexity": "low",
+      "tags": [
+        "testing",
+        "test-coverage",
+        "scoring"
+      ],
+      "description": "",
+      "links": [
+        {
+          "item_id": "7zfixnfx",
+          "type": "follow-up",
+          "reason": "Two test correctness issues found during code review of #88"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-05-28T02:36:04.209843+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-05-28T02:44:54.482676+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-05-28T02:45:29.581363+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:36:04.210024+00:00",
+          "detail": "backlog \u2192 in-progress (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-05-28T02:36:04.347907+00:00",
+          "detail": "unassigned \u2192 claude"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-05-28T02:44:54.482997+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-05-28T02:45:29.581368+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-05-28T02:35:43.962313+00:00",
+      "updated_at": "2026-05-28T02:45:29.581366+00:00",
+      "assigned_to": "claude",
       "reviewer": "reviewer",
       "reviewer_history": [
         "reviewer"
