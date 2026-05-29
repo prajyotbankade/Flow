@@ -144,7 +144,7 @@ class TestMainAutosaveFlag:
         # Patch everything that would make serve_forever block or open browser
         with patch.object(srv, "atexit") as mock_atexit, \
              patch("backlog.server._start_periodic_commit") as mock_periodic, \
-             patch("backlog.server.HTTPServer") as mock_httpserver, \
+             patch("backlog.server.ThreadingBacklogServer") as mock_httpserver, \
              patch("backlog.server.webbrowser.open"), \
              patch("backlog.server.parse_agent_files", return_value={}), \
              patch("backlog.server.sys.argv", ["backlog-server"] + argv):

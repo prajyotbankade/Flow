@@ -2435,6 +2435,16 @@ class BacklogHandler(BaseHTTPRequestHandler):
             super().log_message(format, *args)
 
 
+class ThreadingBacklogServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
+    def handle_error(self, request, client_address):
+        import sys
+        if issubclass(sys.exc_info()[0], BrokenPipeError):
+            return
+        super().handle_error(request, client_address)
+
+
 # ── Entry point ───────────────────────────────────────────────────────────────
 
 def check_git_dirty_warning(
@@ -2515,15 +2525,6 @@ def main():
 
     if args.host == "0.0.0.0":
         print("WARNING: Binding to all interfaces (0.0.0.0) — the board will be reachable from other machines on the network.")
-    class ThreadingBacklogServer(ThreadingMixIn, HTTPServer):
-        daemon_threads = True
-
-        def handle_error(self, request, client_address):
-            import sys
-            if issubclass(sys.exc_info()[0], BrokenPipeError):
-                return  # client disconnected before response completed — harmless
-            super().handle_error(request, client_address)
-
     server = ThreadingBacklogServer((args.host, args.port), BacklogHandler)
     display_host = "localhost" if args.host == "0.0.0.0" else args.host
     url = f"http://{display_host}:{args.port}"
