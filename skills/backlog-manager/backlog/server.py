@@ -45,6 +45,7 @@ import threading
 import webbrowser
 from datetime import datetime, timezone
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from pathlib import Path
 from urllib.parse import urlparse, parse_qs
 import math
@@ -2514,7 +2515,16 @@ def main():
 
     if args.host == "0.0.0.0":
         print("WARNING: Binding to all interfaces (0.0.0.0) — the board will be reachable from other machines on the network.")
-    server = HTTPServer((args.host, args.port), BacklogHandler)
+    class ThreadingBacklogServer(ThreadingMixIn, HTTPServer):
+        daemon_threads = True
+
+        def handle_error(self, request, client_address):
+            import sys
+            if issubclass(sys.exc_info()[0], BrokenPipeError):
+                return  # client disconnected before response completed — harmless
+            super().handle_error(request, client_address)
+
+    server = ThreadingBacklogServer((args.host, args.port), BacklogHandler)
     display_host = "localhost" if args.host == "0.0.0.0" else args.host
     url = f"http://{display_host}:{args.port}"
 
