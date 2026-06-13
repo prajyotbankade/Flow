@@ -12,7 +12,17 @@ from unittest.mock import MagicMock, call, patch
 import pytest
 
 # We import the functions directly from server module
-from backlog.server import _auto_commit, _start_periodic_commit
+from backlog.server import (
+    _auto_commit,
+    _start_periodic_commit,
+    _parse_protected_branches,
+    DEFAULT_PROTECTED_BRANCHES,
+)
+
+
+def _branch_result(name):
+    """git rev-parse --abbrev-ref HEAD result returning *name*."""
+    return _make_subprocess_result(returncode=0, stdout=name.encode())
 
 
 # ---------------------------------------------------------------------------
@@ -36,12 +46,13 @@ class TestAutoCommit:
     def test_dirty_file_triggers_commit(self, tmp_path):
         """When git diff returns non-zero (dirty), auto-commit runs."""
         fake_file = str(tmp_path / "backlog.json")
+        branch     = _branch_result("feature/x")  # non-protected
         diff_dirty = _make_subprocess_result(returncode=1)   # 1 = dirty
         add_ok     = _make_subprocess_result(returncode=0)
         commit_ok  = _make_subprocess_result(returncode=0)
 
         with patch("backlog.server.subprocess.run",
-                   side_effect=[diff_dirty, add_ok, commit_ok]) as mock_run:
+                   side_effect=[branch, diff_dirty, add_ok, commit_ok]) as mock_run:
             _auto_commit(fake_file)
 
         calls = mock_run.call_args_list
@@ -51,25 +62,30 @@ class TestAutoCommit:
     def test_clean_file_is_noop(self, tmp_path):
         """When git diff returns 0 (clean), neither add nor commit is called."""
         fake_file = str(tmp_path / "backlog.json")
+        branch     = _branch_result("feature/x")  # non-protected
         diff_clean = _make_subprocess_result(returncode=0)   # 0 = clean
 
         with patch("backlog.server.subprocess.run",
-                   return_value=diff_clean) as mock_run:
+                   side_effect=[branch, diff_clean]) as mock_run:
             _auto_commit(fake_file)
 
-        # Only git diff should have been called — no add, no commit
-        assert mock_run.call_count == 1
-        assert "diff" in str(mock_run.call_args_list[0])
+        # Only branch lookup + git diff — no add, no commit
+        calls = mock_run.call_args_list
+        assert mock_run.call_count == 2
+        assert "rev-parse" in str(calls[0])
+        assert "diff" in str(calls[1])
+        assert not any("add" in str(c) or "commit" in str(c) for c in calls)
 
     def test_git_commit_failure_logs_warning_not_crash(self, tmp_path, capsys):
         """When git commit fails, a WARNING is printed and no exception is raised."""
         fake_file = str(tmp_path / "backlog.json")
+        branch      = _branch_result("feature/x")  # non-protected
         diff_dirty  = _make_subprocess_result(returncode=1)
         add_ok      = _make_subprocess_result(returncode=0)
         commit_fail = _make_subprocess_result(returncode=1)
 
         with patch("backlog.server.subprocess.run",
-                   side_effect=[diff_dirty, add_ok, commit_fail]):
+                   side_effect=[branch, diff_dirty, add_ok, commit_fail]):
             _auto_commit(fake_file)   # must not raise
 
         captured = capsys.readouterr()
@@ -101,7 +117,7 @@ class TestPeriodicCommit:
         fake_file = str(tmp_path / "backlog.json")
         called = threading.Event()
 
-        def fake_auto_commit(fp):
+        def fake_auto_commit(fp, *args, **kwargs):
             called.set()
 
         with patch("backlog.server._auto_commit", side_effect=fake_auto_commit):
@@ -233,3 +249,186 @@ class TestMainAutosaveFlag:
         )
         args = mock_periodic.call_args[0]
         assert args[1] == 0
+
+
+# ---------------------------------------------------------------------------
+# _auto_commit — protected-branch guard (item #98)
+# ---------------------------------------------------------------------------
+
+class TestProtectedBranchGuard:
+
+    def test_protected_branch_skips_commit(self, tmp_path):
+        """On 'main', _auto_commit returns after branch lookup — no diff/add/commit."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch = _branch_result("main")
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch]) as mock_run:
+            _auto_commit(fake_file)
+
+        calls = mock_run.call_args_list
+        assert mock_run.call_count == 1, "expected only the branch lookup"
+        assert "rev-parse" in str(calls[0])
+        assert not any("commit" in str(c) or "add" in str(c) for c in calls)
+
+    def test_master_branch_skips_commit(self, tmp_path):
+        """'master' is protected by default as well."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch = _branch_result("master")
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch]) as mock_run:
+            _auto_commit(fake_file)
+
+        assert mock_run.call_count == 1
+        assert not any("commit" in str(c) for c in mock_run.call_args_list)
+
+    def test_non_protected_branch_commits(self, tmp_path):
+        """On 'feature/x', the commit proceeds as before."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch     = _branch_result("feature/x")
+        diff_dirty = _make_subprocess_result(returncode=1)
+        add_ok     = _make_subprocess_result(returncode=0)
+        commit_ok  = _make_subprocess_result(returncode=0)
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch, diff_dirty, add_ok, commit_ok]) as mock_run:
+            _auto_commit(fake_file)
+
+        calls = mock_run.call_args_list
+        assert any("add" in str(c) for c in calls)
+        assert any("commit" in str(c) for c in calls)
+
+    def test_detached_head_treated_as_non_protected(self, tmp_path):
+        """Detached HEAD (rev-parse returns 'HEAD') still commits."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch     = _branch_result("HEAD")
+        diff_dirty = _make_subprocess_result(returncode=1)
+        add_ok     = _make_subprocess_result(returncode=0)
+        commit_ok  = _make_subprocess_result(returncode=0)
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch, diff_dirty, add_ok, commit_ok]) as mock_run:
+            _auto_commit(fake_file)
+
+        calls = mock_run.call_args_list
+        assert any("commit" in str(c) for c in calls), "detached HEAD should commit"
+
+    def test_custom_protected_set_respected(self, tmp_path):
+        """A custom protected set blocks a branch that is NOT a default protected name."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch = _branch_result("release")
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch]) as mock_run:
+            _auto_commit(fake_file, protected_branches={"release"})
+
+        assert mock_run.call_count == 1, "custom protected branch should skip commit"
+        assert not any("commit" in str(c) for c in mock_run.call_args_list)
+
+    def test_custom_set_allows_main_to_commit(self, tmp_path):
+        """If the custom set does not include 'main', autosave commits on main."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch     = _branch_result("main")
+        diff_dirty = _make_subprocess_result(returncode=1)
+        add_ok     = _make_subprocess_result(returncode=0)
+        commit_ok  = _make_subprocess_result(returncode=0)
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch, diff_dirty, add_ok, commit_ok]) as mock_run:
+            _auto_commit(fake_file, protected_branches={"release"})
+
+        assert any("commit" in str(c) for c in mock_run.call_args_list)
+
+    def test_branch_match_is_case_sensitive(self, tmp_path):
+        """'Main' (capitalised) is NOT protected by the default {main, master}."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch     = _branch_result("Main")
+        diff_dirty = _make_subprocess_result(returncode=1)
+        add_ok     = _make_subprocess_result(returncode=0)
+        commit_ok  = _make_subprocess_result(returncode=0)
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch, diff_dirty, add_ok, commit_ok]) as mock_run:
+            _auto_commit(fake_file)
+
+        assert any("commit" in str(c) for c in mock_run.call_args_list)
+
+    def test_branch_lookup_failure_falls_through_to_commit(self, tmp_path):
+        """If rev-parse returns non-zero, branch is unknown -> non-protected -> commit."""
+        fake_file = str(tmp_path / "backlog.json")
+        branch_fail = _make_subprocess_result(returncode=128, stderr=b"not a repo")
+        diff_dirty  = _make_subprocess_result(returncode=1)
+        add_ok      = _make_subprocess_result(returncode=0)
+        commit_ok   = _make_subprocess_result(returncode=0)
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=[branch_fail, diff_dirty, add_ok, commit_ok]) as mock_run:
+            _auto_commit(fake_file)
+
+        assert any("commit" in str(c) for c in mock_run.call_args_list)
+
+    def test_git_unavailable_no_crash_no_commit(self, tmp_path):
+        """git missing: rev-parse raises, then diff raises -> no commit, no crash."""
+        fake_file = str(tmp_path / "backlog.json")
+
+        with patch("backlog.server.subprocess.run",
+                   side_effect=FileNotFoundError("no git")) as mock_run:
+            _auto_commit(fake_file)   # must not raise
+
+        assert not any("commit" in str(c) for c in mock_run.call_args_list)
+
+
+# ---------------------------------------------------------------------------
+# _parse_protected_branches
+# ---------------------------------------------------------------------------
+
+class TestParseProtectedBranches:
+
+    def test_empty_falls_back_to_default(self):
+        assert _parse_protected_branches("") == set(DEFAULT_PROTECTED_BRANCHES)
+
+    def test_whitespace_falls_back_to_default(self):
+        assert _parse_protected_branches("   ") == set(DEFAULT_PROTECTED_BRANCHES)
+
+    def test_none_falls_back_to_default(self):
+        assert _parse_protected_branches(None) == set(DEFAULT_PROTECTED_BRANCHES)
+
+    def test_comma_separated_parsed(self):
+        assert _parse_protected_branches("main,release,prod") == {"main", "release", "prod"}
+
+    def test_whitespace_and_empty_entries_stripped(self):
+        assert _parse_protected_branches(" main , , release ") == {"main", "release"}
+
+    def test_only_commas_falls_back_to_default(self):
+        assert _parse_protected_branches(",,,") == set(DEFAULT_PROTECTED_BRANCHES)
+
+
+# ---------------------------------------------------------------------------
+# main() — --protected-branches CLI flag plumbing
+# ---------------------------------------------------------------------------
+
+class TestProtectedBranchesFlag(TestMainAutosaveFlag):
+    """Inherits the main()-driver helper from TestMainAutosaveFlag."""
+
+    def test_protected_branches_flag_plumbed_to_periodic(self, tmp_path):
+        bf = str(tmp_path / "backlog.json")
+        (tmp_path / "backlog.json").write_text('{"version":1,"items":[]}')
+        registered, mock_periodic = self._run_main_and_capture_atexit(
+            ["--file", bf, "--no-open", "--protected-branches", "main,release"],
+            env_override={"BACKLOG_NO_GIT_CHECK": None},
+        )
+        args = mock_periodic.call_args[0]
+        # _start_periodic_commit(backlog_file, interval, protected_branches)
+        assert len(args) >= 3, "protected_branches not passed positionally"
+        assert args[2] == {"main", "release"}
+
+    def test_default_protected_branches_when_flag_absent(self, tmp_path):
+        bf = str(tmp_path / "backlog.json")
+        (tmp_path / "backlog.json").write_text('{"version":1,"items":[]}')
+        registered, mock_periodic = self._run_main_and_capture_atexit(
+            ["--file", bf, "--no-open"],
+            env_override={"BACKLOG_NO_GIT_CHECK": None},
+        )
+        args = mock_periodic.call_args[0]
+        assert args[2] == set(DEFAULT_PROTECTED_BRANCHES)

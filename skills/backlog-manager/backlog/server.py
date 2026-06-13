@@ -86,9 +86,58 @@ GIT_USER = get_git_user()
 
 # ── Auto-commit helpers ────────────────────────────────────────────────────────
 
-def _auto_commit(file_path: str) -> None:
-    """Commit file_path if it has uncommitted git changes. Idempotent and silent on failure."""
+DEFAULT_PROTECTED_BRANCHES = frozenset({"main", "master"})
+
+
+def _parse_protected_branches(raw):
+    """Parse a comma-separated branch list into a set.
+
+    Empty/whitespace-only input falls back to DEFAULT_PROTECTED_BRANCHES.
+    Branch names are matched case-sensitively.
+    """
+    if not raw or not raw.strip():
+        return set(DEFAULT_PROTECTED_BRANCHES)
+    names = {part.strip() for part in raw.split(",") if part.strip()}
+    return names or set(DEFAULT_PROTECTED_BRANCHES)
+
+
+def _current_git_branch():
+    """Return the current branch name, or None if it can't be determined.
+
+    Detached HEAD returns the literal "HEAD". Any failure (git missing, not a
+    repo, subprocess error) returns None so callers fall through to
+    non-protected behaviour rather than crashing.
+    """
     try:
+        r = subprocess.run(
+            ["git", "rev-parse", "--abbrev-ref", "HEAD"],
+            capture_output=True,
+        )
+        if r.returncode != 0:
+            return None
+        return r.stdout.decode(errors="replace").strip()
+    except Exception:
+        return None
+
+
+def _auto_commit(file_path: str, protected_branches=DEFAULT_PROTECTED_BRANCHES) -> None:
+    """Commit file_path if it has uncommitted git changes. Idempotent and silent on failure.
+
+    If HEAD is on a protected branch (default {"main", "master"}), the git
+    commit is skipped entirely — the file is still persisted by the normal save
+    path; autosave only declines to create a commit. This prevents local
+    protected branches from accumulating autosave commits that diverge from
+    remote after squash-merges.
+
+    Detached HEAD (rev-parse returns "HEAD") and an undeterminable branch are
+    treated as non-protected.
+    """
+    try:
+        branch = _current_git_branch()
+        # "HEAD" => detached, treated as non-protected. None => lookup failed,
+        # fall through to non-protected behaviour.
+        if branch and branch != "HEAD" and branch in protected_branches:
+            return  # on a protected branch — skip the commit
         r = subprocess.run(
             ["git", "diff", "--quiet", file_path],
             capture_output=True,
@@ -111,7 +160,8 @@ def _auto_commit(file_path: str) -> None:
         _ = exc
 
 
-def _start_periodic_commit(file_path: str, interval: float) -> None:
+def _start_periodic_commit(file_path: str, interval: float,
+                           protected_branches=DEFAULT_PROTECTED_BRANCHES) -> None:
     """Start a daemon timer that calls _auto_commit every *interval* seconds.
 
     If interval <= 0, do nothing.
@@ -120,7 +170,7 @@ def _start_periodic_commit(file_path: str, interval: float) -> None:
         return
 
     def _tick() -> None:
-        _auto_commit(file_path)
+        _auto_commit(file_path, protected_branches)
         t = threading.Timer(interval, _tick)
         t.daemon = True
         t.start()
@@ -2513,7 +2563,17 @@ def main():
         metavar="N",
         help="Commit backlog.json every N seconds while running (default: 300; 0 disables)",
     )
+    parser.add_argument(
+        "--protected-branches",
+        type=str,
+        default="",
+        metavar="NAMES",
+        help="Comma-separated branch names on which autosave must NOT commit "
+             "(default: main,master). Empty falls back to the default.",
+    )
     args = parser.parse_args()
+
+    protected_branches = _parse_protected_branches(args.protected_branches)
 
     BacklogHandler.backlog_file = os.path.abspath(args.file)
     backlog_file = BacklogHandler.backlog_file
@@ -2544,10 +2604,10 @@ def main():
     # ── Auto-commit wiring ─────────────────────────────────────────────────────
     _git_check_suppressed = args.no_git_check or bool(os.environ.get("BACKLOG_NO_GIT_CHECK"))
     if not _git_check_suppressed:
-        atexit.register(_auto_commit, backlog_file)
+        atexit.register(_auto_commit, backlog_file, protected_branches)
         # Ensure SIGTERM triggers atexit (sys.exit flushes atexit handlers)
         signal.signal(signal.SIGTERM, lambda *_: sys.exit(0))
-        _start_periodic_commit(backlog_file, args.autosave_interval)
+        _start_periodic_commit(backlog_file, args.autosave_interval, protected_branches)
 
     if not args.no_open:
         webbrowser.open(url)
