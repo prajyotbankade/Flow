@@ -650,23 +650,37 @@ def doctor(
 def board(
     file: Optional[str] = FILE_OPT,
     port: int = typer.Option(8089, "--port", help="Port for the web board"),
+    autosave_interval: int = typer.Option(
+        300,
+        "--autosave-interval",
+        help="Commit backlog.json every N seconds while running (default: 300; 0 disables).",
+    ),
+    protected_branches: str = typer.Option(
+        "",
+        "--protected-branches",
+        help="Comma-separated branch names on which autosave must NOT commit "
+             "(default: main,master). Empty falls back to the default.",
+    ),
 ) -> None:
     """Launch the web board (starts backlog-server)."""
     resolved = _resolve_file(file)
     env = os.environ.copy()
     env["BACKLOG_FILE"] = resolved
+    # Build the shared guard flags once and reuse for both invocations.
+    # Empty --protected-branches is forwarded verbatim; the server falls back
+    # to its default (main,master) when it receives an empty string.
+    server_args = [
+        "--file", resolved,
+        "--port", str(port),
+        "--autosave-interval", str(autosave_interval),
+        "--protected-branches", protected_branches,
+    ]
     try:
-        subprocess.run(
-            ["backlog-server", "--file", resolved, "--port", str(port)],
-            env=env,
-        )
+        subprocess.run(["backlog-server", *server_args], env=env)
     except FileNotFoundError:
         # Fallback: try running the server script directly
         script = Path(__file__).parent.parent / "scripts" / "backlog_server.py"
-        subprocess.run(
-            [sys.executable, str(script), "--file", resolved, "--port", str(port)],
-            env=env,
-        )
+        subprocess.run([sys.executable, str(script), *server_args], env=env)
 
 
 @app.command()
