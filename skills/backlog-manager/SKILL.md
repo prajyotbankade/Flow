@@ -447,7 +447,7 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 **Complete** — `status: done`. Add brief completion note. Offer next item from ready queue.
 
-**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null. **Before closing refinement and moving to `ready`, you MUST run the refinement gate below** — propose `refinement_gate: simple` or `refinement_gate: complex`, wait for human confirmation, and (if complex) run the sub-lead-agent readiness review. Do not skip to the spec gate without completing this step.
+**Refine** — Open threads for unclear items (max 2 questions at a time). Resolve threads → suggest `refined`. Always scan for `waiting_on: "agent"` threads — respond and set to `"user"` or null. **Before closing refinement and moving to `ready`, you MUST run the refinement gate below** — propose `refinement_gate: simple` or `refinement_gate: complex`, wait for human confirmation, and (if complex) **dispatch a separate `sub-lead-reviewer` agent** to run the readiness review (the lead must not review its own spec). Do not skip to the spec gate without completing this step.
 
 **Sub-lead-agent readiness review (end of refinement) — REQUIRED before any `→ ready` move:**
 
