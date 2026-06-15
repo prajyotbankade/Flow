@@ -223,6 +223,8 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 **Exception:** Pure doc or config changes with zero code risk may go direct to `main` after explicit user approval — but when in doubt, use a PR.
 
+**Autosave & branch protection:** `backlog board` autosaves `backlog.json` by committing it on the current branch every `--autosave-interval` seconds. On a `--protected-branches` branch (default `main,master`) the commit is skipped — the file is still written, but you commit it intentionally. This prevents autosave commits on long-lived branches from diverging after squash merges. If you run a `stage → main` promotion model, protect both (`--protected-branches main,stage`), never squash the `stage → main` hop, and back-merge `main → stage` after hotfixes. Full doctrine and the per-hop rules table: [REFERENCE.md → Autosave & Branch Safety](REFERENCE.md#autosave--branch-safety).
+
 ---
 
 ## CI Setup (run once per project)
@@ -385,6 +387,7 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 6. Their persona file path (`.claude/agents/<name>.md`) — agent reads it for identity and past learnings
 7. Self-correction instruction: if you make a mistake and get corrected, update your persona file before finishing
 8. Git workflow: work on a feature branch, push it, open a PR targeting `main` via `gh pr create`, report the PR URL — do not merge directly to `main`
+9. Testing requirement: write test cases that cover the acceptance criteria as part of the implementation — not just running the existing suite. For non-trivial logic, follow TDD: write the failing test first, then implement until it passes. Missing test coverage is a blocker at code review (see Code Review Protocol checklist item 6) — a passing implementation with no test is not shippable.
 
 ---
 
