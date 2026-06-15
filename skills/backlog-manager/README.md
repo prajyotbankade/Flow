@@ -86,7 +86,10 @@ For the full command reference including flags, exit codes, API endpoints, scori
 ```bash
 backlog board        # opens at http://localhost:8089
 backlog board --port 9000
+backlog board --protected-branches main,stage   # autosave won't commit on these branches
 ```
+
+The board autosaves `backlog.json` by committing it on the current branch (every 300s by default). On a protected branch (default `main,master`) the commit is skipped so autosave commits don't diverge after squash merges — see [REFERENCE.md → Autosave & Branch Safety](REFERENCE.md#autosave--branch-safety) for the recommended setup per branching model.
 
 The visual management layer. Drag-and-drop Kanban cards with score badges (color-coded by urgency), complexity indicators, category labels, and staleness markers. Click any card to open the full edit modal — fields, threads, linked items, and an Intelligence tab showing the score breakdown, recommended agent, and recommended model.
 
