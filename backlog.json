@@ -1,5 +1,5 @@
 {
-  "version": 790,
+  "version": 791,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -4971,6 +4971,28 @@
       "reviewer_history": [
         "reviewer"
       ]
+    },
+    {
+      "id": "5082cnzy",
+      "title": "Actually reduce SKILL.md length \u2014 tighten verbose passages, target net-negative",
+      "status": "backlog",
+      "priority_weight": 3,
+      "complexity": "medium",
+      "category": "chore",
+      "tags": [
+        "docs",
+        "skill"
+      ],
+      "description": "FOLLOW-UP to #95: the #95 PR (#29) improved scannability by adding one-line intent-leads but made SKILL.md LONGER (530->560), so the 'long' half of the original feedback is unaddressed. The repetition/dedupe half was handled. This item is specifically about LENGTH reduction: tighten verbose passages, prune filler, merge over-explained steps \u2014 target a net-negative line delta WITHOUT removing any rule/gate/command (same behavior-preserving bar as #95). Acceptance: net line count drops meaningfully vs current main; token sweep (refinement-gate, spec_written, ## Spec, handoff reviewer, backlog ingest, apply_lane_transition, expected_version, --protected-branches, publish-unit-test-result-action, sub-lead-reviewer) all still present; no behavior change.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-16T02:14:30.106571+00:00",
+      "updated_at": "2026-06-16T02:14:30.106571+00:00"
     }
   ],
   "config": {
