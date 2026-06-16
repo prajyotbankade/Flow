@@ -7,6 +7,8 @@ description: Manage a project backlog — add, prioritize, refine, and pick up w
 
 ## Activation Hints
 
+> Recognize backlog work and resolve the user's intent before acting.
+
 Invoke this skill when the user:
 - Mentions backlog, sprint planning, task queue, work items, story grooming, or agile workflow
 - Says things like "add this to the list for later", "what should I work on next", "let me park this idea", "queue this up", "what's in my backlog", "link this to #3", "which agent should take this", or "what's blocking progress"
@@ -15,6 +17,8 @@ Invoke this skill when the user:
 - References an item by number (#N) in any action context (assign, move, review, merge, check status)
 
 ## Intent vs. Literal Input
+
+> A backlog command is a goal, not a field write — execute the goal, not the literal text.
 
 Never take backlog commands purely literally. Resolve intent first:
 - **"assign #N to X"** → set `assigned_to`, then spawn agent X to actually do the work and drive through review → merge → done
@@ -25,13 +29,13 @@ Never take backlog commands purely literally. Resolve intent first:
 Invoke proactively (without being asked) when:
 - You've just finished a task and the user hasn't given you a new one → generate a work brief and offer to pick up the top-scored item
 - You discover bugs, tech debt, or follow-ups while working → add them to the backlog and link them to the source task
-- An item enters or is already in `code-review` status (after any write, or when scanning the backlog) → for each `code-review` item with no unresolved `review-dispatched` sentinel thread: (1) run `backlog handoff reviewer --item N --review`, (2) immediately run `backlog ingest <result_file>` on the file it prints ("Result saved to …"). Do not wait for the user to ask. The ingest step is what actually advances the item to `done` (pass) or back to `in-progress` (reject) — skipping it leaves the item stuck in `code-review`.
-
-> **Code review shortcut:** When an item is in `code-review`, the only valid path is `backlog handoff reviewer --item N --review` → `backlog ingest <result_file>`. Do not spawn a reviewer agent directly and call `backlog done` — that bypasses the gate.
+- An item enters or is already in `code-review` status (after any write, or when scanning the backlog) → for each `code-review` item with no unresolved `review-dispatched` sentinel thread, run the Code Review Protocol below. Do not wait for the user to ask.
 
 ---
 
 ## Quick Start
+
+> The everyday loop: claim the top item, do it, send it through review.
 
 This is all you need 80% of the time:
 
@@ -47,6 +51,8 @@ Full protocols for code review, spec gate, delegation, and orchestration are bel
 ---
 
 ## Setup
+
+> Install the package once per machine, then `backlog init` once per project.
 
 The skill ships as an installable Python package. Install once per machine:
 
@@ -74,6 +80,8 @@ That's it. No env vars, no extra steps. `backlog` defaults to `./backlog.json` i
 
 ## How to Operate
 
+> The end-to-end agent loop: pick up, decompose, assign, delegate, monitor, prune.
+
 Agents do not need the server running. Use the CLI directly.
 
 1. **Pick up work:** `backlog pick <your-agent-name>` — moves top ready item to in-progress
@@ -90,6 +98,8 @@ backlog board       # port 8089
 
 ## Decision Hierarchy
 
+> What to do next is decided in this fixed order — gates first, policies last.
+
 ```
 Gates (hard stop) → Readiness (eligibility) → Tribunal (recommendation) → Policies (overrides)
 ```
@@ -100,6 +110,8 @@ Gates (hard stop) → Readiness (eligibility) → Tribunal (recommendation) → 
 - **Policies** can override or nudge — they fire after tribunal and can escalate, reassign, or block.
 
 ## Decomposing a Feature
+
+> Break a feature into single-agent units with the right dependencies, sizing, and weights.
 
 When the user describes a feature to build:
 
@@ -113,11 +125,13 @@ When the user describes a feature to build:
 
 ## Code Review Protocol
 
-**NEVER spawn a reviewer agent directly.** The correct flow is always:
-1. `backlog handoff reviewer --item N --review` — generates a structured handoff file
-2. `backlog ingest <result_file>` — advances the item to `done` (pass) or back to `in-progress` (reject)
+> Every `code-review` item must pass through the structured handoff so the gate is recorded — never a manual `backlog done`.
 
-Skipping step 1 and spawning an Agent tool call directly produces an unstructured markdown file that `backlog ingest` cannot parse. The item will appear done but the gate was never properly closed. This is a protocol violation — not an acceptable shortcut.
+**NEVER spawn a reviewer agent directly and call `backlog done`** — that bypasses the gate. The correct flow is always:
+1. `backlog handoff reviewer --item N --review` — generates a structured handoff file
+2. `backlog ingest <result_file>` — run on the file step 1 prints ("Result saved to …"). This is the step that actually advances the item to `done` (pass) or back to `in-progress` (reject). Skipping it leaves the item stuck in `code-review`.
+
+Spawning an Agent tool call directly instead of step 1 produces an unstructured markdown file that `backlog ingest` cannot parse: the item will appear done but the gate was never closed. This is a protocol violation, not an acceptable shortcut.
 
 **When running inside Claude Code** (nested `claude` sessions are blocked): `backlog handoff reviewer --item N --review` will print the review prompt to stdout instead of launching a subprocess. When you see `--- REVIEW PROMPT ---` in the output, execute the review inline using that prompt, write the artifact to `handoff_results/review_<item_id>_<timestamp>.json` in the exact format specified below, then run `backlog ingest <result_file>`.
 
@@ -167,11 +181,11 @@ Example questions for a concurrent write operation:
 }
 ```
 
-A reviewer who passes code with a known bug and logs a follow-up ticket has failed at their job.
-
 ---
 
 ## Git Workflow
+
+> Code lands on `main` only via branch → PR → user-approved merge; the user is the final gate.
 
 All code changes must go through a branch → PR → merge flow. **Never push directly to `main`.**
 
@@ -219,7 +233,7 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 7. **Only merge after the user explicitly confirms** — `gh pr merge <PR-number> --squash --delete-branch`
 8. After merge: the `backlog ingest` on a passing review already moved the item to `done` — verify with `backlog show N`
 
-**Why:** The user is the final gate before anything lands on `main`. The lead agent does the legwork (CI monitoring, status reporting) but never merges autonomously. Squash merge keeps `main` history clean; `--delete-branch` prevents stale branch accumulation.
+**Why:** The lead does the legwork (CI monitoring, status reporting) but never merges autonomously. Squash merge keeps `main` history clean; `--delete-branch` prevents stale branch accumulation.
 
 **Exception:** Pure doc or config changes with zero code risk may go direct to `main` after explicit user approval — but when in doubt, use a PR.
 
@@ -229,7 +243,9 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 ## CI Setup (run once per project)
 
-This is **mandatory**, not advisory. Agents must complete this before writing any tests. Invisible test results are not shippable — CI with junit reporting is part of the definition of done for every code task.
+> Every code task ships with CI that emits junit results — invisible test results are not shippable.
+
+This is **mandatory**, not advisory. Agents must complete this before writing any tests. CI with junit reporting is part of the definition of done for every code task.
 
 ### Step 1 — Detect CI state
 
@@ -377,6 +393,8 @@ If `gh pr checks <PR>` returns no checks after CI was added, the workflow file l
 
 ## Delegating to a Sub-Agent
 
+> Hand the sub-agent everything it needs to work autonomously and return through the gates.
+
 When spawning a sub-agent for an assigned task, include in the prompt:
 
 1. The task details (title, description, acceptance criteria from backlog)
@@ -392,6 +410,8 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 ---
 
 ## Work Brief Format
+
+> The standard shape for presenting what to work on next and why.
 
 ```
 NEXT:  #N — Title  [score: X | confidence: high]
@@ -414,6 +434,8 @@ Generate after: task completion, reprioritization trigger fires, user asks "what
 
 ## Reprioritization Triggers
 
+> Certain events force a re-score — watch `_events` and react.
+
 Check `_events` in every write response:
 
 | Event | Action |
@@ -430,6 +452,8 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 ---
 
 ## Operations
+
+> Per-action rules for every backlog mutation.
 
 > **Lane = status.** Both terms refer to where an item sits in the workflow (`backlog → refined → ready → in-progress → code-review → done`). They are interchangeable in CLI output and docs.
 
@@ -451,6 +475,8 @@ Cluster detection: 3+ reopens in same tag area within 14d → flag in WATCH.
 
 **Sub-lead-agent readiness review (end of refinement) — REQUIRED before any `→ ready` move:**
 
+> A complex spec is reviewed for readiness by an independent agent, never by the lead that wrote it.
+
 This gate is mandatory. Do not move an item to `ready` or run the spec gate without completing it first. After all refinement questions are resolved, do the following:
 
 1. Lead agent proposes `refinement_gate: simple` or `refinement_gate: complex` with a one-line reason:
@@ -469,7 +495,7 @@ This gate is mandatory. Do not move an item to `ready` or run the spec gate with
    - On `READY`: the **authoring lead** proceeds to the spec gate as usual. Only on a `READY` verdict does the item proceed to the spec gate.
 4. If `refinement_gate: simple`: item moves directly to `ready` via spec gate as usual — no sub-lead review.
 
-In auto mode the orchestrator handles steps 1–4 automatically, including dispatching the separate `sub-lead-reviewer` agent when the gate is `complex`. In supervised mode the lead agent proposes the `refinement_gate` label to the human, waits for confirmation or override, and then (if complex) **dispatches the separate `sub-lead-reviewer` agent** to run the readiness review before proceeding to the spec gate. In neither mode does the lead review its own spec — it must dispatch the separate agent.
+Mode differences for steps 1–4: in **auto** mode the orchestrator runs them automatically (including dispatching the separate `sub-lead-reviewer` when `complex`); in **supervised** mode the lead proposes the `refinement_gate` label and waits for human confirmation or override before dispatching. In neither mode does the lead review its own spec.
 
 **Spec gate (any `→ ready` move):** Before moving any item to `ready` — regardless of its current status — check two things: (1) does a `spec_written` signal exist on the item, or (2) does the item description already contain a `## Spec` block? If either is true, the gate passes — proceed with the `ready` move. If neither exists, surface these three questions and wait for answers before proceeding:
 1. *Acceptance criteria* — What does done look like exactly? How will you verify it?
@@ -497,10 +523,12 @@ If the user says "just mark it ready" without answering — acknowledge the risk
 Add the item, link it to the source (`follow-up` or `discovered-during`), and mention it in the completion summary. Asking "should I add this?" for obvious follow-up work is unnecessary friction — the user should only be involved for decisions.
 
 **Doctrine-before-feature ordering** — The tribunal scores by `priority_weight` and dependency links. It cannot detect that a low-complexity doctrine or doc item enables better execution of a higher-scored feature unless there is a structural signal. When adding a doc/skill/doctrine item that directly enables an upcoming feature:
-1. Add a `blocks` link only if the feature genuinely cannot or should not start without the doctrine in place. Otherwise use `related` — misusing `blocks` inflates leverage scores and corrupts gate rules.
+1. Add a `blocks` link only if the feature genuinely cannot or should not start without the doctrine in place; otherwise use `related` (see Linking for the `blocks`/`related` rule).
 2. Set `priority_weight` to reflect the cascade value, not just the item's own size — a low-effort item that improves every future agent run is worth more than its line count suggests.
 
 ## Linking
+
+> Links express dependency and context — reserve `blocks` for true hard dependencies.
 
 Use the CLI to add or remove links between items:
 
@@ -521,6 +549,8 @@ related: "Frontend form is thematically linked to the auth spec but can begin in
 ```
 
 ## Concurrency Safety
+
+> Writes are optimistically locked by `version`; recover from conflicts, never force them.
 
 Server rejects writes where client `version` < current (HTTP 409).
 **On 409**: re-read → re-apply → retry. Never manually increment version.
