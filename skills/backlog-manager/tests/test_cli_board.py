@@ -1,5 +1,5 @@
-"""CLI tests for the `board` command: verify autosave guard flags are forwarded
-to the backlog-server subprocess (item #100)."""
+"""CLI tests for the `board` command: the board no longer forwards autosave /
+protected-branch guard flags — the board never commits to git (item #94)."""
 
 import json
 from unittest import mock
@@ -30,46 +30,39 @@ def _argv_of(call):
     return call.args[0] if call.args else call.kwargs["args"]
 
 
-class TestBoardForwardsGuardFlags:
-    def test_default_forwards_interval_300_and_protected_branches(self, backlog_file):
+class TestBoardDoesNotForwardGuardFlags:
+    def test_default_forwards_only_file_and_port(self, backlog_file):
         with mock.patch("backlog.cli.subprocess.run") as run:
             result = runner.invoke(app, ["board", "--file", backlog_file])
         assert result.exit_code == 0, result.output
         argv = _argv_of(run.call_args)
-        assert "--autosave-interval" in argv
-        assert argv[argv.index("--autosave-interval") + 1] == "300"
-        assert "--protected-branches" in argv
+        assert "--autosave-interval" not in argv
+        assert "--protected-branches" not in argv
+        assert "--file" in argv
+        assert "--port" in argv
 
-    def test_protected_branches_forwarded_verbatim(self, backlog_file):
+    def test_autosave_interval_flag_rejected_by_typer(self, backlog_file):
+        with mock.patch("backlog.cli.subprocess.run") as run:
+            result = runner.invoke(
+                app, ["board", "--file", backlog_file, "--autosave-interval", "30"]
+            )
+        assert result.exit_code != 0
+        assert "No such option" in result.output
+        run.assert_not_called()
+
+    def test_protected_branches_flag_rejected_by_typer(self, backlog_file):
         with mock.patch("backlog.cli.subprocess.run") as run:
             result = runner.invoke(
                 app,
                 ["board", "--file", backlog_file, "--protected-branches", "main,stage"],
             )
-        assert result.exit_code == 0, result.output
-        argv = _argv_of(run.call_args)
-        assert argv[argv.index("--protected-branches") + 1] == "main,stage"
+        assert result.exit_code != 0
+        assert "No such option" in result.output
+        run.assert_not_called()
 
-    def test_autosave_interval_zero_forwarded_as_string(self, backlog_file):
-        with mock.patch("backlog.cli.subprocess.run") as run:
-            result = runner.invoke(
-                app, ["board", "--file", backlog_file, "--autosave-interval", "0"]
-            )
-        assert result.exit_code == 0, result.output
-        argv = _argv_of(run.call_args)
-        assert argv[argv.index("--autosave-interval") + 1] == "0"
-
-    def test_empty_protected_branches_forwarded(self, backlog_file):
-        """Empty string is forwarded; server falls back to main,master."""
-        with mock.patch("backlog.cli.subprocess.run") as run:
-            result = runner.invoke(app, ["board", "--file", backlog_file])
-        assert result.exit_code == 0, result.output
-        argv = _argv_of(run.call_args)
-        assert "--protected-branches" in argv
-        assert argv[argv.index("--protected-branches") + 1] == ""
-
-    def test_fallback_path_also_forwards_flags(self, backlog_file):
-        """If backlog-server isn't on PATH, the script fallback must also get the flags."""
+    def test_fallback_path_runs_without_guard_flags(self, backlog_file):
+        """If backlog-server isn't on PATH, the script fallback must run and
+        likewise carry no guard flags."""
         calls = []
 
         def side_effect(argv, *a, **kw):
@@ -78,16 +71,10 @@ class TestBoardForwardsGuardFlags:
                 raise FileNotFoundError("backlog-server not found")
             return mock.DEFAULT
 
-        with mock.patch("backlog.cli.subprocess.run", side_effect=side_effect) as run:
-            result = runner.invoke(
-                app,
-                ["board", "--file", backlog_file, "--protected-branches", "main,stage",
-                 "--autosave-interval", "0"],
-            )
+        with mock.patch("backlog.cli.subprocess.run", side_effect=side_effect):
+            result = runner.invoke(app, ["board", "--file", backlog_file])
         assert result.exit_code == 0, result.output
         assert len(calls) == 2  # first raised, fallback ran
         fallback_argv = calls[1]
-        assert "--autosave-interval" in fallback_argv
-        assert fallback_argv[fallback_argv.index("--autosave-interval") + 1] == "0"
-        assert "--protected-branches" in fallback_argv
-        assert fallback_argv[fallback_argv.index("--protected-branches") + 1] == "main,stage"
+        assert "--autosave-interval" not in fallback_argv
+        assert "--protected-branches" not in fallback_argv

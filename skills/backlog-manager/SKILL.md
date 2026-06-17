@@ -237,7 +237,7 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 **Exception:** Pure doc or config changes with zero code risk may go direct to `main` after explicit user approval — but when in doubt, use a PR.
 
-**Autosave & branch protection:** `backlog board` autosaves `backlog.json` by committing it on the current branch every `--autosave-interval` seconds. On a `--protected-branches` branch (default `main,master`) the commit is skipped — the file is still written, but you commit it intentionally. This prevents autosave commits on long-lived branches from diverging after squash merges. If you run a `stage → main` promotion model, protect both (`--protected-branches main,stage`), never squash the `stage → main` hop, and back-merge `main → stage` after hotfixes. Full doctrine and the per-hop rules table: [REFERENCE.md → Autosave & Branch Safety](REFERENCE.md#autosave--branch-safety).
+**Committing the backlog:** `backlog board` persists every edit to `backlog.json` atomically on disk, but it never touches git — it does not run `git add` or `git commit`. Committing the backlog to history is a deliberate user action: commit `backlog.json` alongside your normal commits whenever you want a checkpoint. If `backlog.json` has uncommitted changes, the board prints a one-line hint at startup (suppress it with `--no-git-check` / `BACKLOG_NO_GIT_CHECK`).
 
 ---
 
