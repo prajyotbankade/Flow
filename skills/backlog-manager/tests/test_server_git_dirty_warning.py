@@ -117,6 +117,6 @@ class TestGitDirtyWarning:
         """Warning message matches the exact spec."""
         captured, _ = self._run(" M backlog.json")
         assert captured == [
-            "WARNING: backlog.json has uncommitted git changes"
-            " — server state may diverge from committed history"
+            "WARNING: backlog.json has uncommitted changes"
+            " — commit to checkpoint to git history (recovery is automatic)"
         ]

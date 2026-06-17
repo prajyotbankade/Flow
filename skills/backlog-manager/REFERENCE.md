@@ -42,8 +42,7 @@ backlog edit 3 --priority-weight 9 --category bug --tags "auth,backend" --assign
 backlog init                          # create backlog.json + wire CLAUDE.md (one-shot setup)
 backlog board                         # launch web board (port 8089)
 backlog board --port 9000             # custom port
-backlog board --autosave-interval 0   # disable autosave commits (default: 300s)
-backlog board --protected-branches main,stage   # branches autosave must NOT commit on (default: main,master)
+backlog board --no-git-check          # suppress the uncommitted-changes hint at startup
 
 backlog handoff reviewer --item 3 --review   # review handoff: pass/reject verdict
 backlog handoff backend-dev --item 3         # work handoff: done/blocked/partial
@@ -326,48 +325,3 @@ GET  /api/policies/suggestions               LLM-generated rule suggestions base
 ```
 
 **`/api/graph` key fields:** `critical_path` (item IDs by cascade impact), `conflicts` (concurrent in-progress items sharing tags), `nodes[].cascade_count` (items transitively unblocked).
-
----
-
-## Autosave & Branch Safety
-
-`backlog board` autosaves `backlog.json` by committing it every `--autosave-interval` seconds (default 300; `0` disables). The commit lands on **whichever branch is checked out** — which can collide with how you promote code between branches. The `--protected-branches` flag controls this:
-
-```bash
-backlog board --protected-branches main,stage   # autosave never COMMITS on these branches
-```
-
-On a protected branch the file is still written to disk — only the git commit is skipped, so you commit `backlog.json` intentionally as part of your normal push. Default protected set is `main,master`. Matching is case-sensitive; a detached HEAD is treated as non-protected. Set `--autosave-interval 0` to turn off the periodic autosave commits.
-
-### Why this matters: divergence from squash merges
-
-Autosave commits on a long-lived branch collide with **squash merges**. If a branch accumulates N autosave commits and is then squashed into its target, the source branch permanently diverges from the target (N commits vs. 1 squashed commit) — forcing a hard-reset or rebase every cycle. The guard exists to keep autosave commits off branches that can't tolerate that.
-
-### Recommended configuration by branching model
-
-**Single long-lived branch (just `main`):** Default is correct — autosave is disk-only on `main`; commit `backlog.json` with your normal commits.
-
-```bash
-backlog board                       # protects main,master by default
-```
-
-**Feature → main (squash-merge PRs):** Work on disposable feature branches; autosave commits freely there (they're deleted after merge, so post-squash divergence is harmless and the backlog content flows into `main` via the squash). `main` stays protected by default. **Push the feature branch before merging** — unpushed autosave commits get collapsed by the squash and are lost.
-
-**Stage → main promotion (`stage` is long-lived):** Protect both — you sit on `stage` constantly and it can't tolerate a squash either:
-
-```bash
-backlog board --protected-branches main,stage
-```
-
-Then follow these rules. Each risk lives on exactly one hop:
-
-| Hop | Merge style | The risk | The rule |
-|-----|-------------|----------|----------|
-| feature → stage | **squash** | unpushed state gets collapsed | **push the feature branch before merging** |
-| stage → main | **merge / fast-forward** | permanent divergence | **never squash** this hop |
-| main → stage (after a hotfix on main) | **merge commit** | drift + `backlog.json` conflict | **back-merge with a merge commit, never rebase** |
-
-- **`stage → main` must be merge or fast-forward, never squash.** Squash is only for disposable `feature → stage` hops. Squashing a long-lived `stage` recreates permanent divergence.
-- **Protecting `stage` is forced for manual releases, optional for automated ones.** A CI/release job that always runs `merge --no-ff` removes the mis-click risk — you can leave `stage`'s autosave net on (protect `main` only). But a human clicking GitHub's merge dropdown is one mis-click from a squash: GitHub's merge-method selection is *sticky* and defaults to whatever was used last. You can't disable squash repo-wide (you need it for `feature → stage`), so protecting `stage`'s autosave is the only available guard.
-- **After any hotfix on `main`, back-merge `main → stage` immediately** with a merge commit (never rebase — `stage` is shared and rebasing rewrites published history). Skip this and the next `stage → main` can't fast-forward and `stage` silently drifts.
-- **Keep backlog bookkeeping on `stage`, code-only on `main`.** Then `main` never touches `backlog.json`, so the back-merge produces *no* `backlog.json` conflict — a conflict there is itself the alarm that a backlog edit leaked onto `main`. If that happens, resolve in `stage`'s favour (`stage` is the source of truth for the backlog).
