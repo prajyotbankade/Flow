@@ -684,6 +684,67 @@ def board(
         subprocess.run([sys.executable, str(script), *server_args], env=env)
 
 
+@app.command(name="commit")
+@_handle
+def commit_cmd(
+    file: Optional[str] = FILE_OPT,
+    message: str = typer.Option(
+        "chore(backlog): checkpoint", "--message", "-m", help="Commit message"
+    ),
+) -> None:
+    """Commit backlog.json into git history (deliberate durability checkpoint).
+
+    Commits ONLY the backlog file — other staged/unstaged changes are left
+    untouched. No-op (exit 0) when the file already matches HEAD. Works on any
+    branch, including main. Run this before a manual git checkout/stash/reset.
+    """
+    abs_path = os.path.abspath(_resolve_file(file))
+    repo_dir = os.path.dirname(abs_path) or "."
+
+    def _git(*args: str) -> subprocess.CompletedProcess:
+        return subprocess.run(
+            ["git", *args],
+            cwd=repo_dir,
+            capture_output=True,
+            text=True,
+        )
+
+    try:
+        # Stage only the backlog file.
+        add = _git("add", "--", abs_path)
+        if add.returncode != 0:
+            stderr = add.stderr.strip()
+            if "not a git repository" in stderr.lower():
+                err_console.print(
+                    "[red]Error:[/red] not a git repository — run this inside a git repo."
+                )
+            else:
+                err_console.print(f"[red]Error:[/red] git add failed: {stderr or 'unknown error'}")
+            raise typer.Exit(1)
+
+        # No-op if nothing staged for this file differs from HEAD.
+        diff = _git("diff", "--cached", "--quiet", "--", abs_path)
+        if diff.returncode == 0:
+            console.print("nothing to commit — backlog.json is already up to date")
+            raise typer.Exit(0)
+
+        # Commit ONLY this file (pathspec restricts the commit to it).
+        committed = _git("commit", "-m", message, "--", abs_path)
+        if committed.returncode != 0:
+            stderr = committed.stderr.strip() or committed.stdout.strip()
+            err_console.print(f"[red]Error:[/red] git commit failed: {stderr or 'unknown error'}")
+            raise typer.Exit(1)
+
+        short = _git("rev-parse", "--short", "HEAD")
+        short_hash = short.stdout.strip() if short.returncode == 0 else "?"
+        console.print(f"[green]Committed[/green] {short_hash} {message}")
+    except FileNotFoundError:
+        err_console.print(
+            "[red]Error:[/red] git not found — install git to use backlog commit."
+        )
+        raise typer.Exit(1)
+
+
 @app.command()
 @_handle
 def handoff(
