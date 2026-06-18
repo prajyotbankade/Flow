@@ -44,6 +44,9 @@ backlog board                         # launch web board (port 8089)
 backlog board --port 9000             # custom port
 backlog board --no-git-check          # suppress the uncommitted-changes hint at startup
 
+backlog commit                        # commit ONLY backlog.json (deliberate checkpoint)
+backlog commit -m "checkpoint msg"    # custom commit message
+
 backlog handoff reviewer --item 3 --review   # review handoff: pass/reject verdict
 backlog handoff backend-dev --item 3         # work handoff: done/blocked/partial
 backlog ingest <result_file>                 # process handoff result → advance item to done or in-progress

@@ -237,7 +237,7 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 **Exception:** Pure doc or config changes with zero code risk may go direct to `main` after explicit user approval — but when in doubt, use a PR.
 
-**Committing the backlog:** `backlog board` persists every edit to `backlog.json` atomically on disk, but it never touches git — it does not run `git add` or `git commit`. Committing the backlog to history is a deliberate user action: commit `backlog.json` alongside your normal commits whenever you want a checkpoint. If `backlog.json` has uncommitted changes, the board prints a one-line hint at startup (suppress it with `--no-git-check` / `BACKLOG_NO_GIT_CHECK`).
+**Committing the backlog:** `backlog board` persists every edit to `backlog.json` atomically on disk, but it never touches git — it does not run `git add` or `git commit`. Committing the backlog to history is a deliberate user action via **`backlog commit`** (optionally `-m "message"`), which commits *only* `backlog.json` — it never sweeps up your other staged or unstaged changes, and no-ops cleanly when the file already matches HEAD. Run it as hygiene before any manual `git checkout` / `git stash` / `git reset` so an in-progress edit isn't lost (the recovery journal covers the case where it's forgotten). If `backlog.json` has uncommitted changes, the board prints a one-line hint at startup (suppress it with `--no-git-check` / `BACKLOG_NO_GIT_CHECK`).
 
 ---
 
