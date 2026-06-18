@@ -56,6 +56,8 @@ from .core import (
     apply_lane_transition,
     _append_execution_history,
     _auto_assign_reviewer,
+    write_journal,
+    reconcile_journal,
 )
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
 
@@ -2011,6 +2013,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
             if result["actions_executed"] > 0:
                 data["version"] = data.get("version", 0) + 1
                 atomic_write(self.backlog_file, data)
+                write_journal(self.backlog_file, data)  # #95 recovery journal
         self._json_response(200, result)
 
     def _serve_policy_suggestions(self):
@@ -2033,6 +2036,9 @@ class BacklogHandler(BaseHTTPRequestHandler):
                     if result["actions_executed"] > 0:
                         data["version"] = data.get("version", 0) + 1
                         atomic_write(backlog_file, data)
+                        # #95 recovery journal — inside the try so the swallowing
+                        # except below doesn't skip it (write_journal never raises).
+                        write_journal(backlog_file, data)
             except Exception:
                 pass
 
@@ -2102,6 +2108,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
             events = detect_events(current, incoming)
             incoming["version"] = current_version + 1
             atomic_write(self.backlog_file, incoming)
+            write_journal(self.backlog_file, incoming)  # #95 recovery journal
 
             decisions_file = get_decisions_path(self.backlog_file)
             current_items_map = {i.get("id"): i for i in current.get("items", [])}
@@ -2191,6 +2198,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
             events = detect_events({"items": [old_snapshot]}, {"items": [data["items"][found_idx]]})
             data["version"] = current_version + 1
             atomic_write(self.backlog_file, data)
+            write_journal(self.backlog_file, data)  # #95 recovery journal
 
             if old_snapshot.get("status") != "done" and data["items"][found_idx].get("status") == "done":
                 decisions_file = get_decisions_path(self.backlog_file)
@@ -2246,6 +2254,7 @@ class BacklogHandler(BaseHTTPRequestHandler):
                 return
             data["version"] = data.get("version", 0) + 1
             atomic_write(self.backlog_file, data)
+            write_journal(self.backlog_file, data)  # #95 recovery journal
         self._json_response(201, {"status": "ok", "signal": signal, "version": data["version"]})
 
     # ── Staged actions (two-stage approval gate) ────────────────────────────
@@ -2458,10 +2467,22 @@ def main():
         action="store_true",
         help="Suppress the git dirty-state warning",
     )
+    parser.add_argument(
+        "--on-conflict",
+        choices=["prompt", "restore", "keep"],
+        default=None,
+        help="Recovery-journal conflict resolution when the journal is newer "
+             "than backlog.json (git reverted live state). Default: "
+             "non-interactive safe restore with a backup.",
+    )
     args = parser.parse_args()
 
     BacklogHandler.backlog_file = os.path.abspath(args.file)
     backlog_file = BacklogHandler.backlog_file
+
+    # #95 recovery journal: reconcile before serving so a git revert of an
+    # uncommitted backlog.json is recovered (pure file/version comparison).
+    reconcile_journal(backlog_file, mode=args.on_conflict)
 
     check_git_dirty_warning(
         file_path=BacklogHandler.backlog_file,

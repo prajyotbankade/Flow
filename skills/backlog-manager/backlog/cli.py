@@ -24,7 +24,7 @@ from rich.console import Console
 from rich.table import Table
 from rich import box
 
-from .core import BacklogStore, DEFAULT_STATUSES, _detect_foreign_schema, migrate_to_flow_schema, _now_iso
+from .core import BacklogStore, DEFAULT_STATUSES, _detect_foreign_schema, migrate_to_flow_schema, _now_iso, reconcile_journal
 from .exceptions import ConflictError, GateViolationError, ItemNotFoundError
 from .server import compute_scores, compute_item_readiness, evaluate_tribunal
 
@@ -46,8 +46,25 @@ def _store(file_flag: Optional[str]) -> BacklogStore:
     return BacklogStore(_resolve_file(file_flag))
 
 
+# #95 recovery journal: path-keyed guard so reconcile runs at most once per
+# resolved path per process. A path-keyed set (not a process-global boolean) is
+# required because test_cli_core.py runs ~63 in-process CliRunner invocations
+# across DISTINCT tmp_path files in one pytest process.
+_RECONCILED_PATHS: set = set()
+
+
+def _reset_reconcile_guard() -> None:
+    """Test hook: clear the per-process reconcile guard so a path re-triggers."""
+    _RECONCILED_PATHS.clear()
+
+
 def _require_store(file_flag: Optional[str]) -> BacklogStore:
     path = _resolve_file(file_flag)
+    abs_path = os.path.abspath(path)
+    if abs_path not in _RECONCILED_PATHS:
+        _RECONCILED_PATHS.add(abs_path)
+        # Conflict mode comes from BACKLOG_ON_CONFLICT env (no per-command flag).
+        reconcile_journal(abs_path)
     if not os.path.exists(path):
         err_console.print(f"[red]No backlog.json found at {path}.[/red]")
         err_console.print("Run [bold]backlog init[/bold] to create one and get started.")
