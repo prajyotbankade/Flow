@@ -13,6 +13,9 @@ __pycache__/
 # Eval workspace (dev artifacts)
 backlog-manager-workspace/
 
+# Recovery journal sidecar (#95) — live-state backups, never committed
+.backlog/
+
 # code-review-graph (local graph DB)
 .code-review-graph/
 

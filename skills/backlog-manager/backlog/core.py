@@ -8,7 +8,9 @@ over this module.
 import json
 import os
 import random
+import shutil
 import string
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -324,6 +326,201 @@ def _auto_assign_reviewer(item: dict, data: dict) -> str | None:
     return reviewer
 
 
+# ── Recovery journal (#95) ───────────────────────────────────────────────────
+#
+# A gitignored journal that survives git operations. When git reverts an
+# uncommitted backlog.json, the live state is recoverable from the journal
+# instead of being silently lost. Works for BOTH the board server and the CLI,
+# regardless of who runs git. PURE file/version comparison — makes NO git calls.
+
+
+def _backlog_dir(backlog_file: str) -> Path:
+    """The .backlog/ sidecar directory next to the resolved backlog file."""
+    return Path(os.path.abspath(backlog_file)).parent / ".backlog"
+
+
+def _journal_path(backlog_file: str) -> Path:
+    return _backlog_dir(backlog_file) / "journal.json"
+
+
+def _backups_dir(backlog_file: str) -> Path:
+    return _backlog_dir(backlog_file) / "backups"
+
+
+def write_journal(backlog_file: str, data: dict) -> None:
+    """Atomically write .backlog/journal.json with the full backlog dict.
+
+    Journal content: the backlog dict just persisted + its version + a UTC ISO
+    timestamp. BEST-EFFORT — this must NEVER raise (the caller's main save has
+    already succeeded; one site runs in a daemon thread). On any error it prints
+    exactly one stderr WARNING and returns.
+    """
+    try:
+        jdir = _backlog_dir(backlog_file)
+        jdir.mkdir(parents=True, exist_ok=True)
+        journal = {
+            "version": data.get("version", 0),
+            "saved_at": _now_iso(),
+            "backlog": data,
+        }
+        journal_path = _journal_path(backlog_file)
+        fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=str(jdir))
+        with os.fdopen(fd, "w") as f:
+            json.dump(journal, f, indent=2)
+        os.replace(tmp_path, str(journal_path))
+    except Exception as e:  # noqa: BLE001 — best-effort, never raise
+        print(f"WARNING: failed to write recovery journal: {e}", file=sys.stderr)
+
+
+def _read_json_file(path: Path):
+    """Read+parse a JSON file. Returns None on missing/corrupt (caller decides)."""
+    try:
+        with open(path, "r") as f:
+            return json.load(f)
+    except FileNotFoundError:
+        return None
+    except (json.JSONDecodeError, OSError, ValueError):
+        return "__CORRUPT__"
+
+
+def _backup_worktree(backlog_file: str) -> str:
+    """Copy the current worktree backlog.json into .backlog/backups/. Returns path."""
+    backups = _backups_dir(backlog_file)
+    backups.mkdir(parents=True, exist_ok=True)
+    ts = _now_iso().replace(":", "-")
+    backup_path = backups / f"backlog-{ts}.json"
+    shutil.copy2(os.path.abspath(backlog_file), str(backup_path))
+    return str(backup_path)
+
+
+def _restore_from_journal(backlog_file: str, journal: dict) -> None:
+    """Atomically write the journal's backlog payload to backlog.json."""
+    payload = journal.get("backlog", {})
+    target = os.path.abspath(backlog_file)
+    dir_path = os.path.dirname(target)
+    fd, tmp_path = tempfile.mkstemp(suffix=".tmp", dir=dir_path)
+    with os.fdopen(fd, "w") as f:
+        json.dump(payload, f, indent=2)
+    os.replace(tmp_path, target)
+
+
+def _resolve_conflict_mode(mode: str | None) -> str | None:
+    """Resolution order: explicit arg / --on-conflict (passed as mode) /
+    BACKLOG_ON_CONFLICT env. Returns 'prompt' / 'restore' / 'keep' or None
+    (meaning: caller decides interactive-vs-default)."""
+    if mode:
+        return mode
+    env = os.environ.get("BACKLOG_ON_CONFLICT")
+    if env:
+        return env
+    return None
+
+
+def reconcile_journal(backlog_file: str, mode: str | None = None) -> None:
+    """Reconcile .backlog/journal.json against the working-tree backlog.json.
+
+    PURE file/version comparison — makes NO git calls and does not assume a git
+    repo. Compares journal.version vs worktree.version:
+
+    - No journal -> no-op.
+    - journal.version <= worktree.version -> proceed; refresh journal to worktree.
+    - journal.version > worktree.version -> CONFLICT (git reverted). Resolve by
+      mode. Mode order: explicit mode / --on-conflict / BACKLOG_ON_CONFLICT wins;
+      else interactive tty -> prompt; else non-interactive safe default.
+    - backlog.json missing but journal present -> restore (recover deleted file).
+    - Corrupt/unparseable journal OR backlog.json -> ignore journal, warn, proceed.
+
+    Never crashes.
+    """
+    try:
+        journal_path = _journal_path(backlog_file)
+        journal = _read_json_file(journal_path)
+        if journal is None:
+            return  # no journal -> no-op
+        if journal == "__CORRUPT__" or not isinstance(journal, dict):
+            print(
+                "WARNING: recovery journal is corrupt or unreadable — ignoring it.",
+                file=sys.stderr,
+            )
+            return
+        journal_version = journal.get("version", 0)
+
+        worktree = _read_json_file(Path(os.path.abspath(backlog_file)))
+        if worktree == "__CORRUPT__":
+            print(
+                "WARNING: backlog.json is corrupt — ignoring recovery journal, "
+                "proceeding without reconcile.",
+                file=sys.stderr,
+            )
+            return
+        if worktree is None:
+            # backlog.json missing but journal present -> recover the deleted file.
+            _restore_from_journal(backlog_file, journal)
+            print(
+                f"WARNING: backlog.json was missing — restored from recovery "
+                f"journal (v{journal_version}).",
+                file=sys.stderr,
+            )
+            return
+
+        worktree_version = worktree.get("version", 0) if isinstance(worktree, dict) else 0
+
+        if journal_version <= worktree_version:
+            # Worktree is current (or ahead). Refresh journal so it tracks the
+            # worktree and a later reconcile no-ops.
+            write_journal(backlog_file, worktree)
+            return
+
+        # CONFLICT: journal is newer than worktree (git reverted live state).
+        resolved = _resolve_conflict_mode(mode)
+        if resolved is None:
+            if sys.stdin.isatty() and sys.stdout.isatty():
+                resolved = "prompt"
+            else:
+                resolved = "_safe_default"
+
+        j_count = len(journal.get("backlog", {}).get("items", []))
+        w_count = len(worktree.get("items", [])) if isinstance(worktree, dict) else 0
+        delta_msg = (
+            f"journal v{journal_version} ({j_count} items) vs "
+            f"worktree v{worktree_version} ({w_count} items)"
+        )
+
+        if resolved == "prompt":
+            print(
+                f"\nRecovery journal is NEWER than backlog.json — git likely "
+                f"reverted live state.\n  {delta_msg}",
+                file=sys.stderr,
+            )
+            choice = input(
+                "[r]estore newer journal / [k]eep git worktree? "
+            ).strip().lower()
+            if choice == "r":
+                resolved = "restore"
+            else:
+                resolved = "keep"
+
+        if resolved == "keep":
+            # Leave worktree untouched; refresh journal to match it so a second
+            # reconcile no-ops.
+            write_journal(backlog_file, worktree)
+            return
+
+        # restore OR _safe_default: backup worktree then restore journal.
+        backup_path = _backup_worktree(backlog_file)
+        _restore_from_journal(backlog_file, journal)
+        if resolved == "_safe_default":
+            print(
+                f"WARNING: recovery journal is newer than backlog.json "
+                f"({delta_msg}). Restored journal; backed up the git worktree to "
+                f"{backup_path}.",
+                file=sys.stderr,
+            )
+        return
+    except Exception as e:  # noqa: BLE001 — reconcile must never crash a command
+        print(f"WARNING: recovery-journal reconcile failed: {e}", file=sys.stderr)
+
+
 class BacklogStore:
     """All backlog CRUD + gate enforcement. File-backed, thread-safe via atomic writes."""
 
@@ -382,6 +579,9 @@ class BacklogStore:
             json.dump(data, tmp, indent=2)
             tmp_path = tmp.name
         os.replace(tmp_path, self.file_path)
+        # Recovery journal (#95): mirror the just-persisted state so a git revert
+        # of an uncommitted backlog.json is recoverable. Best-effort; never raises.
+        write_journal(self.file_path, data)
 
     def init(self) -> None:
         """Write a starter backlog.json. Raises if file already exists."""
