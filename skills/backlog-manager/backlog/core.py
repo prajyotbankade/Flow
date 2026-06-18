@@ -389,6 +389,17 @@ def _backup_worktree(backlog_file: str) -> str:
     backups.mkdir(parents=True, exist_ok=True)
     ts = _now_iso().replace(":", "-")
     backup_path = backups / f"backlog-{ts}.json"
+    # Second-resolution timestamps collide if two restores land in the same
+    # second; append a numeric suffix until the path is free so an earlier
+    # backup is never silently overwritten.
+    if backup_path.exists():
+        n = 1
+        while True:
+            candidate = backups / f"backlog-{ts}-{n}.json"
+            if not candidate.exists():
+                backup_path = candidate
+                break
+            n += 1
     shutil.copy2(os.path.abspath(backlog_file), str(backup_path))
     return str(backup_path)
 
@@ -404,15 +415,31 @@ def _restore_from_journal(backlog_file: str, journal: dict) -> None:
     os.replace(tmp_path, target)
 
 
+_VALID_CONFLICT_MODES = ("prompt", "restore", "keep")
+
+
 def _resolve_conflict_mode(mode: str | None) -> str | None:
     """Resolution order: explicit arg / --on-conflict (passed as mode) /
     BACKLOG_ON_CONFLICT env. Returns 'prompt' / 'restore' / 'keep' or None
-    (meaning: caller decides interactive-vs-default)."""
-    if mode:
-        return mode
-    env = os.environ.get("BACKLOG_ON_CONFLICT")
-    if env:
-        return env
+    (meaning: caller decides interactive-vs-default).
+
+    The resolved value is validated (case-insensitively) against the three
+    valid modes. An unrecognized non-empty value prints ONE stderr WARNING and
+    returns None so reconcile_journal falls back to its default resolution
+    (TTY -> prompt, else safe-default) rather than silently doing the wrong
+    thing. Empty/unset stays None as before. This is the single funnel, so both
+    the --on-conflict path and the env path are covered."""
+    raw = mode if mode else os.environ.get("BACKLOG_ON_CONFLICT")
+    if not raw:
+        return None
+    normalized = raw.strip().lower()
+    if normalized in _VALID_CONFLICT_MODES:
+        return normalized
+    print(
+        f"WARNING: ignoring invalid conflict mode {raw!r} — valid options are "
+        f"{', '.join(_VALID_CONFLICT_MODES)}. Falling back to default.",
+        file=sys.stderr,
+    )
     return None
 
 

@@ -370,3 +370,76 @@ class TestWiring:
         root = Path(__file__).resolve().parents[3]
         gi = (root / ".gitignore").read_text()
         assert ".backlog/" in gi
+
+
+# ── _resolve_conflict_mode validation (#97) ──────────────────────────────────
+
+class TestResolveConflictMode:
+    @pytest.mark.parametrize("mode", ["prompt", "restore", "keep"])
+    def test_valid_explicit_mode_returns_value(self, mode, monkeypatch):
+        monkeypatch.delenv("BACKLOG_ON_CONFLICT", raising=False)
+        assert core._resolve_conflict_mode(mode) == mode
+
+    @pytest.mark.parametrize("raw,expected", [("Keep", "keep"), ("KEEP", "keep"),
+                                              ("Restore", "restore"), ("PROMPT", "prompt")])
+    def test_valid_mode_normalized_to_lowercase(self, raw, expected, monkeypatch):
+        monkeypatch.delenv("BACKLOG_ON_CONFLICT", raising=False)
+        assert core._resolve_conflict_mode(raw) == expected
+
+    def test_none_with_no_env_returns_none(self, monkeypatch):
+        monkeypatch.delenv("BACKLOG_ON_CONFLICT", raising=False)
+        assert core._resolve_conflict_mode(None) is None
+
+    def test_valid_env_value_resolves(self, monkeypatch):
+        monkeypatch.setenv("BACKLOG_ON_CONFLICT", "Keep")
+        assert core._resolve_conflict_mode(None) == "keep"
+
+    def test_invalid_env_value_warns_and_returns_none(self, monkeypatch, capsys):
+        monkeypatch.setenv("BACKLOG_ON_CONFLICT", "kep")
+        assert core._resolve_conflict_mode(None) is None
+        err = capsys.readouterr().err
+        assert "WARNING" in err
+        assert "kep" in err
+        # names the three valid options
+        assert "prompt" in err and "restore" in err and "keep" in err
+
+    def test_invalid_explicit_mode_warns_and_returns_none(self, monkeypatch, capsys):
+        monkeypatch.delenv("BACKLOG_ON_CONFLICT", raising=False)
+        assert core._resolve_conflict_mode("bogus") is None
+        assert "bogus" in capsys.readouterr().err
+
+    def test_explicit_valid_mode_wins_over_env(self, monkeypatch):
+        monkeypatch.setenv("BACKLOG_ON_CONFLICT", "keep")
+        assert core._resolve_conflict_mode("restore") == "restore"
+
+    def test_invalid_mode_in_reconcile_falls_back_to_safe_default(self, tmp_path, capsys):
+        bf = tmp_path / "backlog.json"
+        write_journal(str(bf), {"version": 5, "config": {}, "items": [{"id": "live"}]})
+        _write_backlog(bf, 2, items=[{"id": "old"}])
+        with mock.patch("sys.stdin.isatty", return_value=False), \
+                mock.patch("sys.stdout.isatty", return_value=False):
+            reconcile_journal(str(bf), mode="kep")
+        # invalid mode -> None -> non-interactive safe default restores + backs up
+        on_disk = json.loads(bf.read_text())
+        assert on_disk["version"] == 5
+        assert len(_backups(bf)) == 1
+        err = capsys.readouterr().err
+        assert "kep" in err  # the bad-value warning
+        assert "WARNING" in err
+
+
+# ── _backup_worktree uniqueness (#97) ────────────────────────────────────────
+
+class TestBackupWorktreeUnique:
+    def test_back_to_back_backups_are_distinct(self, tmp_path):
+        # Freeze the timestamp so both calls would produce the SAME base
+        # filename — this forces the same-second collision the fix guards.
+        bf = tmp_path / "backlog.json"
+        _write_backlog(bf, 1)
+        with mock.patch.object(core, "_now_iso",
+                               return_value="2026-06-17T12:00:00+00:00"):
+            p1 = core._backup_worktree(str(bf))
+            p2 = core._backup_worktree(str(bf))
+        assert p1 != p2
+        assert Path(p1).exists() and Path(p2).exists()
+        assert len(_backups(bf)) == 2
