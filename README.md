@@ -91,11 +91,14 @@ pipx install --editable skills/backlog-manager
 
 Tradeoff: `pip install -e .` installs into the current Python/venv, so the `backlog` command only exists there. `pipx install --editable` gives you one global `backlog` command that works in every project. After standalone install (Option A), you can run the `pip` variant from `~/.claude/skills/backlog-manager` instead.
 
-Set your backlog file once (or pass `--file` on every command):
+Create the backlog file — run this once in each project to write a starter `backlog.json` at the project root:
 
 ```bash
-export BACKLOG_FILE=/path/to/your/backlog.json
+cd /path/to/your/project
+backlog init
 ```
+
+The CLI defaults to `./backlog.json`, so no further config is needed. (Optional — only if you want the file somewhere other than the project root: `export BACKLOG_FILE=/custom/path/backlog.json`, or pass `--file` on every command.)
 
 Wire agents to use the backlog — run this once per project, then commit `CLAUDE.md`:
 
@@ -104,7 +107,7 @@ backlog doctor --fix
 git add CLAUDE.md && git commit -m "chore: add Flow Backlog setup for agents"
 ```
 
-This writes a `## Flow Backlog` section to your project's `CLAUDE.md` so every agent on the project uses the backlog CLI instead of reasoning about priorities on its own. Without this step, agents won't know the backlog exists.
+This writes a `## Flow Backlog` section to your project's `CLAUDE.md` so every agent on the project uses the backlog CLI instead of reasoning about priorities on its own. (`doctor --fix` only updates `CLAUDE.md` — it does not create `backlog.json`; that's what `backlog init` above is for.) Without this step, agents won't know the backlog exists.
 
 Now agents and scripts can use the CLI directly — no server required:
 
