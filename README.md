@@ -71,11 +71,12 @@ claude --plugin-dir .
 
 Then invoke as **`/flow:backlog-manager`** within that session.
 
-> A `marketplace.json` for one-line marketplace installs is coming (tracked as backlog item #101). Once it lands:
-> ```
-> /plugin marketplace add prajyotbankade/Flow
-> /plugin install flow@flow
-> ```
+Or install from the marketplace (one-line), from within a Claude Code session:
+
+```
+/plugin marketplace add prajyotbankade/Flow
+/plugin install flow@flow
+```
 
 ### 2. Install the CLI (required for both)
 
