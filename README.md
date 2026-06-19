@@ -41,9 +41,13 @@ The skill CLI (`pip install -e .`) installs these packages automatically:
 
 ## Quick Start
 
-There are two ways to install Flow depending on how you want to use it.
+Setup has two parts: (1) make Claude see the skill, and (2) install the `backlog` CLI it drives. **Both are required** — the skill is just instructions; every command it runs (`backlog top`, `backlog pick`, `backlog move`, …) is the Python CLI. Without the CLI installed, the skill fails with `command not found`.
 
-### Option A — Standalone install (single user, simplest)
+### 1. Make Claude see the skill
+
+Pick one option:
+
+**Option A — Standalone install (single user, simplest)**
 
 Copy the skill directly into your Claude Code skills directory:
 
@@ -55,54 +59,46 @@ cp -r skills/backlog-manager ~/.claude/skills/
 cp -r skills/backlog-manager .claude/skills/
 ```
 
-Claude Code auto-discovers skills in these directories — no restart needed. Invoke the skill as **`/backlog-manager`**.
+This produces `~/.claude/skills/backlog-manager/` (the directory name must stay `backlog-manager` — it matches the SKILL.md `name:` and the `/backlog-manager` invocation). Claude Code auto-discovers skills in these directories — no restart needed. Invoke the skill as **`/backlog-manager`**.
 
-### Option B — Plugin install (via marketplace)
+**Option B — Plugin install**
 
-Once available in the Anthropic marketplace, install with:
-
-```
-/plugin install flow
-```
-
-After installation, the skill is invoked as **`/flow:backlog-manager`**.
-
-### Test locally (developers)
-
-To try the plugin without installing it:
+Working today (local), from the repo root:
 
 ```bash
 claude --plugin-dir .
 ```
 
-Then invoke as `/flow:backlog-manager` within that session.
+Then invoke as **`/flow:backlog-manager`** within that session.
 
-### Start using it
+> A `marketplace.json` for one-line marketplace installs is coming (tracked as backlog item #101). Once it lands:
+> ```
+> /plugin marketplace add prajyotbankade/Flow
+> /plugin install flow@flow
+> ```
 
-Just talk to Claude — no command needed once the skill is active:
+### 2. Install the CLI (required for both)
 
-```
-"Add OAuth2 support to the backlog"
-"Show me the backlog"
-"What should I work on next?"
-"Move #3 above #1"
-"Refine #2 — I think we need to scope it down"
-```
-
-### Install the CLI package
-
-The skill ships as an installable Python package. Install it once to get the `backlog` CLI and `backlog-server` commands:
+The skill **drives** the `backlog` CLI — it does not work without it. Install it once (needs Python 3.11+, see [Requirements](#requirements)):
 
 ```bash
-cd skills/backlog-manager    # or ~/.claude/skills/backlog-manager after standalone install
-pip install -e .
+# Project-scoped (pip in a venv — tied to that one environment)
+cd skills/backlog-manager && pip install -e .
+
+# Recommended for use across multiple projects (global `backlog` command, not tied to any venv)
+pipx install --editable skills/backlog-manager
 ```
 
-Set your backlog file once (or pass `--file` on every command):
+Tradeoff: `pip install -e .` installs into the current Python/venv, so the `backlog` command only exists there. `pipx install --editable` gives you one global `backlog` command that works in every project. After standalone install (Option A), you can run the `pip` variant from `~/.claude/skills/backlog-manager` instead.
+
+Create the backlog file — run this once in each project to write a starter `backlog.json` at the project root:
 
 ```bash
-export BACKLOG_FILE=/path/to/your/backlog.json
+cd /path/to/your/project
+backlog init
 ```
+
+The CLI defaults to `./backlog.json`, so no further config is needed. (Optional — only if you want the file somewhere other than the project root: `export BACKLOG_FILE=/custom/path/backlog.json`, or pass `--file` on every command.)
 
 Wire agents to use the backlog — run this once per project, then commit `CLAUDE.md`:
 
@@ -111,7 +107,7 @@ backlog doctor --fix
 git add CLAUDE.md && git commit -m "chore: add Flow Backlog setup for agents"
 ```
 
-This writes a `## Flow Backlog` section to your project's `CLAUDE.md` so every agent on the project uses the backlog CLI instead of reasoning about priorities on its own. Without this step, agents won't know the backlog exists.
+This writes a `## Flow Backlog` section to your project's `CLAUDE.md` so every agent on the project uses the backlog CLI instead of reasoning about priorities on its own. (`doctor --fix` only updates `CLAUDE.md` — it does not create `backlog.json`; that's what `backlog init` above is for.) Without this step, agents won't know the backlog exists.
 
 Now agents and scripts can use the CLI directly — no server required:
 
@@ -121,6 +117,22 @@ backlog add "Fix login bug"   # add item
 backlog pick alice            # pick top ready item, move to in-progress
 backlog move 3 in-progress    # lane transition (gate rules enforced)
 backlog done 3                # complete
+```
+
+### 3. Start using it
+
+Verify the CLI works, then just talk to Claude — no command needed once the skill is active:
+
+```bash
+backlog top                   # should print the next item (or an empty backlog)
+```
+
+```
+"Add OAuth2 support to the backlog"
+"Show me the backlog"
+"What should I work on next?"
+"Move #3 above #1"
+"Refine #2 — I think we need to scope it down"
 ```
 
 ### Launch the visual board
