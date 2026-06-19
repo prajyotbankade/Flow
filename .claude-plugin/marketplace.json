@@ -1,0 +1,17 @@
+{
+  "name": "flow",
+  "owner": { "name": "Prajyot Bankade" },
+  "metadata": {
+    "description": "Flow — an AI-driven work intelligence engine plugin for Claude Code."
+  },
+  "plugins": [
+    {
+      "name": "flow",
+      "source": "./",
+      "description": "AI-driven work intelligence engine for Claude Code — scores, prioritizes, assigns, and picks up work items, with a scoring engine, reprioritization triggers, assignment intelligence, and a visual Kanban board.",
+      "license": "MIT",
+      "homepage": "https://github.com/prajyotbankade/Flow",
+      "repository": "https://github.com/prajyotbankade/Flow"
+    }
+  ]
+}
