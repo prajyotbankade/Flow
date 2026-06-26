@@ -118,7 +118,7 @@ When the user describes a feature to build:
 1. Identify distinct units of work (each should be completable by one agent)
 2. Set dependencies — use `blocks` links for sequential work, no link for parallel work
 3. Assign complexity: `low` (< 1 hour), `medium` (1-4 hours), `high` (4+ hours)
-   - Model routing: `low` → haiku · `medium` → sonnet · `high` → opus (advisory — shown in work brief). The spawning agent is responsible for selecting the model when delegating to a sub-agent.
+   - Model routing: `low` → haiku · `medium` → sonnet · `high` → opus. The spawning agent **must** pass this model when delegating to a sub-agent (see Delegating to a Sub-Agent, step 10) — never let the sub-agent silently inherit the lead's thread model. Inheriting Opus for a low/medium item is the main source of wasted spend.
 4. Set `tags` for skill matching (e.g., backend, frontend, auth, testing)
 5. Set `priority_weight` based on how much value this item unlocks — consider both dependency depth (items that unblock the most work) and business importance. If a Strategic focus is declared, weight items matching it higher
 6. Add all items via API, dependencies first so links resolve correctly
@@ -406,6 +406,7 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 7. Self-correction instruction: if you make a mistake and get corrected, update your persona file before finishing
 8. Git workflow: work on a feature branch, push it, open a PR targeting `main` via `gh pr create`, report the PR URL — do not merge directly to `main`
 9. Testing requirement: write test cases that cover the acceptance criteria as part of the implementation — not just running the existing suite. For non-trivial logic, follow TDD: write the failing test first, then implement until it passes. Missing test coverage is a blocker at code review (see Code Review Protocol checklist item 6) — a passing implementation with no test is not shippable.
+10. **Model — required, set it at spawn.** Pass the `recommended_model` from the work brief (derived from item `complexity`: `low` → haiku, `medium` → sonnet, `high` → opus) as the sub-agent's model in the Agent tool call. If you spawn without an explicit model, the sub-agent inherits the lead's thread model (often Opus), which silently discards the routing recommendation and is the single largest source of avoidable token cost. When `complexity` is unset, treat it as `medium` (sonnet). Only override upward to opus if the task proves harder than its complexity tag once underway.
 
 ---
 
