@@ -1,5 +1,5 @@
 {
-  "version": 864,
+  "version": 875,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -3638,17 +3638,17 @@
     },
     {
       "id": "grbi3kis",
-      "title": "backlog init should run git update-index --skip-worktree on backlog.json",
-      "status": "backlog",
+      "title": "Make backlog.json a single canonical copy (main-pinned worktree + shared BACKLOG_FILE) instead of forking per branch",
+      "status": "done",
       "priority": "7",
-      "complexity": "low",
+      "complexity": "medium",
       "tags": [
         "cli",
         "reliability",
         "git",
         "init"
       ],
-      "description": "",
+      "description": "\n\nReframed from the original 'git update-index --skip-worktree on init' idea, which failed readiness review: skip-worktree can BLOCK git checkout when branches hold differing committed backlog.json (while status shows clean), is per-clone local state, and would require reworking backlog commit + extending doctor. The single-canonical-copy pattern solves the same forking problem with none of those sharp edges.\n\n## Spec\n\n**Goal:** Stop backlog.json forking per feature branch by making it a single canonical copy that does NOT move with code branches \u2014 everyone (board + all agents) reads/writes ONE file. Nothing to fork because there is only one copy.\n\n**Mechanism (no git-index hacks):**\n- Recommended layout: a git worktree pinned to the trunk branch holds the canonical backlog.json (`git worktree add ../<repo>-backlog main`). The board runs against it; all agents set `BACKLOG_FILE` to that path. Code work happens on feature branches in the primary checkout; backlog state lives only on the canonical copy.\n- Deliberate history via `backlog commit` from the canonical worktree (already validated by the #102 gate + pre-commit hook).\n\n**Deliverables:**\n1. **Docs (SKILL.md, REFERENCE.md, README.md):** a 'Multi-branch / multi-agent setup' section documenting the canonical-copy pattern as the recommended workflow, with the exact worktree + BACKLOG_FILE commands and the rule 'backlog bookkeeping targets the canonical copy, never a feature-branch copy.' This is the core, mandatory deliverable.\n2. **`backlog doctor` divergence check:** extend the existing doctor command to warn when the backlog.json being used looks off-canonical or diverging \u2014 e.g. the resolved BACKLOG_FILE is a git-tracked file whose committed version differs between the current branch and the trunk (heuristic: `git show main:<relpath>` vs `git show HEAD:<relpath>` differ), or when it detects multiple diverged copies. Warning + guidance only; never mutates git.\n3. (Optional, only if it fits cleanly) a convenience `backlog init --state-worktree[=<path>]` that creates the pinned worktree and prints the BACKLOG_FILE export line. If it complicates the item, defer to a follow-up and ship docs + doctor.\n\n**Acceptance criteria:**\n1. Docs clearly describe the canonical-copy setup and the bookkeeping rule; a new user can follow them to a non-forking multi-branch workflow.\n2. `backlog doctor` emits a clear WARNING (non-zero or flagged, matching existing doctor conventions) when it detects backlog.json diverging between the current branch and trunk, with a one-line remediation hint. No git mutation.\n3. On a clean canonical setup, `backlog doctor` reports healthy (no false positive).\n4. No change to core add/move/commit behavior; the #102 gate and hook still apply to the canonical copy.\n\n**Failure modes:** doctor run outside a git repo \u2192 skip the divergence check gracefully (existing doctor already tolerates non-git). No trunk branch / detached HEAD \u2192 skip check with a note, don't error. BACKLOG_FILE pointing at a non-existent path \u2192 existing doctor 'file exists' check covers it.\n\n**Edge cases:** trunk named master vs main (detect default branch, don't hardcode). Monorepo / custom BACKLOG_FILE path \u2014 use the resolved path's repo-relative form. Board running against canonical copy while doctor runs elsewhere \u2014 read-only, safe.\n\n**Explicitly OUT of scope (separate items):** skip-worktree/assume-unchanged mechanisms (rejected); JSON-aware merge driver (#103); moving state into a real DB/service.\n\n**Tests:** doctor warns when current-branch committed backlog.json differs from trunk's; doctor is clean on a matching/canonical setup; doctor skips the check gracefully with no trunk/detached HEAD and outside a git repo; docs presence/lint if the repo has a docs check.\n",
       "links": [
         {
           "item_id": "gxp1kds9",
@@ -3661,14 +3661,92 @@
           "reason": "Complements auto-commit on shutdown \u2014 skip-worktree prevents git replacing the file even after a commit exists"
         }
       ],
-      "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "threads": [
+        {
+          "id": "mt9gtl3a",
+          "waiting_on": "user",
+          "status": "resolved",
+          "body": "Independent readiness review (sub-lead-reviewer): NOT READY. Blockers: (1) spec mischaracterizes `git add` on skip-worktree as a silent no-op \u2014 it's a non-zero error (sparse-checkout); commit_cmd would error-exit. Reword + toggle-before-add. (2) AC#2 misses the checkout-BLOCKING outcome: git refuses to switch branches ('local changes would be overwritten') while status shows clean \u2014 the worst UX and it recurs whenever branches hold differing committed backlog.json. Must specify handling/recovery or scope out. (3) `backlog doctor` exists but has ZERO git/skip-worktree logic \u2014 the 'doctor detect+repair' mitigation is hollow; either scope doctor-extension into this item or drop the mitigation. (4) The mechanism OPEN QUESTION must be decided before implementation: skip-worktree (light, but leaks per-clone + checkout-block) vs assume-unchanged (weaker) vs sidecar/DB snapshot (bigger). Cannot hand an implementer a spec with an unresolved architectural foundation. (5) linked git-worktree behavior underspecified (does init/doctor set the flag per worktree?). Verdict recorded; #74 held in refined, NOT advanced to ready. Needs product decision on (4) + (2).",
+          "created_at": "2026-07-13T14:11:13.232572+00:00",
+          "resolved": true
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-13T14:06:29.364708+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-07-13T14:17:33.644885+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-13T14:17:33.814680+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-13T14:24:58.573163+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-13T14:29:41.350353+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T14:06:29.364725+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T14:17:33.644900+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T14:17:33.814688+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-07-13T14:17:34.016173+00:00",
+          "detail": "unassigned \u2192 backend-dev"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T14:24:58.573182+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-13T14:29:41.350357+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-05-25T04:26:26.247048+00:00",
-      "updated_at": "2026-05-25T04:26:38.567431+00:00"
+      "updated_at": "2026-07-13T14:29:41.350355+00:00",
+      "refinement_gate": "complex",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "6yt4bdyy",
@@ -5695,6 +5773,38 @@
       "skip_count": 0,
       "created_at": "2026-07-13T13:11:32.701923+00:00",
       "updated_at": "2026-07-13T13:12:00.609817+00:00"
+    },
+    {
+      "id": "sv13cjn8",
+      "title": "backlog init: pre-commit hook install skips inside a git worktree (.git is a file, not a dir)",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 4,
+      "complexity": "low",
+      "category": "reliability",
+      "tags": [
+        "cli",
+        "git",
+        "init",
+        "reliability",
+        "hooks"
+      ],
+      "description": "_install_precommit_hook (cli.py ~596, added in #102/PR #38) locates .git via candidate.is_dir(). In a linked git worktree, .git is a FILE pointing at the main repo's gitdir, so the hook install silently no-ops. Surfaced by the #74 readiness review \u2014 matters because #74's recommended layout runs backlog init from a main-pinned worktree. Fix: resolve the real hooks dir via 'git rev-parse --git-common-dir' (or --git-path hooks) instead of assuming .git is a directory. Pre-existing limitation, not a regression.",
+      "links": [
+        {
+          "item_id": "grbi3kis",
+          "type": "discovered-during",
+          "reason": "Found by #74 readiness review; #74's worktree layout triggers this #102 hook-install gap"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-13T14:17:33.331529+00:00",
+      "updated_at": "2026-07-13T14:17:33.488351+00:00"
     }
   ],
   "config": {
