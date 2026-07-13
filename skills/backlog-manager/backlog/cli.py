@@ -522,12 +522,106 @@ def init_cmd(
     else:
         console.print(f"[green]✓[/green] CLAUDE.md already configured")
 
+    # Install pre-commit hook (opt-in integrity gate for staged backlog.json).
+    _install_precommit_hook(Path(store.file_path).resolve().parent)
+
     console.print()
     console.print("[bold green]You're ready.[/bold green]")
     console.print()
     console.print('  backlog add "Your first task"')
     console.print("  backlog top                             [dim]# what to work on next[/dim]")
     console.print("  backlog board                           [dim]# open the visual board[/dim]")
+
+
+# ── Pre-commit hook ────────────────────────────────────────────────────────────
+
+_HOOK_MARKER = "# flow-backlog-integrity-gate"
+
+_HOOK_SCRIPT = """\
+#!/bin/sh
+# flow-backlog-integrity-gate
+# Validate backlog.json before it is committed.
+# Installed by `backlog init`. Remove this file to disable the gate.
+
+BACKLOG="backlog.json"
+
+# Only run if backlog.json is staged.
+git diff --cached --name-only | grep -q "^${BACKLOG}$" || exit 0
+
+# Extract the staged content to a temp file.
+TMPFILE=$(mktemp)
+git show ":${BACKLOG}" > "$TMPFILE" 2>/dev/null || { rm -f "$TMPFILE"; exit 0; }
+
+# Conflict-marker check — anchored to line start, runs FIRST.
+# A conflicted file is also invalid JSON; showing the marker diagnostic
+# (with line numbers) is more actionable than a generic JSON parse error.
+python3 - "$TMPFILE" <<'PYEOF'
+import sys, re
+text = open(sys.argv[1]).read()
+bad = [i+1 for i, l in enumerate(text.splitlines()) if re.match(r'^(<<<<<<< |>>>>>>> |=======\\s*$)', l)]
+if bad:
+    print(f"error: staged backlog.json contains git conflict markers at line(s): {', '.join(map(str,bad))}", file=sys.stderr)
+    sys.exit(1)
+PYEOF
+STATUS=$?
+if [ $STATUS -ne 0 ]; then
+  rm -f "$TMPFILE"
+  exit $STATUS
+fi
+
+# JSON validity check — second gate for marker-free but malformed files.
+python3 -c "import json,sys; json.loads(open(sys.argv[1]).read())" "$TMPFILE" 2>/dev/null
+if [ $? -ne 0 ]; then
+  echo "error: staged backlog.json is not valid JSON. Fix it before committing." >&2
+  rm -f "$TMPFILE"
+  exit 1
+fi
+
+rm -f "$TMPFILE"
+exit 0
+"""
+
+
+def _install_precommit_hook(repo_search_dir: Path) -> None:
+    """Install a pre-commit hook that validates backlog.json before commits.
+
+    Walks up from *repo_search_dir* to find the .git directory. If a
+    pre-commit hook already exists and was not installed by us, prints
+    guidance for manual wiring and returns without modifying anything.
+    """
+    # Find .git directory.
+    git_dir: Optional[Path] = None
+    for d in [repo_search_dir, *repo_search_dir.parents]:
+        candidate = d / ".git"
+        if candidate.is_dir():
+            git_dir = candidate
+            break
+    if git_dir is None:
+        # Not in a git repo — silently skip (not an error at init time).
+        return
+
+    hooks_dir = git_dir / "hooks"
+    hooks_dir.mkdir(exist_ok=True)
+    hook_path = hooks_dir / "pre-commit"
+
+    if hook_path.exists():
+        existing = hook_path.read_text(encoding="utf-8")
+        if _HOOK_MARKER in existing:
+            # Already installed by us — nothing to do.
+            console.print("[green]✓[/green] pre-commit hook already installed")
+        else:
+            # Foreign hook — never clobber it.
+            console.print(
+                "[yellow]![/yellow] A pre-commit hook already exists at "
+                f"{hook_path}. To add the backlog integrity gate manually, "
+                "append the following snippet to that file:"
+            )
+            console.print(f"[dim]{_HOOK_SCRIPT}[/dim]")
+        return
+
+    hook_path.write_text(_HOOK_SCRIPT, encoding="utf-8")
+    hook_path.chmod(0o755)
+    console.print(f"[green]✓[/green] Installed pre-commit hook → {hook_path}")
 
 
 # ── CLAUDE.md snippet ─────────────────────────────────────────────────────────
@@ -684,6 +778,55 @@ def board(
         subprocess.run([sys.executable, str(script), *server_args], env=env)
 
 
+def _validate_backlog_file(abs_path: str) -> None:
+    """Validate backlog.json before staging or committing.
+
+    Raises typer.Exit(1) with a clear error message if:
+    - The file contains git conflict markers anchored to the start of a line.
+    - The file cannot be parsed as JSON.
+
+    Conflict-marker check runs FIRST so that a real conflicted file (which is
+    also invalid JSON) produces the specific conflict-marker diagnostic with
+    line numbers rather than a generic JSON parse error.
+
+    A description containing ``=======`` mid-line is NOT a conflict marker and
+    must pass validation without error.
+    """
+    import re
+
+    try:
+        raw = Path(abs_path).read_text(encoding="utf-8")
+    except OSError as exc:
+        err_console.print(f"[red]Error:[/red] cannot read {abs_path}: {exc}")
+        raise typer.Exit(1)
+
+    # Conflict-marker check — anchored to line start to avoid false positives.
+    # Runs BEFORE JSON parsing so a conflicted file gets the marker diagnostic,
+    # not a generic "not valid JSON" error.
+    # Match lines that start with "<<<<<<< " or ">>>>>>> ", or are exactly "=======".
+    bad_lines = [
+        i + 1
+        for i, line in enumerate(raw.splitlines())
+        if re.match(r"^(<<<<<<< |>>>>>>> |=======\s*$)", line)
+    ]
+    if bad_lines:
+        lines_str = ", ".join(str(n) for n in bad_lines)
+        err_console.print(
+            f"[red]Error:[/red] {abs_path} contains git conflict markers "
+            f"at line(s): {lines_str}. Resolve conflicts before committing."
+        )
+        raise typer.Exit(1)
+
+    # JSON validity check — second gate for marker-free but malformed files.
+    try:
+        json.loads(raw)
+    except json.JSONDecodeError as exc:
+        err_console.print(
+            f"[red]Error:[/red] {abs_path} is not valid JSON: {exc}"
+        )
+        raise typer.Exit(1)
+
+
 @app.command(name="commit")
 @_handle
 def commit_cmd(
@@ -708,6 +851,9 @@ def commit_cmd(
             capture_output=True,
             text=True,
         )
+
+    # Validate BEFORE staging — a corrupt file must never be committed.
+    _validate_backlog_file(abs_path)
 
     try:
         # Stage only the backlog file.
