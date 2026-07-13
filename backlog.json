@@ -1,5 +1,5 @@
 {
-  "version": 791,
+  "version": 864,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -4993,6 +4993,708 @@
       "skip_count": 0,
       "created_at": "2026-06-16T02:14:30.106571+00:00",
       "updated_at": "2026-06-16T02:14:30.106571+00:00"
+    },
+    {
+      "id": "1ot2a7ts",
+      "title": "Strip board's autonomous git: remove autosave-commit timer and SIGTERM/atexit commit",
+      "status": "done",
+      "priority": "high",
+      "priority_weight": 9,
+      "complexity": "medium",
+      "category": "bug",
+      "tags": [
+        "backlog",
+        "server",
+        "git",
+        "data-loss"
+      ],
+      "description": "The board server mutates git behind the user's back via two paths, both calling _auto_commit (git add + git commit): the periodic timer (_start_periodic_commit, server.py:2610) and the shutdown handler (atexit.register at server.py:2607, with SIGTERM trapped to sys.exit(0) at server.py:2609 specifically so atexit fires on kill). On a feature branch this races the user's own commits and commits stale snapshots; killing the board itself triggers a commit. On main (protected) _auto_commit returns early and never commits, leaving live state uncommitted and one git checkout/stash/reset/worktree-switch away from being reverted to the old snapshot.\n\nFix: the board persists backlog.json atomically (core.write os.replace) and NEVER commits.\n\n## Spec\n\nScope: backlog board across BOTH layers \u2014 the Typer `board` command in cli.py AND the backlog-server argparse in server.py \u2014 plus their tests and docs. Does NOT add the journal (#95) or the `backlog commit` command (#96).\n\nserver.py changes:\n1. Delete _auto_commit (123), _start_periodic_commit (163), and the periodic-commit timer.\n2. Delete the atexit.register(_auto_commit, ...) registration (~2607) and the signal.signal(SIGTERM, lambda: sys.exit(0)) wiring (~2609). Plain SIGTERM/kill then just terminates; serve_forever's existing `except KeyboardInterrupt -> server_close()` handles Ctrl-C cleanup (verified the SIGTERM wiring existed ONLY to flush atexit, not for socket cleanup).\n3. Remove the --autosave-interval and --protected-branches argparse args and all plumbing.\n4. DELETE the now-dead helpers/constants that only existed for auto-commit: _current_git_branch (104), _parse_protected_branches (92), DEFAULT_PROTECTED_BRANCHES (89). (Do NOT keep _current_git_branch \u2014 it has no surviving caller; get_git_user and the dirty-status check do not use it.) Remove the now-unused `import atexit` (35) and `import signal` (40) \u2014 verified signal module's only use is line 2609 (the `signal` dict at ~2338 is a local variable) and atexit's only use is line 2607.\n5. Keep READ-ONLY git: get_git_user (user.name/email) and the dirty-status check.\n6. Reword the dirty warning (check_git_dirty_warning, 2500) into a generic commit hint not depending on #96 \u2014 e.g. \"backlog.json has uncommitted changes \u2014 commit to checkpoint to git history (recovery is automatic)\". ALSO update the --no-git-check argparse help string (2557) which reads \"Suppress git dirty-state warning and all auto-commit behaviour\" \u2014 drop the auto-commit clause. --no-git-check / BACKLOG_NO_GIT_CHECK now only suppress the hint.\n\ncli.py changes (the board command spans two layers):\n7. The `board` Typer command (cli.py:649-683) defines its OWN --autosave-interval / --protected-branches typer.Option params (653-663) and forwards them into server_args (675-676). Remove both typer.Option params AND the two forwarded args. `backlog board --autosave-interval 30` will then fail at the Typer layer with a \"No such option\" error (Typer parses before argparse).\n\nTest changes:\n8. DELETE the entire tests/test_server_autosave.py file. Its module-level import (lines 15-20) pulls in _auto_commit, _start_periodic_commit, _parse_protected_branches, and DEFAULT_PROTECTED_BRANCHES \u2014 all removed here \u2014 so the file fails at COLLECTION time (ImportError) and the whole 434-line file is built on the removed behavior (TestAutoCommit ~44-101, periodic-commit ~115-129, main() autosave plumbing ~192-247, protected-branch guards ~255-371, _parse_protected_branches ~383-404, --protected-branches plumbing ~408+). Delete the file rather than trim it.\n9. test_server_git_dirty_warning.py \u2014 update the assertion (~116-122) to the reworded hint wording.\n10. tests/test_cli_board.py \u2014 remove/rewrite the assertions (~34-93) that board forwards --autosave-interval/--protected-branches.\n11. Add a NEW test file tests/test_server_no_autocommit.py asserting the board makes ZERO mutating git calls (no git add / git commit) on save AND on shutdown (SIGTERM and Ctrl-C) \u2014 mock subprocess.run, allow only read-only git status/rev-parse/config. (Needs its own file because #8 deletes test_server_autosave.py.)\n\nDoc changes (all under skills/backlog-manager/, NOT the repo root):\n12. SKILL.md \"Git Workflow > Autosave & branch protection\" paragraph \u2014 rewrite: board no longer commits; committing the backlog is a deliberate user action. Also fix the cross-link at SKILL.md:240 pointing to the REFERENCE.md#autosave--branch-safety anchor being deleted in #13.\n13. REFERENCE.md \u2014 remove (not reword) the \"Autosave & Branch Safety\" section (~332-371: squash-merge divergence guidance + protected-branch table) and fix the command examples at ~45-46.\n14. skills/backlog-manager/README.md \u2014 update :89 and :92 which document --protected-branches and autosave-by-commit; :92 also contains a cross-link to the REFERENCE.md#autosave--branch-safety anchor being deleted in #13 \u2014 remove/fix it. (This is the skill README; the repo-root README has no autosave content \u2014 do not edit it.)\n\nAcceptance criteria (testable):\n- Board session with edits, then SIGTERM (kill) and Ctrl-C, produces NO new git commits and NO staged changes on ANY branch. Verify: clean `git status` index + unchanged `git log`.\n- backlog.json on disk reflects the latest edits (atomic write intact).\n- `backlog board --autosave-interval 30` exits with a Typer \"No such option\" error.\n- The dirty hint appears with the new wording and is suppressed by --no-git-check / BACKLOG_NO_GIT_CHECK; the --no-git-check help text no longer mentions auto-commit.\n- No dead code or unused imports remain (no references to _auto_commit, _start_periodic_commit, _current_git_branch, _parse_protected_branches, DEFAULT_PROTECTED_BRANCHES, atexit, signal module).\n- No dead REFERENCE.md#autosave--branch-safety cross-links remain in SKILL.md or README.md.\n- Full test suite green (test_server_autosave.py deleted, not left importing removed symbols).\n\nFailure modes:\n- Git not installed / not a repo: the surviving read-only git calls already fail silently (subprocess guarded) \u2014 must stay silent, no traceback.\n- Startup must not break when BACKLOG_NO_GIT_CHECK is set or git is absent.\n\nEdge cases / notes:\n- Detached HEAD: previously treated as non-protected (would commit); now irrelevant (no commit path).\n- A leftover .tmp orphan from a crash mid-write is harmless and out of scope.\n- .claude/worktrees/* copies and handoff_results/*.json are gitignored throwaways / historical artifacts \u2014 not in scope.\n- A board crash never corrupts the file (atomic os.replace); this change ensures it also never commits behind the user. Data-loss-on-main via git revert is NOT fixed here \u2014 that's #95 (journal). This item only stops the board from being an actor in git.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-06-17T02:45:27.198843+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-06-17T02:45:27.341551+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-06-17T02:51:38.763351+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-06-17T02:53:19.709024+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-17T02:45:27.199022+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-17T02:45:27.341721+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-17T02:51:38.763558+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-06-17T02:53:19.709028+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-17T02:30:58.440940+00:00",
+      "updated_at": "2026-06-17T02:53:19.709026+00:00",
+      "refinement_gate": "complex",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "f0k96tfz",
+      "title": "Recovery journal: gitignored sidecar + auto-restore when git reverts backlog.json",
+      "status": "done",
+      "priority": "high",
+      "priority_weight": 9,
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "backlog",
+        "server",
+        "cli",
+        "data-loss",
+        "recovery"
+      ],
+      "description": "Structural protection against git silently reverting uncommitted live backlog state. The board writes backlog.json atomically but never commits (#94); on main, live edits sit uncommitted and a later git checkout/stash/reset/worktree-switch reverts the file to the old committed snapshot. This item adds a gitignored journal that survives git operations and a reconciliation step that detects the clobber and recovers, so progress is never silently lost regardless of who runs git.\n\n## Spec\n\nScope: add a recovery journal + reconciliation across BOTH the board server and the CLI. Builds on #94. Excludes the `backlog commit` command (#96).\n\n### Journal storage\n- A `.backlog/` directory next to the resolved BACKLOG_FILE. Journal: `.backlog/journal.json`. Backups: `.backlog/backups/backlog-<UTC-ISO>.json`.\n- Add `.backlog/` to the repo-root .gitignore. The recovery mechanism must NOT depend on the gitignore entry \u2014 `.backlog/` is created next to the resolved BACKLOG_FILE (repo root in THIS repo, may differ elsewhere). The gitignore line is a convenience for this layout.\n- Journal content: the full backlog dict just persisted + its monotonic `version` + a UTC timestamp.\n\n### Write path \u2014 FIVE content-write sites (corrects the earlier \"single chokepoint\" and \"four sites\" premises)\nThe CLI persists via core.BacklogStore.write (core.py:359, increments version at 377). The board server persists backlog.json content directly via server.atomic_write(self.backlog_file, data) \u2014 setting data[\"version\"] itself \u2014 at FIVE sites: server.py:2013, 2035, 2104, 2193, 2248. Site 2035 is inside `_trigger_policy_engine_background`, a daemon thread fired from both _save_backlog (2121) and _update_item (2204); it bumps version and writes the live file, so it MUST be journaled or a later git revert could silently discard policy-engine changes. (server.atomic_write at server.py:154 is generic and ALSO writes non-backlog files \u2014 decisions 1055/1064, policies 1103, policy_log 1119 \u2014 so do NOT journal inside atomic_write; use explicit per-site calls.)\n\nImplementation:\n1. Add `core.write_journal(backlog_file, data)` \u2014 writes `.backlog/journal.json` atomically (tmp + os.replace, like .orchestrator_state.json at cli.py:1806-1814) with data + version + timestamp; creates `.backlog/` if missing. Best-effort: on ANY error it must NOT raise (callers' main save already succeeded, and site 2035 runs in a try/except daemon thread) \u2014 print ONE stderr WARNING.\n2. Call write_journal AFTER the os.replace in core.BacklogStore.write (covers all CLI edits), passing post-increment data.\n3. Call write_journal AFTER each of the FIVE server backlog-content atomic_write sites (2013, 2035, 2104, 2193, 2248), passing the same data dict (version already set by the server).\n4. Do NOT re-route server writes through BacklogStore.write (would double-increment: server pre-increments AND write() increments). Do NOT journal non-backlog atomic_write uses. doctor --fix already writes via BacklogStore(...).write (cli.py:596) so it is covered by #2 \u2014 no extra site.\n\n### Reconciliation \u2014 detect + resolve a git clobber\nAdd `core.reconcile_journal(backlog_file, mode=None)` \u2014 pure file/version comparison, makes NO git calls, must not assume a git repo (must not regress tests/test_server_no_autocommit.py, which runs server.main() through startup asserting zero mutating git). Compare .backlog/journal.json version vs working-tree backlog.json version:\n- No journal -> no-op.\n- journal.version <= worktree.version -> proceed; refresh journal to match worktree.\n- journal.version > worktree.version -> CONFLICT (git reverted). Resolve by mode (order): explicit mode arg / --on-conflict / BACKLOG_ON_CONFLICT wins; else if stdin AND stdout are TTYs (sys.stdin.isatty() and sys.stdout.isatty()) -> prompt; else -> non-interactive safe default.\n  - prompt: show version delta + item-count diff, ask [r]estore newer journal / [k]eep git worktree. [r] -> backup worktree to .backlog/backups/ then restore journal -> backlog.json. [k] -> leave worktree, refresh journal to match it (second reconcile is a no-op).\n  - non-interactive safe default (NEVER blocks, loses nothing): backup worktree to .backlog/backups/backlog-<ts>.json, restore journal -> backlog.json, loud stderr WARNING with version delta + backup path. (agent/CI path)\n  - restore: backup + restore, no prompt. keep: refresh journal to worktree, no backup.\n- backlog.json missing but journal present -> restore (recover deleted file) \u2014 not reached for init/board (see wiring).\n- Corrupt/unparseable journal OR backlog.json -> ignore journal, stderr WARNING, proceed, never crash.\n\n### Wiring \u2014 where reconcile runs\nBoard: call core.reconcile_journal(backlog_file, mode=<--on-conflict arg>) in server.main() between resolving backlog_file (server.py:2463) and serve_forever (server.py:2493). Add `--on-conflict {prompt,restore,keep}` to the argparse block (server.py:2443-2461).\nCLI: do NOT use an @app.callback \u2014 a Typer callback cannot see the subcommand's per-command `--file` flag, and the standard usage + entire test suite drive commands with `--file <path>` (cli.py commands each resolve via _resolve_file(file_flag), cli.py:41-42; read/mutate commands then go through `_store`/`_require_store`, cli.py ~41-55). Instead, invoke reconcile from inside the store-access funnel that ALREADY receives the resolved per-command path:\n  - Run core.reconcile_journal inside `_require_store` (and `_store` if it independently opens the file) right after the path is resolved, guarded by a module-level \"already reconciled this process\" flag so it runs at most once per invocation.\n  - This sees the correct `--file` path, covers ALL read/mutate commands incl. read-only top/list/show (recovery on read is intended; a TTY user running `backlog top` after a revert IS prompted), and naturally EXCLUDES `init` (creates the store directly, does not call _require_store \u2014 so it cannot resurrect a deleted backlog) and `board` (launches the server via subprocess, does not open a store \u2014 server does its own reconcile).\n  - CLI conflict mode comes from the BACKLOG_ON_CONFLICT env var (no per-command flag needed; board keeps its --on-conflict argparse flag).\n\n### .gitignore\n- Add `.backlog/` to the repo-root .gitignore.\n\n## Acceptance criteria (testable)\n- BOARD save: exercising a server content write (e.g. the _save_backlog / _update_item handler path) creates/refreshes .backlog/journal.json at the written version. Include a case that triggers the policy-engine background write (server.py:2035) and assert the journal reflects ITS version bump (guards B-NEW-1).\n- CLI save: a CLI edit (BacklogStore.write) creates/refreshes .backlog/journal.json at the post-increment version \u2014 exercised via a `--file <path>` invocation (the standard form) so the funnel-based reconcile/journal is proven on the dominant usage (guards B-NEW-2).\n- After edits then overwriting backlog.json with an OLDER-version copy (simulating git checkout), reconcile non-interactively restores the newer journal AND saves the older copy under .backlog/backups/; worktree ends at journal version.\n- Interactive (mock both isatty True + input): [r] restores+backs up; [k] keeps worktree + refreshes journal so a second reconcile no-ops.\n- BACKLOG_ON_CONFLICT (CLI) and --on-conflict (board): keep discards journal newer state without prompt; restore restores without prompt; prompt forces prompt even non-interactively.\n- No restore/backup when journal.version <= worktree.version (incl. equal).\n- Journal write failure does not raise from BacklogStore.write, the five server sites, or the 2035 daemon thread; emits stderr warning.\n- Corrupt journal -> warning + proceed, no crash.\n- `backlog init` does NOT trigger restore even with a stale journal (does not go through the funnel); `backlog board` does not double-reconcile.\n- A `--file <path>` CLI command actually reconciles the file named by --file, not ./backlog.json (regression test for B-NEW-2).\n- `.backlog/` is gitignored. Full existing suite stays green (no fixture inspects backlog-dir contents; ~99 --file invocations in test_cli_core.py must still pass \u2014 the once-per-process guard must not break repeated in-process CliRunner calls within one test session: use a guard that is safe across CliRunner invocations, e.g. keyed by resolved path or reset per process entry).\n\n## Failure modes\n- Journal IO error: save succeeds, warn, no raise (esp. the daemon-thread site).\n- reconcile with git absent/not a repo: pure file/version compare, no git calls.\n- Non-TTY MUST NEVER block.\n- Two writers racing the journal: atomic os.replace, last-writer-wins; pre-existing cross-process lost-update window on backlog.json itself is out of scope.\n\n## Edge cases / notes\n- version is the sole clobber signal; strictly increments in BacklogStore.write (core.py:377) and the server pre-increments at all five sites, so a git-reverted (older) file always carries a strictly lower version.\n- init: BacklogStore.init (core.py:402) sets -1 then write() bumps to 0; a v0 journal is created; reconcile no-ops on equal versions; and the funnel excludes init anyway.\n- The once-per-process guard interacts with CliRunner: many tests invoke commands in-process within one pytest process. The guard must be implemented so it does not suppress reconcile across DISTINCT test cases nor cause cross-test state leakage \u2014 prefer a guard keyed on resolved-path-already-seen, or expose a reset for tests. Implementer must confirm test_cli_core.py's repeated --file invocations still pass.\n- backups dir grows only on actual restores.\n- Closes the data-loss-on-main hole #94 left open; #96 (backlog commit) is the separate durability layer.",
+      "links": [
+        {
+          "item_id": "1ot2a7ts",
+          "type": "related",
+          "reason": "Journal recovery and board-git removal are the two halves of the same data-loss fix"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-06-18T01:39:26.136999+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-06-18T01:39:26.281560+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-06-18T01:47:02.464156+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-06-18T01:48:47.667983+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T01:39:26.137339+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T01:39:26.281736+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T01:47:02.464364+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-06-18T01:48:47.667987+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-17T02:30:58.594878+00:00",
+      "updated_at": "2026-06-18T01:48:47.667985+00:00",
+      "refinement_gate": "complex",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "rc7pjcxc",
+      "title": "Add 'backlog commit' checkpoint command for deliberate, durable backlog history",
+      "status": "done",
+      "priority": "medium",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "backlog",
+        "cli",
+        "git"
+      ],
+      "description": "With the board no longer auto-committing (#94) and the journal providing recoverability (#95), provide an explicit, deliberate way to persist backlog.json into git history at safe moments chosen by the user/session \u2014 the durability layer. (journal = recoverability, commit = durable history.)\n\n## Spec\n\nScope: one new CLI command `backlog commit` in cli.py + a test + a docs note. No server changes. Touches git (mutating: add + commit) but only as an explicit user action.\n\nBehavior:\n1. Add `backlog commit` (Typer command, with the standard `--file/-f` option resolved via _resolve_file like other commands).\n2. Optional `-m/--message TEXT`; default message `chore(backlog): checkpoint`.\n3. Commit ONLY the resolved backlog.json \u2014 never sweep up the user's other staged/unstaged changes. Implementation: `git add -- <backlog_path>` then `git commit -m <msg> -- <backlog_path>`. The pathspec on commit restricts the commit to that single file; any other staged files remain staged and uncommitted.\n4. No-op when clean: if backlog.json has no diff vs HEAD (nothing to commit for that path), print a friendly \"nothing to commit \u2014 backlog.json is already up to date\" and exit 0 (success, not error).\n5. Works on ANY branch including main \u2014 this is a deliberate action, not background automation, so do NOT apply protected-branch skipping (that logic was removed in #94). \n6. Commit the file regardless of whether it was previously tracked (a never-committed backlog.json is added and committed fine).\n7. Print the resulting short commit hash + message on success.\n\nUse subprocess to invoke git (consistent with the rest of the codebase). Resolve the backlog path to an absolute path; run git from the file's directory or pass the path so git resolves the repo.\n\n## Acceptance criteria (testable)\n- After a CLI/board edit changes backlog.json, `backlog commit` creates exactly ONE commit containing ONLY backlog.json (verify `git show --stat HEAD` lists only the backlog file), with the default message.\n- `backlog commit -m \"custom msg\"` uses the custom message.\n- With other files staged (e.g. a staged README change), `backlog commit` commits ONLY backlog.json and leaves the other file staged-but-uncommitted.\n- Running `backlog commit` when backlog.json is unchanged vs HEAD prints the no-op message and exits 0, creating no commit.\n- A never-before-committed backlog.json is committed successfully (new file).\n- Not a git repo / git not installed -> friendly error message, non-zero exit, no traceback.\n\n## Failure modes\n- Not a git repository: catch the git failure, print a clear one-line error, exit non-zero.\n- git binary missing (FileNotFoundError): same friendly handling.\n- git commit fails for another reason (e.g. no user.name/email configured): surface git's stderr in a readable message, exit non-zero.\n\n## Edge cases / notes\n- Only the resolved BACKLOG_FILE is committed; the gitignored .backlog/ journal and sidecars are never touched.\n- This is the deliberate counterpart to the removed autosave-commit: SKILL.md should say committing the backlog is now a deliberate action and recommend running `backlog commit` before a manual git checkout/stash/reset as hygiene (the #95 journal covers the case where it's forgotten).\n- Does NOT push; purely a local commit.\n\n## Docs\n- SKILL.md \"Git Workflow\" section: add a short note introducing `backlog commit` and the hygiene recommendation above. (REFERENCE.md CLI command list may also get a one-line entry.)",
+      "links": [
+        {
+          "item_id": "1ot2a7ts",
+          "type": "related",
+          "reason": "Checkpoint command replaces the autosave-commit removed in #94 with a deliberate action"
+        },
+        {
+          "item_id": "f0k96tfz",
+          "type": "related",
+          "reason": "Commit provides durable history; journal provides recovery \u2014 complementary safety layers"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-06-18T01:53:53.550035+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-06-18T01:53:53.716390+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-06-18T01:57:03.325375+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-06-18T01:57:51.377555+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T01:53:53.550043+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T01:53:53.716396+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T01:57:03.325388+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-06-18T01:57:51.377560+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-17T02:30:58.742403+00:00",
+      "updated_at": "2026-06-18T01:57:51.377559+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "fjmp79c2",
+      "title": "Validate BACKLOG_ON_CONFLICT / --on-conflict values; reject unknown modes",
+      "status": "done",
+      "priority": "low",
+      "priority_weight": 3,
+      "complexity": "low",
+      "category": "tech-debt",
+      "tags": [
+        "backlog",
+        "cli",
+        "recovery",
+        "robustness"
+      ],
+      "description": "Found during #95 review (PR #31). Two small robustness gaps in the recovery-journal code (core.py):\n\n## Spec\n\nScope: core.py only (+ tests). No server/CLI signature changes.\n\n1. Validate the conflict mode in core._resolve_conflict_mode. Today it returns the BACKLOG_ON_CONFLICT env value (or passed mode) verbatim; an invalid value like 'kep' falls through reconcile_journal's final branch and silently does restore+backup with NO _safe_default warning \u2014 surprising (a user who typo'd 'keep' gets the opposite). Fix: validate the resolved value against the set {prompt, restore, keep}. On a value outside that set (case-insensitively; normalize to lowercase), print ONE stderr WARNING naming the bad value and the valid options, then return None so reconcile_journal falls back to its default resolution (TTY -> prompt, else safe-default). Empty/unset stays None as today. The board's argparse already constrains --on-conflict to the three choices, so this primarily hardens the env-var path, but the validation should live in _resolve_conflict_mode so BOTH paths are covered.\n\n2. Backup filename collision in core._backup_worktree: the timestamp is second-resolution (_now_iso() with ':' -> '-'), so two restores within the same second would have the SAME filename and shutil.copy2 would overwrite the earlier backup. Fix: make the backup filename unique \u2014 e.g. include microseconds, or if the target path already exists append a numeric suffix (-1, -2, ...) until free. Pick whichever is simpler and deterministic to test.\n\n## Acceptance criteria (testable)\n- _resolve_conflict_mode(\"prompt\"/\"restore\"/\"keep\") returns the value (case-insensitive -> normalized lowercase). \n- _resolve_conflict_mode with BACKLOG_ON_CONFLICT set to an invalid value (e.g. \"kep\") returns None AND emits a stderr warning naming the bad value + valid options. (Mock/capture stderr.)\n- _resolve_conflict_mode(None) with no env returns None (unchanged behavior).\n- Explicit valid mode arg still wins over env.\n- Two consecutive _backup_worktree calls produce TWO distinct files (no overwrite) even when invoked back-to-back.\n- Full suite stays green; existing reconcile tests unaffected (an invalid mode now warns+defaults instead of silently restoring \u2014 update any test that asserted the old silent behavior, if one exists).\n\n## Edge cases / notes\n- Case handling: accept \"Keep\"/\"KEEP\" -> \"keep\" (normalize) rather than rejecting; only genuinely-unknown values warn+fallback.\n- Keep the change minimal and local to the two helpers; do not alter reconcile_journal's branch structure beyond what the validated return enables.",
+      "links": [
+        {
+          "item_id": "f0k96tfz",
+          "type": "follow-up",
+          "reason": "Robustness gap found while reviewing the recovery-journal conflict-mode resolution"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-06-18T02:19:11.556798+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-06-18T02:19:11.716894+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-06-18T02:22:56.374778+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-06-18T02:23:10.383241+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T02:19:11.556805+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T02:19:11.716905+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-06-18T02:22:56.374782+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-06-18T02:23:10.383247+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-18T01:49:00.309041+00:00",
+      "updated_at": "2026-06-18T02:23:10.383245+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "12pv04ew",
+      "title": "Add a LICENSE file before any public sharing",
+      "status": "discarded",
+      "priority": "high",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "release",
+        "legal",
+        "docs"
+      ],
+      "description": "There is no LICENSE/COPYING file in the repo. Without an explicit license, others legally cannot use, modify, or redistribute the skill \u2014 this blocks sharing publicly. Pick a license (MIT is the conventional choice for a permissive dev tool like this) and add it at the repo root, plus a one-line license note in README. Decision needed from the owner on which license.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-06-18T02:40:02.709350+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-18T02:40:02.709357+00:00",
+          "detail": "backlog \u2192 discarded (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-18T02:39:35.998189+00:00",
+      "updated_at": "2026-06-18T02:40:02.709355+00:00"
+    },
+    {
+      "id": "rxhxul1x",
+      "title": "README: document installing it as a Claude skill (~/.claude/skills), not just the CLI",
+      "status": "done",
+      "priority": "high",
+      "priority_weight": 8,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "release",
+        "docs",
+        "onboarding"
+      ],
+      "description": "The root README.md DOES document skill install (Option A: cp skill to ~/.claude/skills; Option B: /plugin install flow; plus `claude --plugin-dir .`). The real gap is that NONE of these paths install the `backlog` Python CLI that the skill depends on \u2014 the skill's SKILL.md instructs running `backlog top`, `backlog pick`, etc., which fail with \"command not found\" unless the package is installed (pip install -e . or pipx). A newcomer following Option A or B gets a skill Claude recognizes but whose commands all fail.\n\n## Spec\nScope: README.md (root) docs only. No code.\n\n1. Make the CLI-install step explicit and unmissable for EVERY install path. After Option A (copy skill) and Option B (plugin), add a clear \"Install the CLI (required)\" step:\n   - `cd <skill dir> && pip install -e .`  (or `pipx install --editable <skill dir>` for a global, project-independent command \u2014 recommend pipx for use across multiple projects).\n   - Note Python 3.11+ requirement (already in README requirements).\n   - State plainly: the skill drives the `backlog` CLI; without it installed, the skill's commands do not work. This applies to BOTH the copy-skill and plugin paths (the plugin bundles the skill + agents but not the Python package).\n2. Fix Option B wording: it currently says \"Once available in the Anthropic marketplace.\" Until/unless that exists, point users to the working paths today \u2014 `claude --plugin-dir .` for local, and (once #101 lands) `/plugin marketplace add prajyotbankade/Flow` then `/plugin install flow@flow`. Cross-link #101.\n3. Sanity-check Option A's claim: confirm whether the skill needs to live at ~/.claude/skills/backlog-manager exactly (dir name) and that `cp -r skills/backlog-manager ~/.claude/skills/` yields the right path/invocation (/backlog-manager). Adjust if the dir name matters.\n\n## Acceptance criteria\n- Following the README top-to-bottom for EITHER install option results in a working `backlog top` (CLI present) AND a Claude-recognized skill \u2014 no missing step.\n- The CLI requirement is stated once, prominently, applicable to all paths (not buried).\n- Option B no longer implies the only path is a not-yet-existent Anthropic marketplace.\n- pipx-vs-pip tradeoff (global/cross-project vs project venv) is noted briefly.\n\n## Notes\n- Verified: .claude-plugin/plugin.json exists (name \"flow\"), bundles skills/backlog-manager + .claude/agents/ (6 agents). Plugins do not run pip, so the CLI step is genuinely separate for all paths.\n- Keep it tight \u2014 this is a docs clarity fix, not a rewrite.",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-06-19T02:05:10.948069+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-06-19T02:05:11.135656+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-06-19T02:09:51.664240+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-06-19T02:09:51.986583+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-19T02:05:10.948078+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-19T02:05:11.135665+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-19T02:09:51.664247+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-06-19T02:09:51.986593+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-18T02:39:36.160155+00:00",
+      "updated_at": "2026-06-19T02:09:51.986591+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "dg1iscqx",
+      "title": "Tidy repo for public consumption: relocate/remove internal planning docs",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 4,
+      "complexity": "low",
+      "category": "docs",
+      "tags": [
+        "release",
+        "docs",
+        "cleanup"
+      ],
+      "description": "Repo root has internal planning docs (PLAN.md, planv2.md, planv3.md, planv4.md) that clutter and confuse a newcomer landing on the repo. Decide whether to move them under a docs/ or internal/ folder, or remove them. Also consider that cloning the whole Flow repo exposes its own backlog.json (57 done items about building the skill), evals, stress-tests, and benchmark CSVs \u2014 decide whether to share the whole repo or extract just skills/backlog-manager/ for distribution.",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-18T02:39:36.318597+00:00",
+      "updated_at": "2026-06-18T02:39:36.318597+00:00"
+    },
+    {
+      "id": "xioasojp",
+      "title": "Add .claude-plugin/marketplace.json so the plugin is installable from the GitHub repo",
+      "status": "done",
+      "priority": "medium",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "infra",
+      "tags": [
+        "release",
+        "plugin",
+        "distribution"
+      ],
+      "description": "Option B plugin install is gated on a non-existent marketplace. Add .claude-plugin/marketplace.json so people can install the 'flow' plugin straight from the GitHub repo. Schema VERIFIED against https://code.claude.com/docs/en/plugin-marketplaces (2026-06).\n\n## Spec\nScope: add .claude-plugin/marketplace.json (repo root) + finalize README Option B wording. No code/tests (config + docs).\n\nVerified schema:\n- File location: <repo>/.claude-plugin/marketplace.json (same .claude-plugin/ dir that already holds plugin.json).\n- Required top-level: name (kebab-case, public-facing, NOT a reserved name), owner (object; owner.name required, owner.email optional), plugins (array).\n- Optional top-level: $schema, description, version, metadata.pluginRoot.\n- Each plugin entry: required name + source; may also include any plugin-manifest field (description, version, author, homepage, repository, license, keywords) plus marketplace-specific category/tags/strict.\n- source for a same-repo plugin: a relative path string starting with \"./\", resolved relative to the MARKETPLACE ROOT (the dir containing .claude-plugin/, i.e. the repo root). Since Flow's plugin.json is at <repo>/.claude-plugin/plugin.json, the plugin root == repo root, so source = \"./\".\n\nContent to write:\n{\n  \"name\": \"flow\",\n  \"owner\": { \"name\": \"Prajyot Bankade\", \"email\": \"<optional, owner decides>\" },\n  \"plugins\": [\n    {\n      \"name\": \"flow\",\n      \"source\": \"./\",\n      \"description\": \"<from plugin.json>\",\n      \"license\": \"MIT\",\n      \"homepage\": \"https://github.com/prajyotbankade/Flow\"\n    }\n  ]\n}\n(Marketplace name MUST be \"flow\" to match the README's already-merged `/plugin install flow@flow`. If a different marketplace name is chosen, update the README in lockstep.)\n\n## CRITICAL verification (the one real risk)\nConfirm a plugin whose plugin.json sits at the repo root (source \"./\", coexisting with marketplace.json in the same .claude-plugin/ dir) actually loads. Verify by: `claude --plugin-dir .` already works (proves the plugin manifest is valid); then validate the marketplace loads \u2014 e.g. `/plugin marketplace add ./` in a claude session, or whatever non-interactive validation the claude CLI offers (`claude plugin ...` if available). If root-level source \"./\" is NOT supported and the plugin must live in a subdir, STOP and report \u2014 do not restructure the plugin without flagging it (that would be a bigger change affecting #99's docs).\n\n## Acceptance criteria\n- .claude-plugin/marketplace.json exists at repo root, valid JSON, matches the verified schema (name/owner/plugins all present and correct).\n- `/plugin marketplace add prajyotbankade/Flow` then `/plugin install flow@flow` is the documented, working path (verified as far as the environment allows; note any step that could only be validated manually).\n- README Option B updated from \"coming (tracked as #101)\" to the live marketplace instructions.\n- plugin.json and marketplace.json are consistent (name, description, license, author).\n\n## Notes\n- Reserved marketplace names (cannot use): claude-code-marketplace, claude-plugins-official, anthropic-marketplace, agent-skills, etc. \"flow\" is fine.\n- Do NOT use ../ in source. \"./\" is correct and resolves to repo root.\n- Users update later via `/plugin marketplace update`.",
+      "links": [
+        {
+          "item_id": "rxhxul1x",
+          "type": "related",
+          "reason": "Marketplace manifest enables the plugin-install path that the README fix points to"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-06-19T02:13:09.229681+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-06-19T02:13:09.391223+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-06-19T02:16:18.009080+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-06-19T02:16:18.322626+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-19T02:13:09.229689+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-19T02:13:09.391230+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-06-19T02:16:18.009087+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-06-19T02:16:18.322631+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-06-19T02:05:10.440027+00:00",
+      "updated_at": "2026-06-19T02:16:18.322629+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "lfygutn5",
+      "title": "backlog commit: validate JSON + reject conflict markers before committing",
+      "status": "done",
+      "priority": "high",
+      "priority_weight": 8,
+      "complexity": "medium",
+      "category": "reliability",
+      "tags": [
+        "backlog",
+        "git",
+        "validation",
+        "reliability"
+      ],
+      "description": "backlog commit currently git-adds and commits backlog.json with no integrity check. It will happily commit a file that fails json.load or contains literal <<<<<<< / ======= / >>>>>>> conflict markers \u2014 exactly the corruption a real user hit (a mid-merge autosave race landed conflict markers on main; it sat undetected until 'backlog top' errored). Add a validation gate to cmd_commit (cli.py:689): before committing, run json.load on the file AND scan for conflict markers; if either fails, abort the commit with a clear error and non-zero exit, printing the offending line(s). Also offer an opt-in pre-commit hook (wired by 'backlog init' or 'backlog doctor') running the same one-line check so the gate holds even outside the CLI. Cheap, permanent, catches this exact failure mode regardless of what else changes. Source: real-world corruption report on a stale office install.\n\n## Spec\n\n**Insertion point:** cli.py `commit_cmd` \u2014 validate BEFORE `git add` (currently cli.py:714), so a bad file is never staged or committed.\n\n**Acceptance criteria**\n- `backlog commit` aborts (non-zero exit, no `git add`, no `git commit`) when backlog.json fails `json.load`. Error names the file and the JSON error.\n- `backlog commit` aborts when backlog.json contains a git conflict marker anchored to line start. Error prints the offending line number(s).\n- A valid, clean file commits exactly as today; the existing no-op path (file matches HEAD) is preserved and still runs AFTER validation.\n- Opt-in pre-commit hook: `backlog init` installs `.git/hooks/pre-commit` running the same JSON + conflict-marker check on staged backlog.json. NEVER clobber an existing hook \u2014 if one exists, skip and print guidance. Commit-time gate in cli.py is the mandatory core; the init hook ships in the same PR if it fits, else split into a follow-up.\n\n**Failure modes**\n- Not a git repo / git missing / file missing \u2192 keep existing error paths, clear message, non-zero exit.\n- Corrupt file that happens to match HEAD \u2192 still block (so the user notices), i.e. validate before the no-op check.\n\n**Edge cases**\n- Conflict-marker scan MUST anchor to line start to avoid false positives: match `^<<<<<<< `, `^>>>>>>> `, and a line that is exactly `=======`. A description string containing `=======` mid-line must still commit.\n- Empty file \u2192 invalid JSON \u2192 blocked.\n\n**Tests (missing coverage = review blocker)**\n- valid JSON commits; invalid JSON aborts non-zero AND git HEAD is unchanged (no commit made); conflict-marker file aborts; false-positive guard (mid-line `=======` in content still commits); pre-commit hook blocks a staged bad file if hook shipped.\n",
+      "links": [
+        {
+          "item_id": "k2mtkkj7",
+          "type": "related",
+          "reason": "Both harden backlog.json integrity across the git lifecycle: 102 blocks bad commits, 103 prevents/cleans merge conflicts"
+        }
+      ],
+      "threads": [
+        {
+          "id": "56tucdjk",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "Dead code / unreachable conflict-marker check in _validate_backlog_file (cli.py ~line 802-815): conflict markers at the start of a line always make the file invalid JSON, so json.load() at line 794 always raises JSONDecodeError first. The conflict-marker branch is never reached. Tests test_conflict_markers_abort_non_zero and test_conflict_markers_head_unchanged pass accidentally \u2014 the JSONDecodeError message contains 'line' (e.g. 'Expecting value: line 1 column 1') which satisfies the assertion `assert 'conflict' in output or 'marker' in output or 'line' in output`. AC#3 (offending line numbers reported for conflict markers) is not satisfied: users see a generic JSON error instead of the conflict-marker diagnostic with line numbers.",
+          "created_at": "2026-07-13T13:50:58.264871+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-13T13:32:32.197095+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-13T13:32:32.360756+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-13T13:37:03.191687+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-13T13:50:58.264896+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-13T13:58:01.225755+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-13T14:02:30.226973+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T13:32:32.197102+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T13:32:32.360770+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-07-13T13:32:42.564169+00:00",
+          "detail": "unassigned \u2192 backend-dev"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T13:37:03.191708+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-13T13:50:58.264900+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-13T13:58:01.225763+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-13T14:02:30.226978+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 4,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-13T13:11:32.536415+00:00",
+      "updated_at": "2026-07-13T14:02:30.226976+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "reviewer",
+      "reviewer": "backend-dev",
+      "reviewer_history": [
+        "reviewer",
+        "backend-dev"
+      ]
+    },
+    {
+      "id": "k2mtkkj7",
+      "title": "JSON-aware git merge driver for backlog.json keyed on item id",
+      "status": "backlog",
+      "priority": "medium",
+      "priority_weight": 5,
+      "complexity": "high",
+      "category": "reliability",
+      "tags": [
+        "backlog",
+        "git",
+        "merge",
+        "reliability"
+      ],
+      "description": "backlog.json is shared, frequently-mutated state that every feature branch touches for unrelated reasons, so squash-merging drifted branches textually conflicts constantly \u2014 git's line-based merge has no idea two edits to different items aren't in conflict. Add a JSON-aware merge driver (registered via .gitattributes: 'backlog.json merge=backlog-json', wired by backlog init) that merges the items array keyed on item id: non-overlapping item edits merge cleanly; only genuine same-item concurrent edits surface as conflicts. Removes most of the merge noise. Does NOT fix same-item concurrent edits (acceptable). Nice-to-have relative to the commit-time validation gate and skip-worktree items, but the right long-term answer for teams running one-branch-per-item. Related: existing 'backlog init should run git update-index --skip-worktree' item.",
+      "links": [
+        {
+          "item_id": "grbi3kis",
+          "type": "related",
+          "reason": "Both are structural fixes for backlog.json forking/merging across feature branches; skip-worktree stops the fork, merge driver reconciles genuine cross-branch edits"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-13T13:11:32.701923+00:00",
+      "updated_at": "2026-07-13T13:12:00.609817+00:00"
     }
   ],
   "config": {

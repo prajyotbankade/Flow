@@ -80,6 +80,41 @@ Items referenced by position: `#1` = index 0, `#2` = index 1, etc.
 
 ---
 
+## Multi-branch / Multi-agent Setup
+
+When agents work on multiple feature branches simultaneously, `backlog.json` forks: each branch carries its own committed copy and the files silently diverge. The recommended solution is a **single canonical copy** pinned to the trunk branch via a git worktree.
+
+### One-time setup
+
+```bash
+# Create a worktree locked to the trunk branch (run once per clone)
+git worktree add ../<repo>-backlog main
+
+# Export the canonical path for all agents and the board server
+export BACKLOG_FILE=../<repo>-backlog/backlog.json
+```
+
+### Rules
+
+- All agents, the board server, and `backlog commit` target `BACKLOG_FILE` pointing at the canonical worktree copy.
+- Code work happens on feature branches in the primary checkout as normal.
+- Backlog bookkeeping (`add`, `move`, `edit`, `done`, etc.) always targets the canonical copy — never a feature-branch copy.
+- Commit history: `cd ../<repo>-backlog && backlog commit` (runs in the canonical worktree).
+
+### Detecting divergence
+
+`backlog doctor` checks whether the committed `backlog.json` on the current branch matches the trunk's committed version. If they differ, it emits a warning with a one-line remediation hint pointing at the canonical-copy pattern.
+
+```
+✗ backlog.json committed on 'feature/my-work' differs from 'main' — risk of forked
+  backlog state. Use a canonical-copy worktree: `git worktree add ../<repo>-backlog main`
+  and point all agents at that copy with BACKLOG_FILE.
+```
+
+The check is read-only and degrades gracefully when outside a git repo, in a detached HEAD state, or when no trunk branch is detectable.
+
+---
+
 ## Pulse — Primary Agent Interface
 
 Call `GET /api/pulse?agent=<your-name>` as your single source of truth. One call replaces `/api/recommend`, `/api/scores`, `/api/agents`, `/api/policies`, and `/api/policies/log`.

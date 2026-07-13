@@ -668,6 +668,147 @@ def _write_snippet(claude_md: Path) -> None:
     claude_md.write_text(existing + separator + "\n" + _CLAUDE_MD_SNIPPET, encoding="utf-8")
 
 
+def _detect_default_branch(git_cwd: Optional[Path] = None) -> Optional[str]:
+    """Return the default/trunk branch name without mutating git state.
+
+    Fallback chain:
+      1. git symbolic-ref refs/remotes/origin/HEAD  (set after 'git remote set-head')
+      2. git rev-parse --abbrev-ref origin/HEAD      (same but shorter form)
+      3. Literal 'main' if a 'main' ref exists
+      4. Literal 'master' if a 'master' ref exists
+    """
+    run_kw: dict = dict(capture_output=True, text=True, timeout=5)
+    if git_cwd is not None:
+        run_kw["cwd"] = git_cwd
+
+    for cmd in [
+        ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
+        ["git", "rev-parse", "--abbrev-ref", "origin/HEAD"],
+    ]:
+        try:
+            result = subprocess.run(cmd, **run_kw)
+            if result.returncode == 0:
+                branch = result.stdout.strip()
+                # Strip the 'origin/' prefix when present
+                if "/" in branch:
+                    branch = branch.split("/", 1)[1]
+                if branch:
+                    return branch
+        except Exception:
+            pass
+
+    # Fallback: probe local refs
+    for candidate in ("main", "master"):
+        try:
+            result = subprocess.run(
+                ["git", "rev-parse", "--verify", candidate],
+                **run_kw,
+            )
+            if result.returncode == 0:
+                return candidate
+        except Exception:
+            pass
+
+    return None
+
+
+def _check_backlog_divergence(
+    backlog_path: Path,
+    ok: list,
+    issues: list,
+) -> None:
+    """Warn when the committed backlog.json on the current branch differs from trunk.
+
+    Read-only: never mutates git state.
+    Degrades gracefully (appends a note to ok) when:
+      - outside a git repo
+      - detached HEAD
+      - no trunk branch found
+      - the file is not tracked on either branch
+
+    All git commands run with cwd set to the directory containing backlog.json
+    so that git resolves to the correct repo regardless of the process's cwd.
+    """
+    # Use the directory containing backlog.json as git cwd so that the check
+    # operates on the correct repo even when the process cwd differs (e.g. in tests).
+    git_cwd = backlog_path.resolve().parent
+    run_kw: dict = dict(capture_output=True, text=True, timeout=5, cwd=git_cwd)
+
+    try:
+        # Is this a git repo?
+        repo_check = subprocess.run(["git", "rev-parse", "--git-dir"], **run_kw)
+        if repo_check.returncode != 0:
+            ok.append("not in a git repo — skipping multi-branch divergence check")
+            return
+
+        # Find the repo root so we can compute the repo-relative path
+        root_result = subprocess.run(["git", "rev-parse", "--show-toplevel"], **run_kw)
+        if root_result.returncode != 0:
+            ok.append("could not determine git root — skipping divergence check")
+            return
+        git_root = Path(root_result.stdout.strip())
+
+        try:
+            rel_path = backlog_path.resolve().relative_to(git_root)
+        except ValueError:
+            ok.append("backlog.json is outside the git repo root — skipping divergence check")
+            return
+
+        # Are we on a named branch?
+        head_result = subprocess.run(["git", "rev-parse", "--abbrev-ref", "HEAD"], **run_kw)
+        if head_result.returncode != 0 or head_result.stdout.strip() == "HEAD":
+            ok.append("detached HEAD — skipping divergence check")
+            return
+        current_branch = head_result.stdout.strip()
+
+        # Detect trunk
+        trunk = _detect_default_branch(git_cwd=git_cwd)
+        if not trunk:
+            ok.append("no trunk branch found (tried origin/HEAD, main, master) — skipping divergence check")
+            return
+
+        # If we're already on trunk, no divergence is possible
+        if current_branch == trunk:
+            ok.append(f"backlog.json is on the trunk branch ({trunk}) — no divergence risk")
+            return
+
+        # Compare committed versions: git show <trunk>:<relpath> vs git show HEAD:<relpath>
+        def _git_show(ref: str) -> Optional[str]:
+            r = subprocess.run(
+                ["git", "show", f"{ref}:{rel_path}"],
+                **run_kw,
+            )
+            return r.stdout if r.returncode == 0 else None
+
+        trunk_content = _git_show(trunk)
+        head_content = _git_show("HEAD")
+
+        if trunk_content is None and head_content is None:
+            ok.append("backlog.json not committed on either branch — skipping divergence check")
+            return
+
+        if trunk_content is None:
+            ok.append(f"backlog.json not committed on {trunk} — skipping divergence check")
+            return
+
+        if head_content is None:
+            ok.append(f"backlog.json not committed on HEAD ({current_branch}) — skipping divergence check")
+            return
+
+        if trunk_content == head_content:
+            ok.append(f"backlog.json committed version matches {trunk} — no divergence")
+        else:
+            issues.append(
+                f"backlog.json committed on '{current_branch}' differs from '{trunk}' — "
+                f"risk of forked backlog state. Use a canonical-copy worktree: "
+                f"`git worktree add ../<repo>-backlog {trunk}` and point all agents at "
+                f"that copy with BACKLOG_FILE."
+            )
+
+    except Exception as exc:
+        ok.append(f"divergence check skipped ({exc})")
+
+
 @app.command()
 def doctor(
     fix: bool = typer.Option(False, "--fix", help="Write missing setup to CLAUDE.md"),
@@ -740,6 +881,10 @@ def doctor(
         ok.append(f"BACKLOG_FILE env var set → {os.environ['BACKLOG_FILE']}")
     else:
         ok.append("BACKLOG_FILE env var not set — defaulting to ./backlog.json (no config needed)")
+
+    # ── 4. Multi-branch divergence check ─────────────────────────────────────
+    if backlog_path:
+        _check_backlog_divergence(backlog_path, ok, issues)
 
     # ── Report ────────────────────────────────────────────────────────────────
     console.print()

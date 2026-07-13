@@ -78,6 +78,34 @@ That's it. No env vars, no extra steps. `backlog` defaults to `./backlog.json` i
 
 ---
 
+## Multi-branch / Multi-agent Setup
+
+> One canonical `backlog.json`, never forked per branch.
+
+When multiple agents work on feature branches simultaneously, `backlog.json` forks: each branch carries its own committed copy and the files silently diverge. The fix is a **single canonical copy** that lives outside feature branches entirely.
+
+**Recommended layout — pinned worktree on trunk:**
+
+```bash
+# One-time setup: create a worktree locked to the trunk branch
+git worktree add ../<repo>-backlog main
+
+# Point every agent at the canonical copy
+export BACKLOG_FILE=../<repo>-backlog/backlog.json
+```
+
+- The worktree at `../<repo>-backlog` stays on `main` (or your trunk branch) forever.
+- All agents and the board server target that path via `BACKLOG_FILE`.
+- Code work continues on feature branches in the primary checkout as usual.
+- Backlog bookkeeping (`backlog add`, `backlog move`, `backlog edit`, etc.) always targets the canonical copy — never a feature-branch copy.
+- Deliberate history is committed from the canonical worktree: `cd ../<repo>-backlog && backlog commit`.
+
+**Rule: backlog state follows trunk, not code branches.**
+
+If you're unsure whether your setup is canonical, run `backlog doctor` — it will warn you if the committed `backlog.json` on your current branch has diverged from trunk and tell you how to fix it.
+
+---
+
 ## How to Operate
 
 > The end-to-end agent loop: pick up, decompose, assign, delegate, monitor, prune.
