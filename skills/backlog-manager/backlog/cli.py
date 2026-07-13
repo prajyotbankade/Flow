@@ -552,15 +552,9 @@ git diff --cached --name-only | grep -q "^${BACKLOG}$" || exit 0
 TMPFILE=$(mktemp)
 git show ":${BACKLOG}" > "$TMPFILE" 2>/dev/null || { rm -f "$TMPFILE"; exit 0; }
 
-# JSON validity check.
-python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$TMPFILE" 2>/dev/null
-if [ $? -ne 0 ]; then
-  echo "error: staged backlog.json is not valid JSON. Fix it before committing." >&2
-  rm -f "$TMPFILE"
-  exit 1
-fi
-
-# Conflict-marker check — anchored to line start.
+# Conflict-marker check — anchored to line start, runs FIRST.
+# A conflicted file is also invalid JSON; showing the marker diagnostic
+# (with line numbers) is more actionable than a generic JSON parse error.
 python3 - "$TMPFILE" <<'PYEOF'
 import sys, re
 text = open(sys.argv[1]).read()
@@ -570,8 +564,21 @@ if bad:
     sys.exit(1)
 PYEOF
 STATUS=$?
+if [ $STATUS -ne 0 ]; then
+  rm -f "$TMPFILE"
+  exit $STATUS
+fi
+
+# JSON validity check — second gate for marker-free but malformed files.
+python3 -c "import json,sys; json.loads(open(sys.argv[1]).read())" "$TMPFILE" 2>/dev/null
+if [ $? -ne 0 ]; then
+  echo "error: staged backlog.json is not valid JSON. Fix it before committing." >&2
+  rm -f "$TMPFILE"
+  exit 1
+fi
+
 rm -f "$TMPFILE"
-exit $STATUS
+exit 0
 """
 
 
@@ -775,8 +782,12 @@ def _validate_backlog_file(abs_path: str) -> None:
     """Validate backlog.json before staging or committing.
 
     Raises typer.Exit(1) with a clear error message if:
-    - The file cannot be parsed as JSON.
     - The file contains git conflict markers anchored to the start of a line.
+    - The file cannot be parsed as JSON.
+
+    Conflict-marker check runs FIRST so that a real conflicted file (which is
+    also invalid JSON) produces the specific conflict-marker diagnostic with
+    line numbers rather than a generic JSON parse error.
 
     A description containing ``=======`` mid-line is NOT a conflict marker and
     must pass validation without error.
@@ -789,18 +800,10 @@ def _validate_backlog_file(abs_path: str) -> None:
         err_console.print(f"[red]Error:[/red] cannot read {abs_path}: {exc}")
         raise typer.Exit(1)
 
-    # JSON validity check.
-    try:
-        json.load(open(abs_path, encoding="utf-8"))
-    except json.JSONDecodeError as exc:
-        err_console.print(
-            f"[red]Error:[/red] {abs_path} is not valid JSON: {exc}"
-        )
-        raise typer.Exit(1)
-
     # Conflict-marker check — anchored to line start to avoid false positives.
+    # Runs BEFORE JSON parsing so a conflicted file gets the marker diagnostic,
+    # not a generic "not valid JSON" error.
     # Match lines that start with "<<<<<<< " or ">>>>>>> ", or are exactly "=======".
-    conflict_re = re.compile(r"^(<<<<<<< |>>>>>>> |=======\s*)$", re.MULTILINE)
     bad_lines = [
         i + 1
         for i, line in enumerate(raw.splitlines())
@@ -811,6 +814,15 @@ def _validate_backlog_file(abs_path: str) -> None:
         err_console.print(
             f"[red]Error:[/red] {abs_path} contains git conflict markers "
             f"at line(s): {lines_str}. Resolve conflicts before committing."
+        )
+        raise typer.Exit(1)
+
+    # JSON validity check — second gate for marker-free but malformed files.
+    try:
+        json.loads(raw)
+    except json.JSONDecodeError as exc:
+        err_console.print(
+            f"[red]Error:[/red] {abs_path} is not valid JSON: {exc}"
         )
         raise typer.Exit(1)
 

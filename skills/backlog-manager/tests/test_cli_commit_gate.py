@@ -112,12 +112,19 @@ def test_invalid_json_nothing_staged(git_repo):
 
 # ── Core validation: conflict markers ─────────────────────────────────────────
 
+# A real conflicted backlog.json starts with "<<<<<<< HEAD" and is therefore
+# invalid JSON too.  The conflict-marker check MUST fire first and produce a
+# diagnostic that names "conflict markers" and includes the offending line
+# numbers — not a generic "not valid json" error.
+
+def _normalize(text: str) -> str:
+    """Collapse newlines to spaces for substring assertions against Rich-wrapped output."""
+    return " ".join(text.split())
+
+
 def test_conflict_markers_abort_non_zero(git_repo):
     """A file with git conflict markers must be rejected non-zero."""
     backlog = git_repo / "backlog.json"
-    # Embed conflict markers; wrap in JSON string so the file is still parseable
-    # as JSON from a naive check — the conflict-marker check must be separate.
-    # Use a raw text file that happens to have markers.
     conflict_content = (
         "<<<<<<< HEAD\n"
         '{"version": 1, "config": {}, "items": []}\n'
@@ -130,8 +137,36 @@ def test_conflict_markers_abort_non_zero(git_repo):
     result = runner.invoke(app, ["commit", "--file", str(backlog)])
 
     assert result.exit_code != 0
-    output = result.output.lower()
-    assert "conflict" in output or "marker" in output or "line" in output
+    output = _normalize(result.output).lower()
+    # Must name conflict markers specifically — not a generic JSON error.
+    assert "conflict markers" in output
+    # Must include at least one line number.
+    assert any(char.isdigit() for char in output)
+    # Must NOT fall through to the generic JSON error (marker check fires first).
+    assert "not valid json" not in output
+
+
+def test_conflict_markers_error_names_line_numbers(git_repo):
+    """The conflict-marker error must include the exact offending line numbers."""
+    backlog = git_repo / "backlog.json"
+    # Markers are on lines 1, 3, and 5 of this content.
+    conflict_content = (
+        "<<<<<<< HEAD\n"                                    # line 1
+        '{"version": 1, "config": {}, "items": []}\n'      # line 2
+        "=======\n"                                         # line 3
+        '{"version": 1, "config": {}, "items": []}\n'      # line 4
+        ">>>>>>> branch\n"                                  # line 5
+    )
+    backlog.write_text(conflict_content)
+
+    result = runner.invoke(app, ["commit", "--file", str(backlog)])
+
+    assert result.exit_code != 0
+    output = _normalize(result.output)
+    # The output must contain "conflict markers" (case-insensitive).
+    assert "conflict markers" in output.lower()
+    # Lines 1, 3, and 5 are the markers — at least one must appear in the output.
+    assert "1" in output or "3" in output or "5" in output
 
 
 def test_conflict_markers_head_unchanged(git_repo):
@@ -150,6 +185,34 @@ def test_conflict_markers_head_unchanged(git_repo):
     runner.invoke(app, ["commit", "--file", str(backlog)])
 
     assert _head(git_repo) == before
+
+
+def test_conflict_marker_check_precedes_json_check(git_repo):
+    """Prove the marker check fires BEFORE the JSON check.
+
+    A real conflicted file is also invalid JSON.  If the JSON check ran first
+    the error would say 'not valid json'; the marker check must intercept it
+    and emit the conflict-marker diagnostic instead.
+    """
+    backlog = git_repo / "backlog.json"
+    # This content is BOTH conflicted AND invalid JSON — only the marker
+    # diagnostic (with "conflict marker" and a line number) is acceptable.
+    conflict_and_invalid = (
+        "<<<<<<< HEAD\n"
+        "not json at all\n"
+        "=======\n"
+        "also not json\n"
+        ">>>>>>> branch\n"
+    )
+    backlog.write_text(conflict_and_invalid)
+
+    result = runner.invoke(app, ["commit", "--file", str(backlog)])
+
+    assert result.exit_code != 0
+    output = _normalize(result.output).lower()
+    # Must be the marker diagnostic, not the JSON one.
+    assert "conflict markers" in output
+    assert "not valid json" not in output
 
 
 # ── False-positive guard ───────────────────────────────────────────────────────
