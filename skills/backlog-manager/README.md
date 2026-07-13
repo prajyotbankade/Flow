@@ -97,6 +97,26 @@ Designed for human oversight. Agents use the CLI directly — no server required
 
 ---
 
+## Multi-branch / Multi-agent Setup
+
+When multiple agents work on different feature branches, `backlog.json` forks — each branch carries its own committed copy. The fix is one canonical copy that never moves with code branches.
+
+```bash
+# Create a worktree pinned to trunk (one-time, per clone)
+git worktree add ../<repo>-backlog main
+
+# Point every agent and the board at the canonical copy
+export BACKLOG_FILE=../<repo>-backlog/backlog.json
+```
+
+**Rule:** backlog bookkeeping always targets the canonical worktree copy — never a feature-branch copy. Code work stays on feature branches as normal.
+
+Run `backlog doctor` to verify your setup. It warns when the committed `backlog.json` on your current branch has diverged from trunk and shows the exact command to fix it.
+
+See [REFERENCE.md](REFERENCE.md) for the full pattern including how to commit history from the canonical worktree.
+
+---
+
 ## How Claude Uses This
 
 Install the skill once and Claude activates it automatically when you mention backlog, tasks, sprint planning, or work items. It also triggers proactively:
