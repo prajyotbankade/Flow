@@ -1,5 +1,5 @@
 {
-  "version": 875,
+  "version": 881,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -5777,7 +5777,7 @@
     {
       "id": "sv13cjn8",
       "title": "backlog init: pre-commit hook install skips inside a git worktree (.git is a file, not a dir)",
-      "status": "backlog",
+      "status": "done",
       "priority": "medium",
       "priority_weight": 4,
       "complexity": "low",
@@ -5789,7 +5789,7 @@
         "reliability",
         "hooks"
       ],
-      "description": "_install_precommit_hook (cli.py ~596, added in #102/PR #38) locates .git via candidate.is_dir(). In a linked git worktree, .git is a FILE pointing at the main repo's gitdir, so the hook install silently no-ops. Surfaced by the #74 readiness review \u2014 matters because #74's recommended layout runs backlog init from a main-pinned worktree. Fix: resolve the real hooks dir via 'git rev-parse --git-common-dir' (or --git-path hooks) instead of assuming .git is a directory. Pre-existing limitation, not a regression.",
+      "description": "_install_precommit_hook (cli.py ~596, added in #102/PR #38) locates .git via candidate.is_dir(). In a linked git worktree, .git is a FILE pointing at the main repo's gitdir, so the hook install silently no-ops. Surfaced by the #74 readiness review \u2014 matters because #74's recommended layout runs backlog init from a main-pinned worktree. Fix: resolve the real hooks dir via 'git rev-parse --git-common-dir' (or --git-path hooks) instead of assuming .git is a directory. Pre-existing limitation, not a regression.\n\n## Spec\n\n**Root cause:** `_install_precommit_hook` (cli.py ~585) locates the hooks dir by walking parents for a `.git` that satisfies `candidate.is_dir()` (line ~596). In a linked git worktree, `.git` is a FILE (a `gitdir:` pointer), so the walk matches nothing, `git_dir` stays None, and the function silently returns \u2014 the pre-commit gate is never installed. This directly undermines #74's recommended layout (board/bookkeeping on a trunk-pinned worktree).\n\n**Fix:** Replace the manual `.git`-directory walk with git itself: run `git rev-parse --git-path hooks` with `cwd=repo_search_dir`. This returns the correct hooks directory for BOTH a regular repo and a linked worktree (worktrees resolve to the common hooks dir). Resolve the returned path relative to `repo_search_dir` (git may return a relative path), `mkdir(parents=True, exist_ok=True)`, then keep the existing hook_path logic (marker check, never-clobber-foreign, write+chmod 0o755) unchanged.\n\n**Acceptance criteria:**\n1. Running `backlog init` from inside a linked git worktree installs the pre-commit hook in the resolved hooks dir (assert the hook file now exists and contains `_HOOK_MARKER`), whereas today it silently no-ops.\n2. Regular (non-worktree) repo behavior is unchanged: hook still installs at `.git/hooks/pre-commit`.\n3. Not-a-git-repo still skips silently (no error) \u2014 preserve current behavior when `git rev-parse` returns non-zero / git is absent.\n4. Never-clobber-foreign-hook and already-installed (marker present) paths still behave exactly as before.\n\n**Failure modes:** `git` missing / `git rev-parse` non-zero \u2192 treat as 'not a git repo', return silently (do not raise). Returned hooks path doesn't exist yet \u2192 create it.\n\n**Edge cases:** git returns a relative path (`.git/hooks`) vs absolute (worktree common dir) \u2014 handle both by resolving against `repo_search_dir`. Detached/bare repo \u2014 `--git-path hooks` still resolves; if not, silent skip.\n\n**Tests (blocker if missing):** (a) worktree fixture \u2014 init repo + commit, `git worktree add`, run the install pointed at the worktree dir, assert hook created with marker; (b) regression \u2014 plain repo still installs at `.git/hooks/pre-commit`; (c) non-git dir \u2192 silent skip, no file, no raise; (d) foreign existing hook not clobbered.\n",
       "links": [
         {
           "item_id": "grbi3kis",
@@ -5798,13 +5798,71 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-14T01:18:47.655522+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-14T01:18:47.813957+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-14T01:21:58.445635+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-14T01:26:38.910350+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T01:18:47.655530+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T01:18:47.813967+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "assigned",
+          "actor": "cli",
+          "at": "2026-07-14T01:18:47.972213+00:00",
+          "detail": "unassigned \u2192 backend-dev"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T01:21:58.445647+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-14T01:26:38.910355+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-13T14:17:33.331529+00:00",
-      "updated_at": "2026-07-13T14:17:33.488351+00:00"
+      "updated_at": "2026-07-14T01:26:38.910353+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     }
   ],
   "config": {
