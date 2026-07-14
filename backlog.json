@@ -1,5 +1,5 @@
 {
-  "version": 881,
+  "version": 889,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -5863,6 +5863,108 @@
       "reviewer_history": [
         "reviewer"
       ]
+    },
+    {
+      "id": "dlwxl2i9",
+      "title": "backlog init: skip-worktree backlog.json in feature checkouts so branches can't clobber trunk state on merge",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "reliability",
+      "tags": [
+        "backlog",
+        "git",
+        "reliability",
+        "prevention"
+      ],
+      "description": "Prevention for the recurring backlog-fork corruption. Referenced by #103 as an 'existing' item but never actually tracked. Feature branches autosave/commit backlog.json for unrelated reasons; when the branch squash-merges, its stale whole-file snapshot overwrites item state that changed on trunk meanwhile (real data loss \u2014 e.g. Story Book #1/#2 silently reverted done->in-progress via a fork artifact from a continuation branch). Detection (#74 doctor check) and commit-time validation (#102) exist, but nothing PREVENTS the clobber in the default setup \u2014 the canonical-worktree pattern (#74) is opt-in and users don't adopt it. Fix: on 'backlog init' in a non-canonical checkout, run 'git update-index --skip-worktree backlog.json' so local edits on a feature branch are never staged/committed there; deliberate history is committed only from the main-pinned canonical worktree (where skip-worktree is NOT set). Must handle the known caveat: pulls that update backlog.json fail with skip-worktree set \u2014 'backlog doctor'/'backlog init' should detect and guide un-setting it. Complements #103 (merge driver) and #74 (canonical copy); cheaper and more direct than the merge driver.",
+      "links": [
+        {
+          "item_id": "k2mtkkj7",
+          "type": "related",
+          "reason": "Both prevent branch-fork clobber; #105 (skip-worktree) is the cheaper/direct complement to #103's JSON merge driver"
+        },
+        {
+          "item_id": "grbi3kis",
+          "type": "related",
+          "reason": "#74 delivered canonical-worktree docs+detection (opt-in); #105 enforces it so the clobber can't recur in the default setup"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-14T01:56:12.398495+00:00",
+      "updated_at": "2026-07-14T01:56:21.410209+00:00"
+    },
+    {
+      "id": "dfcnk7eg",
+      "title": "backlog doctor --fix duplicates a pre-existing ## Flow Backlog section instead of detecting it",
+      "status": "backlog",
+      "priority_weight": 6,
+      "complexity": "low",
+      "category": "bug",
+      "tags": [
+        "doctor",
+        "cli",
+        "claude-md",
+        "reliability"
+      ],
+      "description": "doctor --fix only looks for its own '<!-- flow-backlog-setup -->' marker. If a project already has a richer, hand-written '## Flow Backlog' section (CLI rules, subagent workflow, gate rules) but no marker, doctor blindly appends its generic boilerplate block \u2014 producing a DUPLICATE heading with weaker guidance. Repro: run doctor --fix on a project whose CLAUDE.md has a '## Flow Backlog' heading without the marker. Fix: before appending, detect an existing '## Flow Backlog' heading; if present, either (a) skip and just insert the marker comment into/adjacent to the existing section so future runs are satisfied and stop warning, or (b) skip entirely with a note. Never append a second section. Surfaced by a real project agent. Related to doctor health-check work (#24) and SKILL.md-sync detection (#42).",
+      "links": [
+        {
+          "item_id": "j1pa09p0",
+          "type": "related",
+          "reason": "Both are backlog doctor behavior; #106 is a doctor --fix idempotency/detection bug"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-14T02:05:13.080925+00:00",
+      "updated_at": "2026-07-14T02:05:21.214776+00:00"
+    },
+    {
+      "id": "vc01dx4u",
+      "title": "Canonical backlog worktree + doctor trunk detection must support a configurable integration branch (stage), not hardcode main",
+      "status": "backlog",
+      "priority_weight": 7,
+      "complexity": "medium",
+      "category": "reliability",
+      "tags": [
+        "backlog",
+        "git",
+        "doctor",
+        "config",
+        "stage",
+        "reliability"
+      ],
+      "description": "The canonical-copy guidance (#74) and doctor both assume the trunk is 'main'. Two real failures in a stage/main project: (1) 'git worktree add ../repo-backlog main' pins canonical to main, but main's backlog.json can be STALE (integration happens on stage; main lags until back-merge) \u2014 adopting canonical-on-main regresses backlog state and re-loses recently fixed items. (2) doctor reports 'on the trunk branch (main) \u2014 no divergence risk', mis-detecting trunk for stage-based repos. Fix: make the integration/trunk branch configurable (config field or doctor flag), default main but honor stage-else-main setups; SKILL.md Multi-branch section should say 'your integration/trunk branch', not literally 'main'; doctor divergence check should compare against the configured integration branch. ALSO fold in BACKLOG_FILE durability: 'export BACKLOG_FILE=...' only lives for one shell \u2014 provide a durable mechanism (project config the CLI reads, or documented .envrc/shell-profile guidance) so a new terminal does not silently fall back to ./backlog.json. Surfaced by a real project agent. Related: #74 (canonical copy), #105 (skip-worktree), #47 (BACKLOG_FILE default).",
+      "links": [
+        {
+          "item_id": "grbi3kis",
+          "type": "related",
+          "reason": "#74 shipped canonical-copy assuming main; #107 generalizes it to a configurable stage/main integration branch"
+        },
+        {
+          "item_id": "dlwxl2i9",
+          "type": "related",
+          "reason": "Both harden the canonical/non-forking backlog setup for real multi-branch workflows"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-14T02:05:13.249887+00:00",
+      "updated_at": "2026-07-14T02:05:21.580976+00:00"
     }
   ],
   "config": {
