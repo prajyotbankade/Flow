@@ -585,23 +585,38 @@ exit 0
 def _install_precommit_hook(repo_search_dir: Path) -> None:
     """Install a pre-commit hook that validates backlog.json before commits.
 
-    Walks up from *repo_search_dir* to find the .git directory. If a
-    pre-commit hook already exists and was not installed by us, prints
-    guidance for manual wiring and returns without modifying anything.
+    Resolves the hooks directory via ``git rev-parse --git-path hooks`` so
+    that both plain repos (.git is a directory) and linked worktrees (.git is
+    a gitdir-pointer file) work correctly.  If a pre-commit hook already
+    exists and was not installed by us, prints guidance for manual wiring and
+    returns without modifying anything.
     """
-    # Find .git directory.
-    git_dir: Optional[Path] = None
-    for d in [repo_search_dir, *repo_search_dir.parents]:
-        candidate = d / ".git"
-        if candidate.is_dir():
-            git_dir = candidate
-            break
-    if git_dir is None:
-        # Not in a git repo — silently skip (not an error at init time).
+    import subprocess as _sp
+
+    # Ask git for the canonical hooks directory.  Works for normal repos AND
+    # linked worktrees (where .git is a file, not a directory).
+    try:
+        result = _sp.run(
+            ["git", "rev-parse", "--git-path", "hooks"],
+            cwd=str(repo_search_dir),
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        # git binary not found — silently skip.
         return
 
-    hooks_dir = git_dir / "hooks"
-    hooks_dir.mkdir(exist_ok=True)
+    if result.returncode != 0:
+        # Not a git repo (or some other git error) — silently skip.
+        return
+
+    hooks_raw = result.stdout.strip()
+    if not hooks_raw:
+        return
+
+    # git may return a relative path; resolve it against repo_search_dir.
+    hooks_dir = (repo_search_dir / hooks_raw).resolve()
+    hooks_dir.mkdir(parents=True, exist_ok=True)
     hook_path = hooks_dir / "pre-commit"
 
     if hook_path.exists():
