@@ -84,25 +84,39 @@ That's it. No env vars, no extra steps. `backlog` defaults to `./backlog.json` i
 
 When multiple agents work on feature branches simultaneously, `backlog.json` forks: each branch carries its own committed copy and the files silently diverge. The fix is a **single canonical copy** that lives outside feature branches entirely.
 
-**Recommended layout — pinned worktree on trunk:**
+**Recommended layout — pinned worktree on your integration/trunk branch:**
 
 ```bash
-# One-time setup: create a worktree locked to the trunk branch
-git worktree add ../<repo>-backlog main
+# One-time setup: create a worktree locked to your integration/trunk branch
+git worktree add ../<repo>-backlog <trunk>   # e.g. main, stage, develop
 
 # Point every agent at the canonical copy
 export BACKLOG_FILE=../<repo>-backlog/backlog.json
 ```
 
-- The worktree at `../<repo>-backlog` stays on `main` (or your trunk branch) forever.
+- The worktree at `../<repo>-backlog` stays on your integration/trunk branch forever.
 - All agents and the board server target that path via `BACKLOG_FILE`.
 - Code work continues on feature branches in the primary checkout as usual.
 - Backlog bookkeeping (`backlog add`, `backlog move`, `backlog edit`, etc.) always targets the canonical copy — never a feature-branch copy.
 - Deliberate history is committed from the canonical worktree: `cd ../<repo>-backlog && backlog commit`.
 
-**Rule: backlog state follows trunk, not code branches.**
+**Rule: backlog state follows your integration/trunk branch, not code branches.**
 
-If you're unsure whether your setup is canonical, run `backlog doctor` — it will warn you if the committed `backlog.json` on your current branch has diverged from trunk and tell you how to fix it.
+If you're unsure whether your setup is canonical, run `backlog doctor` — it will warn you if the committed `backlog.json` on your current branch has diverged from your integration/trunk branch and tell you how to fix it.
+
+**Configuring the integration/trunk branch:**
+
+By default, `backlog doctor` auto-detects the trunk branch via `origin/HEAD`, then falls back to `main`, then `master`. If your project's integration line is a different branch (e.g. `stage`), set it explicitly in `backlog.json`:
+
+```json
+{
+  "config": {
+    "integration_branch": "stage"
+  }
+}
+```
+
+With this set, `doctor` uses `stage` as the trunk for all divergence checks — so a canonical worktree on `stage` is correctly reported as "on the trunk branch (stage) — no divergence risk" instead of a false warning. If the named branch does not exist locally, `doctor` notes the misconfiguration and falls back to auto-detection.
 
 ---
 

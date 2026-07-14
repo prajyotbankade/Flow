@@ -9,6 +9,7 @@
     "scope": "project | global",
     "project_name": "string",
     "statuses": [Status, ...],
+    "integration_branch": "string (optional)",
     "scoring": "ScoringConfig (optional)",
     "readiness": "ReadinessConfig (optional)",
     "agents": "AgentProfiles (optional)",
@@ -23,6 +24,7 @@
 - `scope`: `"project"` stores backlog.json in the project root. `"global"` stores it at `~/.claude/backlog.json`.
 - `project_name`: Human-readable project name, displayed in the board header.
 - `statuses`: Ordered array of workflow stages. Defines the columns on the board. First status must always be `"backlog"`. If omitted, defaults to: `backlog → refined → ready → in-progress → done → discarded`.
+- `integration_branch`: Optional. The name of the integration/trunk branch for this project (e.g. `"stage"`, `"main"`, `"develop"`). When set, `backlog doctor` uses this branch as the trunk for divergence checks instead of auto-detecting via `origin/HEAD → main → master`. Set this when your project's canonical integration line is not `main` (e.g. a `stage/main` workflow). If the named branch does not exist locally, doctor notes the misconfiguration and falls back to auto-detection. When absent, auto-detection is used (existing behavior unchanged).
 - `items`: Ordered array — index 0 is highest priority.
 
 ## Status
@@ -260,7 +262,7 @@ A record of an item moving through a lane. Appended to `lane_history` every time
 - `complexity`, `priority_weight`, `category`, and `tags` are optional on all items. The scoring engine uses sensible defaults when they are absent (null complexity = medium, null priority_weight = position-derived, null category = no boost, empty tags = no skill matching).
 - `refinement_gate` is optional on all items. When absent, the sub-lead-agent readiness review does not run and the item proceeds normally. Existing items without this field are unaffected.
 - `readiness_signals` is optional on items. When absent, readiness is derived from status alone. Append signals via `POST /api/items/<id>/signal` — never write them directly unless migrating data.
-- All `config.scoring`, `config.readiness`, `config.agents`, `config.thresholds`, and `config.model_routing` sections are optional. When absent, hardcoded defaults apply. Existing backlogs work without any migration.
+- All `config.scoring`, `config.readiness`, `config.agents`, `config.thresholds`, `config.model_routing`, and `config.integration_branch` sections/fields are optional. When absent, hardcoded defaults apply. Existing backlogs work without any migration.
 - Scoring is computed at evaluation time, never persisted as a field on items. The `GET /api/scores` endpoint computes fresh scores on every request.
 - Tribunal recommendations are computed via `GET /api/recommend` — never persisted on items. Decisions are stored separately in `decisions.json`.
 
