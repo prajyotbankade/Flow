@@ -1,5 +1,5 @@
 {
-  "version": 889,
+  "version": 898,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -5902,7 +5902,7 @@
     {
       "id": "dfcnk7eg",
       "title": "backlog doctor --fix duplicates a pre-existing ## Flow Backlog section instead of detecting it",
-      "status": "backlog",
+      "status": "done",
       "priority_weight": 6,
       "complexity": "low",
       "category": "bug",
@@ -5912,7 +5912,7 @@
         "claude-md",
         "reliability"
       ],
-      "description": "doctor --fix only looks for its own '<!-- flow-backlog-setup -->' marker. If a project already has a richer, hand-written '## Flow Backlog' section (CLI rules, subagent workflow, gate rules) but no marker, doctor blindly appends its generic boilerplate block \u2014 producing a DUPLICATE heading with weaker guidance. Repro: run doctor --fix on a project whose CLAUDE.md has a '## Flow Backlog' heading without the marker. Fix: before appending, detect an existing '## Flow Backlog' heading; if present, either (a) skip and just insert the marker comment into/adjacent to the existing section so future runs are satisfied and stop warning, or (b) skip entirely with a note. Never append a second section. Surfaced by a real project agent. Related to doctor health-check work (#24) and SKILL.md-sync detection (#42).",
+      "description": "doctor --fix only looks for its own '<!-- flow-backlog-setup -->' marker (via _snippet_present). If a project already has a richer, hand-written '## Flow Backlog' section but no marker, doctor/init blindly appends its generic boilerplate (_write_snippet) \u2014 producing a DUPLICATE heading with weaker guidance. Code: backlog/cli.py _snippet_present, _write_snippet, _CLAUDE_MD_MARKER/_CLAUDE_MD_SNIPPET (~L644-656), and the init/doctor wiring at ~L514-523.\n\n## Spec\nAcceptance criteria:\n- When CLAUDE.md contains a '## Flow Backlog' heading but NOT the marker, doctor --fix (and init) must NOT append a second block. Instead insert the marker comment(s) so the section is recognized on future runs (add '<!-- flow-backlog-setup -->' above the existing heading and '<!-- end flow-backlog-setup -->' after the section), OR skip with a clear note. Preserve the user's existing content verbatim.\n- When neither heading nor marker exists: current behavior (append snippet) unchanged.\n- When the marker already exists: no-op.\n- doctor stops emitting the 'missing Flow setup' warning once the marker is present.\n\nFailure modes:\n- Multiple '## Flow Backlog' headings: act on the first; never duplicate.\n- CLAUDE.md unreadable/permission error: fail gracefully, do not crash.\n\nEdge cases: heading with trailing whitespace or different case; marker present but heading missing; empty CLAUDE.md.\n\nTests: CLI/unit coverage for (a) existing-heading-no-marker -> marker inserted, no duplicate; (b) no-heading -> appended as before; (c) marker present -> no-op. Missing tests block review.",
       "links": [
         {
           "item_id": "j1pa09p0",
@@ -5921,13 +5921,65 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-14T02:11:29.670669+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-14T02:11:29.842515+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-14T02:16:21.224695+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-14T02:17:54.979649+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T02:11:29.670678+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T02:11:29.842525+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T02:16:21.224703+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-14T02:17:54.979654+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-14T02:05:13.080925+00:00",
-      "updated_at": "2026-07-14T02:05:21.214776+00:00"
+      "updated_at": "2026-07-14T02:17:54.979652+00:00",
+      "assigned_to": "implementer",
+      "refinement_gate": "simple",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "vc01dx4u",
@@ -5965,6 +6017,65 @@
       "skip_count": 0,
       "created_at": "2026-07-14T02:05:13.249887+00:00",
       "updated_at": "2026-07-14T02:05:21.580976+00:00"
+    },
+    {
+      "id": "w6o1t5jl",
+      "title": "_wrap_existing_heading: section boundary matches ### subheadings, misplacing the close-marker",
+      "status": "backlog",
+      "priority_weight": 4,
+      "complexity": "low",
+      "category": "bug",
+      "tags": [
+        "doctor",
+        "cli",
+        "claude-md"
+      ],
+      "description": "Follow-up from #106 review (non-blocking). In backlog/cli.py _wrap_existing_heading, the section-end scan uses lines[i].startswith('##'), which also matches ### / #### subheadings. If an existing '## Flow Backlog' section contains an h3+ subheading, the '<!-- end flow-backlog-setup -->' close-marker is inserted before that subheading, leaving part of the section outside the wrapped region. Content is preserved and the marker is present (the #106 primary bug is fixed), so this is non-blocking \u2014 but the wrap boundary is wrong for sections with subheadings. Fix: bound only on a same-level H2 heading, e.g. a regex like ^##\\s+\\S (exactly two hashes) rather than startswith('##'). Add a test with an h3 subheading inside the Flow Backlog section.",
+      "links": [
+        {
+          "item_id": "dfcnk7eg",
+          "type": "follow-up",
+          "reason": "h3 boundary edge case found in #106 review"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-14T02:19:50.836495+00:00",
+      "updated_at": "2026-07-14T02:19:51.548091+00:00"
+    },
+    {
+      "id": "ua73n8av",
+      "title": "handoff reviewer prints .md artifact path but backlog ingest requires JSON",
+      "status": "backlog",
+      "priority_weight": 5,
+      "complexity": "low",
+      "category": "bug",
+      "tags": [
+        "handoff",
+        "ingest",
+        "cli",
+        "dx"
+      ],
+      "description": "Discovered while running the #106 review gate. 'backlog handoff reviewer --item N --review' (inside Claude Code) prints: 'write the artifact to handoff_results/review_<item_id>_<timestamp>.md, then run: backlog ingest <result_file>'. But 'backlog ingest' rejects markdown: 'Result file is not valid JSON'. The JSON schema (item_id/verdict/summary/issues[]) is what ingest actually parses (per SKILL.md Code Review Protocol). Fix: make the printed handoff prompt instruct a .json artifact in the documented schema (not .md), OR make ingest accept the .md review format. Align the printed prompt, SKILL.md, and ingest so the gate doesn't fail on first try.",
+      "links": [
+        {
+          "item_id": "dfcnk7eg",
+          "type": "discovered-during",
+          "reason": "ingest format mismatch hit while closing #106 review gate"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-14T02:19:50.999884+00:00",
+      "updated_at": "2026-07-14T02:19:51.704432+00:00"
     }
   ],
   "config": {
