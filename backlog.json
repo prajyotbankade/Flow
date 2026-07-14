@@ -1,5 +1,5 @@
 {
-  "version": 898,
+  "version": 899,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -5996,7 +5996,7 @@
         "stage",
         "reliability"
       ],
-      "description": "The canonical-copy guidance (#74) and doctor both assume the trunk is 'main'. Two real failures in a stage/main project: (1) 'git worktree add ../repo-backlog main' pins canonical to main, but main's backlog.json can be STALE (integration happens on stage; main lags until back-merge) \u2014 adopting canonical-on-main regresses backlog state and re-loses recently fixed items. (2) doctor reports 'on the trunk branch (main) \u2014 no divergence risk', mis-detecting trunk for stage-based repos. Fix: make the integration/trunk branch configurable (config field or doctor flag), default main but honor stage-else-main setups; SKILL.md Multi-branch section should say 'your integration/trunk branch', not literally 'main'; doctor divergence check should compare against the configured integration branch. ALSO fold in BACKLOG_FILE durability: 'export BACKLOG_FILE=...' only lives for one shell \u2014 provide a durable mechanism (project config the CLI reads, or documented .envrc/shell-profile guidance) so a new terminal does not silently fall back to ./backlog.json. Surfaced by a real project agent. Related: #74 (canonical copy), #105 (skip-worktree), #47 (BACKLOG_FILE default).",
+      "description": "The canonical-copy guidance (#74) and doctor both assume the trunk is 'main'. Two real failures in a stage/main project: (1) 'git worktree add ../repo-backlog main' pins canonical to main, but main's backlog.json can be STALE (integration happens on stage; main lags until back-merge) \u2014 adopting canonical-on-main regresses backlog state and re-loses recently fixed items. (2) doctor reports 'on the trunk branch (main) \u2014 no divergence risk', mis-detecting trunk for stage-based repos. Fix: make the integration/trunk branch configurable (config field or doctor flag), default main but honor stage-else-main setups; SKILL.md Multi-branch section should say 'your integration/trunk branch', not literally 'main'; doctor divergence check should compare against the configured integration branch. ALSO fold in BACKLOG_FILE durability: 'export BACKLOG_FILE=...' only lives for one shell \u2014 provide a durable mechanism so a new terminal does not silently fall back to ./backlog.json. Surfaced by a real project agent. Related: #74 (canonical copy), #105 (skip-worktree), #47 (BACKLOG_FILE default).\n\n## Proven approach (validated in Story Book, 2026-06)\nA real stage/main project closed the fork vector this way \u2014 use it as the reference implementation, not the .envrc sketch above:\n- Canonical worktree tracks the INTEGRATION line (stage), not main: 'git worktree add ../<repo>-backlog stage'. Confirms the 'backlog follows trunk' rule must resolve trunk = the integration branch (stage-else-main), which is what part (1) is about.\n- Durable BACKLOG_FILE via '.claude/settings.local.json' env block (NOT ~/.zshrc): project-scoped, loads at Claude/agent startup, does not leak into other projects. This is the best durability mechanism \u2014 better than .envrc for the agent workflow. Doctor/init could offer to write this.\n- The machine-specific canonical path is git-excluded via '.git/info/exclude' (shared across worktrees) so it is never committed.\n- Explicitly do NOT add a global ~/.zshrc export \u2014 it would point every other project's backlog at this one file.\nAcceptance criteria should include: doctor detects a stage-tracked canonical worktree as valid (no false 'diverges from main' warning when stage is the configured trunk), and 'backlog init'/'doctor --fix' can offer to write the BACKLOG_FILE env into .claude/settings.local.json.",
       "links": [
         {
           "item_id": "grbi3kis",
@@ -6016,7 +6016,7 @@
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-14T02:05:13.249887+00:00",
-      "updated_at": "2026-07-14T02:05:21.580976+00:00"
+      "updated_at": "2026-07-14T02:27:58.289270+00:00"
     },
     {
       "id": "w6o1t5jl",
