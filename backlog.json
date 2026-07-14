@@ -1,5 +1,5 @@
 {
-  "version": 899,
+  "version": 903,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -5984,7 +5984,7 @@
     {
       "id": "vc01dx4u",
       "title": "Canonical backlog worktree + doctor trunk detection must support a configurable integration branch (stage), not hardcode main",
-      "status": "backlog",
+      "status": "in-progress",
       "priority_weight": 7,
       "complexity": "medium",
       "category": "reliability",
@@ -5996,7 +5996,7 @@
         "stage",
         "reliability"
       ],
-      "description": "The canonical-copy guidance (#74) and doctor both assume the trunk is 'main'. Two real failures in a stage/main project: (1) 'git worktree add ../repo-backlog main' pins canonical to main, but main's backlog.json can be STALE (integration happens on stage; main lags until back-merge) \u2014 adopting canonical-on-main regresses backlog state and re-loses recently fixed items. (2) doctor reports 'on the trunk branch (main) \u2014 no divergence risk', mis-detecting trunk for stage-based repos. Fix: make the integration/trunk branch configurable (config field or doctor flag), default main but honor stage-else-main setups; SKILL.md Multi-branch section should say 'your integration/trunk branch', not literally 'main'; doctor divergence check should compare against the configured integration branch. ALSO fold in BACKLOG_FILE durability: 'export BACKLOG_FILE=...' only lives for one shell \u2014 provide a durable mechanism so a new terminal does not silently fall back to ./backlog.json. Surfaced by a real project agent. Related: #74 (canonical copy), #105 (skip-worktree), #47 (BACKLOG_FILE default).\n\n## Proven approach (validated in Story Book, 2026-06)\nA real stage/main project closed the fork vector this way \u2014 use it as the reference implementation, not the .envrc sketch above:\n- Canonical worktree tracks the INTEGRATION line (stage), not main: 'git worktree add ../<repo>-backlog stage'. Confirms the 'backlog follows trunk' rule must resolve trunk = the integration branch (stage-else-main), which is what part (1) is about.\n- Durable BACKLOG_FILE via '.claude/settings.local.json' env block (NOT ~/.zshrc): project-scoped, loads at Claude/agent startup, does not leak into other projects. This is the best durability mechanism \u2014 better than .envrc for the agent workflow. Doctor/init could offer to write this.\n- The machine-specific canonical path is git-excluded via '.git/info/exclude' (shared across worktrees) so it is never committed.\n- Explicitly do NOT add a global ~/.zshrc export \u2014 it would point every other project's backlog at this one file.\nAcceptance criteria should include: doctor detects a stage-tracked canonical worktree as valid (no false 'diverges from main' warning when stage is the configured trunk), and 'backlog init'/'doctor --fix' can offer to write the BACKLOG_FILE env into .claude/settings.local.json.",
+      "description": "doctor's trunk detection hardcodes the main/master fallback (_detect_default_branch, cli.py ~L779) and _check_backlog_divergence (~L823) compares HEAD's backlog.json against it. In a stage/main project this false-flags: a canonical backlog worktree on 'stage' gets 'backlog.json on stage differs from main' even though stage IS the integration line. SKILL.md Multi-branch section also says literally 'main'. Surfaced by a real project agent (Story Book), which fixed it by tracking the canonical worktree on stage.\n\n## Spec (scoped)\nThis item = configurable integration/trunk branch + docs + tests. The 'auto-write BACKLOG_FILE into settings.local.json' convenience is SPLIT to a separate follow-up (see the new item) \u2014 do NOT implement it here.\n\nAcceptance criteria:\n- Add an optional 'config.integration_branch' field to backlog.json config (default null/absent). Document it in references/schema.md.\n- _detect_default_branch (or the divergence check) resolves trunk in this order: config.integration_branch if set -> existing origin/HEAD -> main -> master fallback. When integration_branch is set, it takes precedence.\n- _check_backlog_divergence compares against the resolved trunk. When the backlog/worktree is ON the configured integration branch (e.g. stage), doctor reports 'on the trunk branch (stage) \u2014 no divergence risk' \u2014 NO false divergence warning.\n- When integration_branch is unset: behavior is byte-for-byte unchanged (default projects unaffected).\n- SKILL.md 'Multi-branch / Multi-agent Setup' section: replace literal 'main' with 'your integration/trunk branch', show the 'git worktree add ../<repo>-backlog <trunk>' form, and document config.integration_branch. schema.md updated too.\n\nFailure modes:\n- config.integration_branch names a branch that does not exist -> doctor degrades gracefully (note it in output, do not crash; fall back to auto-detection with a warning).\n- Malformed config -> existing config-loading behavior (no new crash).\n\nEdge cases: integration_branch set but HEAD is on a different branch (normal divergence comparison against it); repo has no remotes; detached HEAD (existing skip path preserved).\n\nTests: add coverage for (a) integration_branch=stage + on stage -> no divergence warning; (b) integration_branch unset -> current behavior unchanged; (c) integration_branch names missing branch -> graceful degrade. Missing tests block review.",
       "links": [
         {
           "item_id": "grbi3kis",
@@ -6010,13 +6010,39 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-14T02:31:36.571741+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-14T02:31:36.735201+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T02:31:36.571750+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-14T02:31:36.735211+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-14T02:05:13.249887+00:00",
-      "updated_at": "2026-07-14T02:27:58.289270+00:00"
+      "updated_at": "2026-07-14T02:31:36.735209+00:00",
+      "assigned_to": "implementer",
+      "refinement_gate": "simple"
     },
     {
       "id": "w6o1t5jl",
@@ -6076,6 +6102,30 @@
       "skip_count": 0,
       "created_at": "2026-07-14T02:19:50.999884+00:00",
       "updated_at": "2026-07-14T02:19:51.704432+00:00"
+    },
+    {
+      "id": "aop0q3ty",
+      "title": "backlog init/doctor --fix: offer to write BACKLOG_FILE into .claude/settings.local.json",
+      "status": "backlog",
+      "priority_weight": 5,
+      "complexity": "medium",
+      "category": "enhancement",
+      "tags": [
+        "backlog",
+        "config",
+        "dx",
+        "doctor"
+      ],
+      "description": "Split from #107 to keep that PR bounded. The proven durable-BACKLOG_FILE mechanism (validated in Story Book) is a project-scoped env block in .claude/settings.local.json (loads at Claude/agent startup, no cross-project leak), with the machine-specific canonical path git-excluded via .git/info/exclude. Feature: 'backlog init' (and 'doctor --fix') detects a canonical worktree / non-default BACKLOG_FILE and OFFERS to write the env into .claude/settings.local.json (create-or-merge the JSON, never clobber existing keys), plus add the path to .git/info/exclude. Must be opt-in/idempotent. Related: #107 (configurable trunk), #74 (canonical copy).",
+      "links": [],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-14T02:31:36.219483+00:00",
+      "updated_at": "2026-07-14T02:31:36.219483+00:00"
     }
   ],
   "config": {
