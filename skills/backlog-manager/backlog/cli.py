@@ -11,6 +11,7 @@ Exit codes:
 
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -514,13 +515,20 @@ def init_cmd(
     # Auto-wire CLAUDE.md so agents use the backlog without extra setup steps
     cwd = Path.cwd()
     claude_md = _find_claude_md(cwd)
-    if not (claude_md and _snippet_present(claude_md)):
-        target = claude_md or (cwd / "CLAUDE.md")
-        _write_snippet(target)
+    target = claude_md or (cwd / "CLAUDE.md")
+    try:
+        action = _ensure_snippet(target)
+    except OSError as exc:
+        console.print(f"[yellow]⚠[/yellow] Could not update {target.name}: {exc}")
+        action = "error"
+    if action == "noop":
+        console.print(f"[green]✓[/green] CLAUDE.md already configured")
+    elif action == "wrapped":
+        console.print(f"[green]✓[/green] {target.name} already has a Flow Backlog section — added markers so it's recognised on future runs")
+        console.print(f"[dim]  git add {target.name} && git commit -m 'chore: add flow backlog markers'[/dim]")
+    elif action == "appended":
         console.print(f"[green]✓[/green] Updated {target.name} — agents will use the backlog automatically")
         console.print(f"[dim]  git add {target.name} && git commit -m 'chore: add flow backlog setup'[/dim]")
-    else:
-        console.print(f"[green]✓[/green] CLAUDE.md already configured")
 
     # Install pre-commit hook (opt-in integrity gate for staged backlog.json).
     _install_precommit_hook(Path(store.file_path).resolve().parent)
@@ -673,11 +681,96 @@ def _find_claude_md(cwd: Path) -> Optional[Path]:
     return candidate if candidate.exists() else None
 
 
+_CLAUDE_MD_HEADING_RE = re.compile(r"^##\s+flow\s+backlog\s*$", re.IGNORECASE | re.MULTILINE)
+_CLAUDE_MD_END_MARKER = "<!-- end flow-backlog-setup -->"
+
+
 def _snippet_present(claude_md: Path) -> bool:
-    return _CLAUDE_MD_MARKER in claude_md.read_text(encoding="utf-8")
+    try:
+        return _CLAUDE_MD_MARKER in claude_md.read_text(encoding="utf-8")
+    except OSError:
+        return False
+
+
+def _heading_present(text: str) -> bool:
+    """Return True if text contains a '## Flow Backlog' heading (any case/spacing)."""
+    return bool(_CLAUDE_MD_HEADING_RE.search(text))
+
+
+def _wrap_existing_heading(claude_md: Path) -> None:
+    """Insert marker comments around an existing '## Flow Backlog' section.
+
+    Finds the first matching heading line, inserts the open-marker on the line
+    immediately above it, then inserts the close-marker after the section body
+    (i.e. just before the next '##' heading or at EOF).  The user's existing
+    content is preserved verbatim.
+    """
+    text = claude_md.read_text(encoding="utf-8")
+    lines = text.splitlines(keepends=True)
+
+    # Find the index of the first matching heading line.
+    heading_idx: Optional[int] = None
+    for i, line in enumerate(lines):
+        if _CLAUDE_MD_HEADING_RE.match(line.rstrip("\r\n")):
+            heading_idx = i
+            break
+
+    if heading_idx is None:
+        return  # nothing to do (caller should have checked)
+
+    # Find where the section ends: the next '##' heading or EOF.
+    end_idx = len(lines)
+    for i in range(heading_idx + 1, len(lines)):
+        if lines[i].startswith("##"):
+            end_idx = i
+            break
+
+    # Build the new file content.
+    before = lines[:heading_idx]
+    section = lines[heading_idx:end_idx]
+    after = lines[end_idx:]
+
+    # Ensure the section body ends with a newline before appending the close-marker.
+    if section and not section[-1].endswith("\n"):
+        section[-1] += "\n"
+
+    new_lines = (
+        before
+        + [_CLAUDE_MD_MARKER + "\n"]
+        + section
+        + [_CLAUDE_MD_END_MARKER + "\n"]
+        + after
+    )
+    claude_md.write_text("".join(new_lines), encoding="utf-8")
+
+
+def _ensure_snippet(claude_md: Path) -> str:
+    """Ensure CLAUDE.md has the flow-backlog-setup marker.
+
+    Returns a human-readable description of what was done:
+      - 'noop'    — marker already present
+      - 'wrapped' — existing '## Flow Backlog' heading wrapped with markers
+      - 'appended' — full snippet appended (no heading existed)
+
+    Raises OSError on read/write failure (caller handles gracefully).
+    """
+    existing = claude_md.read_text(encoding="utf-8") if claude_md.exists() else ""
+
+    if _CLAUDE_MD_MARKER in existing:
+        return "noop"
+
+    if _heading_present(existing):
+        _wrap_existing_heading(claude_md)
+        return "wrapped"
+
+    # No heading, no marker — append the full snippet.
+    separator = "\n" if existing and not existing.endswith("\n") else ""
+    claude_md.write_text(existing + separator + "\n" + _CLAUDE_MD_SNIPPET, encoding="utf-8")
+    return "appended"
 
 
 def _write_snippet(claude_md: Path) -> None:
+    """Append the full snippet.  Legacy entry-point; new code should use _ensure_snippet."""
     existing = claude_md.read_text(encoding="utf-8") if claude_md.exists() else ""
     separator = "\n" if existing and not existing.endswith("\n") else ""
     claude_md.write_text(existing + separator + "\n" + _CLAUDE_MD_SNIPPET, encoding="utf-8")
@@ -883,8 +976,19 @@ def doctor(
     else:
         if fix:
             target = claude_md or (cwd / "CLAUDE.md")
-            _write_snippet(target)
-            ok.append(f"CLAUDE.md updated — Flow setup written to {target.name}")
+            try:
+                action = _ensure_snippet(target)
+            except OSError as exc:
+                issues.append(f"Could not update {target.name}: {exc}")
+                action = "error"
+            if action == "wrapped":
+                ok.append(
+                    f"CLAUDE.md already has a Flow Backlog section — added markers so it's recognised on future runs"
+                )
+            elif action == "appended":
+                ok.append(f"CLAUDE.md updated — Flow setup written to {target.name}")
+            elif action == "noop":
+                ok.append("CLAUDE.md has Flow setup — agents will use the backlog automatically")
         else:
             issues.append(
                 "CLAUDE.md missing Flow setup — agents won't know to use the backlog. "
