@@ -359,3 +359,91 @@ def test_precommit_hook_allows_valid_json(tmp_path):
     _git(tmp_path, "add", "backlog.json")
     result = _git(tmp_path, "commit", "-m", "valid commit")
     assert result.returncode == 0, result.stderr
+
+
+# ── Worktree hook-install fix (#104) ──────────────────────────────────────────
+
+@pytest.fixture
+def git_repo_with_worktree(tmp_path):
+    """Main repo with one initial commit plus a linked worktree."""
+    main = tmp_path / "main"
+    main.mkdir()
+    _git(main, "init")
+    _git(main, "config", "user.email", "test@example.com")
+    _git(main, "config", "user.name", "Test User")
+    # Need at least one commit so 'git worktree add' can create a branch.
+    (main / "README").write_text("init")
+    _git(main, "add", "README")
+    _git(main, "commit", "-m", "initial")
+
+    worktree = tmp_path / "wt"
+    _git(main, "worktree", "add", str(worktree), "-b", "wt-branch")
+    return main, worktree
+
+
+def test_worktree_installs_hook(git_repo_with_worktree):
+    """(a) backlog init from inside a linked worktree must install the hook."""
+    main, worktree = git_repo_with_worktree
+
+    result = runner.invoke(app, ["init", "--file", str(worktree / "backlog.json")])
+
+    # The hook must be written into the *common* hooks dir (the main repo's
+    # .git/hooks), which is what 'git rev-parse --git-path hooks' resolves to
+    # for a linked worktree.
+    hook = main / ".git" / "hooks" / "pre-commit"
+    assert hook.exists(), (
+        f"pre-commit hook not created in worktree scenario; "
+        f"init output:\n{result.output}"
+    )
+    assert _HOOK_MARKER in hook.read_text()
+    assert os.access(hook, os.X_OK)
+
+
+def test_plain_repo_still_installs_hook(tmp_path):
+    """(b) Regression: a non-worktree repo still installs at .git/hooks/pre-commit."""
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test User")
+
+    result = runner.invoke(app, ["init", "--file", str(tmp_path / "backlog.json")])
+
+    hook = tmp_path / ".git" / "hooks" / "pre-commit"
+    assert hook.exists(), f"pre-commit hook not created; init output:\n{result.output}"
+    assert _HOOK_MARKER in hook.read_text()
+    assert os.access(hook, os.X_OK)
+
+
+def test_non_git_dir_silent_skip(tmp_path):
+    """(c) Non-git directory: no hook created, no exception raised."""
+    non_git = tmp_path / "not_a_repo"
+    non_git.mkdir()
+
+    result = runner.invoke(app, ["init", "--file", str(non_git / "backlog.json")])
+
+    # Must not raise and must not create any pre-commit hook anywhere.
+    assert result.exit_code == 0, result.output
+    assert not (non_git / ".git").exists()
+    # Confirm no hook path was accidentally created.
+    hooks_candidates = list(non_git.rglob("pre-commit"))
+    assert hooks_candidates == []
+
+
+def test_worktree_foreign_hook_not_clobbered(git_repo_with_worktree):
+    """(d) Foreign hook in the common hooks dir must never be clobbered."""
+    main, worktree = git_repo_with_worktree
+
+    # Pre-install a foreign hook in the main repo's hooks dir.
+    hooks_dir = main / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    original_content = "#!/bin/sh\n# foreign hook\nexit 0\n"
+    hook.write_text(original_content)
+    hook.chmod(0o755)
+
+    # Run init from the worktree directory.
+    result = runner.invoke(app, ["init", "--file", str(worktree / "backlog.json")])
+
+    # Content must be unchanged.
+    assert hook.read_text() == original_content, "Foreign hook was clobbered!"
+    # Init must have printed guidance.
+    assert "already exists" in result.output or "manually" in result.output.lower()
