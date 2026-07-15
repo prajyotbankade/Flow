@@ -4041,7 +4041,24 @@
       const svgH = Math.max(totalH, 200);
 
       const isFirstRender = !_graphFitted;
-      _graphZoom = { scale: 1, tx: 0, ty: 0, dragging: false, hasDragged: false, startX: 0, startY: 0, startTx: 0, startTy: 0 };
+      // Preserve the current viewport transform across poll re-renders.
+      // Only reset to defaults on the very first render (or after an explicit
+      // switch-away that resets _graphFitted to false).
+      // Never clobber an in-progress user drag — keep existing tx/ty/scale.
+      if (isFirstRender) {
+        _graphZoom = { scale: 1, tx: 0, ty: 0, dragging: false, hasDragged: false, startX: 0, startY: 0, startTx: 0, startTy: 0 };
+      } else {
+        // Rebuild only the interaction bookkeeping; leave scale/tx/ty intact.
+        _graphZoom.hasDragged = false;
+        _graphZoom.startX = 0; _graphZoom.startY = 0;
+        _graphZoom.startTx = _graphZoom.tx; _graphZoom.startTy = _graphZoom.ty;
+        // If a drag was in progress when the poll landed, cancel it cleanly.
+        if (_graphZoom.dragging) {
+          _graphZoom.dragging = false;
+          const vpDrag = document.getElementById('graph-viewport');
+          if (vpDrag) vpDrag.classList.remove('dragging');
+        }
+      }
 
       content.innerHTML = `
         <div class="graph-header">
@@ -4077,7 +4094,18 @@
           </div>
         </div>`;
 
-      requestAnimationFrame(() => { if (isFirstRender) { graphZoomFit(); _graphFitted = true; } initGraphInteraction(); });
+      requestAnimationFrame(() => {
+        if (isFirstRender) {
+          // First time in this view: compute a fit-to-screen transform.
+          graphZoomFit();
+          _graphFitted = true;
+        } else {
+          // Poll re-render: re-apply the preserved transform so the canvas
+          // returns to exactly where the user left it after innerHTML rebuild.
+          setGraphTransform();
+        }
+        initGraphInteraction();
+      });
     }
 
     // ── Alerts ──
