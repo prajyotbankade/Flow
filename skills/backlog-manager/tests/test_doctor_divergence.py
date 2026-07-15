@@ -264,3 +264,155 @@ class TestGracefulDegradation:
         )
         # Must not report a divergence warning (trunk wasn't found)
         assert "differs from" not in output, f"Got spurious divergence warning:\n{output}"
+
+
+# ---------------------------------------------------------------------------
+# Test: configurable integration_branch (backlog item #107)
+# ---------------------------------------------------------------------------
+
+
+def _make_backlog_with_integration_branch(branch_name: str) -> dict:
+    """Return a minimal backlog.json with config.integration_branch set."""
+    return {
+        "version": 1,
+        "config": {
+            "scope": "project",
+            "project_name": "test",
+            "integration_branch": branch_name,
+        },
+        "items": [],
+    }
+
+
+class TestConfigurableIntegrationBranch:
+    """Tests for config.integration_branch in backlog doctor (item #107)."""
+
+    def test_on_integration_branch_no_divergence_warning(self, tmp_path):
+        """When HEAD is ON the configured integration_branch, no divergence warning."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        # Init repo with 'stage' as the initial branch
+        subprocess.run(["git", "init", "-b", "stage"], cwd=repo, check=True, capture_output=True)
+        _git("config", "user.email", "test@example.com", cwd=repo)
+        _git("config", "user.name", "Test User", cwd=repo)
+
+        backlog_data = _make_backlog_with_integration_branch("stage")
+        backlog_file = repo / "backlog.json"
+        backlog_file.write_text(json.dumps(backlog_data, indent=2))
+        _git("add", "backlog.json", cwd=repo)
+        _git("commit", "-m", "initial backlog on stage", cwd=repo)
+
+        # HEAD is on 'stage' (the configured integration_branch)
+        result = runner.invoke(
+            app,
+            ["doctor", "--file", str(backlog_file)],
+            catch_exceptions=False,
+        )
+
+        output = result.output
+        # Must NOT emit any divergence warning
+        assert "differs from" not in output, (
+            f"False divergence warning: HEAD is ON integration_branch 'stage':\n{output}"
+        )
+        assert "forked" not in output, (
+            f"False forked warning on integration branch:\n{output}"
+        )
+        # Must mention trunk / no divergence
+        assert "trunk" in output.lower() or "no divergence" in output.lower(), (
+            f"Expected canonical/no-divergence note in output:\n{output}"
+        )
+        # Should mention 'stage' somewhere (the branch name)
+        assert "stage" in output, (
+            f"Expected branch name 'stage' in output:\n{output}"
+        )
+
+    def test_integration_branch_takes_precedence_over_autodetect(self, tmp_path):
+        """config.integration_branch takes precedence over origin/HEAD auto-detection."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+
+        # Init with 'main' as default branch (would be auto-detected as trunk)
+        _git("init", "-b", "main", cwd=tmp_path / "repo")
+        _git("config", "user.email", "test@example.com", cwd=repo)
+        _git("config", "user.name", "Test User", cwd=repo)
+
+        # Backlog config says integration_branch = 'stage'
+        backlog_data = _make_backlog_with_integration_branch("stage")
+        backlog_file = repo / "backlog.json"
+        backlog_file.write_text(json.dumps(backlog_data, indent=2))
+        _git("add", "backlog.json", cwd=repo)
+        _git("commit", "-m", "initial", cwd=repo)
+
+        # Create and switch to 'stage' branch (this is the integration branch per config)
+        _git("checkout", "-b", "stage", cwd=repo)
+        # backlog.json is the same content on stage
+        _git("commit", "--allow-empty", "-m", "empty stage commit", cwd=repo)
+
+        result = runner.invoke(
+            app,
+            ["doctor", "--file", str(backlog_file)],
+            catch_exceptions=False,
+        )
+
+        output = result.output
+        # Must NOT emit divergence warning (we are on the configured integration branch)
+        assert "differs from" not in output, (
+            f"False positive: should not warn when on configured integration branch:\n{output}"
+        )
+
+    def test_unset_integration_branch_unchanged_behavior(self, tmp_path):
+        """When integration_branch is absent, behavior is unchanged (main detection works)."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _init_repo(repo)  # uses _MINIMAL_BACKLOG (no integration_branch)
+
+        # Branch off and commit diverged backlog
+        _git("checkout", "-b", "feature/x", cwd=repo)
+        (repo / "backlog.json").write_text(json.dumps(_DIVERGED_BACKLOG, indent=2))
+        _git("add", "backlog.json", cwd=repo)
+        _git("commit", "-m", "diverged", cwd=repo)
+
+        result = runner.invoke(
+            app,
+            ["doctor", "--file", str(repo / "backlog.json")],
+            catch_exceptions=False,
+        )
+
+        # Same divergence warning as before — behavior unchanged
+        output = result.output
+        assert result.exit_code == 1, f"Expected exit 1:\n{output}"
+        assert "differ" in output.lower() or "diverge" in output.lower(), (
+            f"Expected divergence warning with no integration_branch set:\n{output}"
+        )
+
+    def test_missing_integration_branch_graceful_degrade(self, tmp_path):
+        """When config.integration_branch names a non-existent branch, degrade gracefully."""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        _git("init", "-b", "main", cwd=repo)
+        _git("config", "user.email", "test@example.com", cwd=repo)
+        _git("config", "user.name", "Test User", cwd=repo)
+
+        # Set integration_branch to a branch that does NOT exist
+        backlog_data = _make_backlog_with_integration_branch("nonexistent-branch")
+        backlog_file = repo / "backlog.json"
+        backlog_file.write_text(json.dumps(backlog_data, indent=2))
+        _git("add", "backlog.json", cwd=repo)
+        _git("commit", "-m", "initial", cwd=repo)
+
+        result = runner.invoke(
+            app,
+            ["doctor", "--file", str(backlog_file)],
+            catch_exceptions=False,
+        )
+
+        # Must not raise an unhandled exception
+        if result.exception is not None and not isinstance(result.exception, (SystemExit, int)):
+            raise AssertionError(f"Unexpected exception: {result.exception}") from result.exception
+
+        output = result.output
+        # Must mention the missing branch or note degradation (not crash)
+        assert "nonexistent-branch" in output or "not found" in output.lower() or "skip" in output.lower() or "warn" in output.lower() or "does not exist" in output.lower(), (
+            f"Expected graceful-degrade note for missing branch in output:\n{output}"
+        )

@@ -776,18 +776,40 @@ def _write_snippet(claude_md: Path) -> None:
     claude_md.write_text(existing + separator + "\n" + _CLAUDE_MD_SNIPPET, encoding="utf-8")
 
 
-def _detect_default_branch(git_cwd: Optional[Path] = None) -> Optional[str]:
+def _detect_default_branch(
+    git_cwd: Optional[Path] = None,
+    integration_branch: Optional[str] = None,
+) -> Optional[str]:
     """Return the default/trunk branch name without mutating git state.
 
-    Fallback chain:
+    Resolution precedence:
+      0. ``integration_branch`` argument, if set and the branch exists locally
       1. git symbolic-ref refs/remotes/origin/HEAD  (set after 'git remote set-head')
       2. git rev-parse --abbrev-ref origin/HEAD      (same but shorter form)
       3. Literal 'main' if a 'main' ref exists
       4. Literal 'master' if a 'master' ref exists
+
+    When ``integration_branch`` is set but does not exist in the repository,
+    the caller receives ``None`` from this function with a ``_MISSING_BRANCH``
+    sentinel so it can emit a warning and fall back gracefully.
     """
     run_kw: dict = dict(capture_output=True, text=True, timeout=5)
     if git_cwd is not None:
         run_kw["cwd"] = git_cwd
+
+    # Step 0: honour explicit integration_branch if it resolves to a local ref
+    if integration_branch:
+        try:
+            verify = subprocess.run(
+                ["git", "rev-parse", "--verify", integration_branch],
+                **run_kw,
+            )
+            if verify.returncode == 0:
+                return integration_branch
+        except Exception:
+            pass
+        # Branch was named but does not exist — signal the caller via sentinel
+        return _MISSING_BRANCH
 
     for cmd in [
         ["git", "symbolic-ref", "--short", "refs/remotes/origin/HEAD"],
@@ -818,6 +840,11 @@ def _detect_default_branch(git_cwd: Optional[Path] = None) -> Optional[str]:
             pass
 
     return None
+
+
+# Sentinel returned by _detect_default_branch when config.integration_branch
+# names a branch that does not exist in the local repository.
+_MISSING_BRANCH = "__backlog_missing_branch__"
 
 
 def _check_backlog_divergence(
@@ -869,8 +896,24 @@ def _check_backlog_divergence(
             return
         current_branch = head_result.stdout.strip()
 
-        # Detect trunk
-        trunk = _detect_default_branch(git_cwd=git_cwd)
+        # Read config.integration_branch from backlog.json (optional field).
+        configured_branch: Optional[str] = None
+        try:
+            with open(backlog_path, "r", encoding="utf-8") as _bf:
+                _bd = json.load(_bf)
+            configured_branch = _bd.get("config", {}).get("integration_branch") or None
+        except Exception:
+            pass  # malformed JSON or missing file — proceed without it
+
+        # Detect trunk: config.integration_branch → origin/HEAD → main → master
+        trunk = _detect_default_branch(git_cwd=git_cwd, integration_branch=configured_branch)
+        if trunk == _MISSING_BRANCH:
+            ok.append(
+                f"config.integration_branch '{configured_branch}' does not exist in this "
+                f"repository — falling back to auto-detection"
+            )
+            trunk = _detect_default_branch(git_cwd=git_cwd)
+
         if not trunk:
             ok.append("no trunk branch found (tried origin/HEAD, main, master) — skipping divergence check")
             return
