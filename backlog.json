@@ -1,5 +1,5 @@
 {
-  "version": 909,
+  "version": 912,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -310,8 +310,8 @@
     {
       "id": "spg3mz1x",
       "title": "Graph view resets zoom/pan on background poll, same issue on the board when scroll down",
-      "description": "Every background data refresh re-renders the graph diagram and resets the viewport zoom/pan position to fit-to-screen. This makes it impossible to explore a specific area of the graph after zooming in. Should preserve viewport transform state across polls and only reset on explicit user action (e.g. switching away from graph view and back).\n\nWhen viewing long lane, the UI refresh and the user moves back to the top of the page.",
-      "status": "backlog",
+      "description": "Every background data refresh re-renders the graph diagram and resets the viewport zoom/pan to fit-to-screen, making it impossible to explore after zooming in. Should preserve viewport transform across polls and only reset on explicit user action (switching away from graph and back, or the Fit button). Reported again 2026-07-14 as graph-view behavior.\n\n## Spec (scoped)\nScope: graph viewport zoom/pan persistence. The 'long lane scrolls to top on refresh' note was addressed for the board by #53 (done) \u2014 implementer should VERIFY that still holds and only add a fix if the graph/lane still snaps to top; otherwise stay focused on the graph viewport.\n\nRoot cause: in backlog-board.html, the graph render reassigns _graphZoom = { scale: 1, tx: 0, ty: 0, ... } on EVERY render (~line 4046), and background polls re-run the render, so the transform is lost. _graphFitted tracks first-fit.\n\nAcceptance criteria:\n- After the user zooms/pans the graph, a background poll re-render must NOT change the viewport \u2014 scale, tx, ty are preserved and re-applied to the canvas.\n- First-ever render of the graph still fits-to-screen (current behavior).\n- Explicit user actions still reset/fit: the Fit button (graphZoomFit), and switching away from the graph view and back may re-fit.\n- Fix approach: on re-render, if the graph is already fitted (_graphFitted true), reuse the existing _graphZoom transform instead of resetting to scale:1; only initialize+fit when _graphFitted is false or on explicit fit. Ensure the preserved transform is applied to #graph-canvas after innerHTML rebuild.\n\nFailure modes:\n- Graph data changes (node added/removed) on poll: keep the current transform (do not snap to fit). Acceptable if positions shift slightly.\n- Zoom controls (graphZoomIn/Out/Fit) continue to work and update _graphZoom.\n\nEdge cases: first render; empty graph; rapid consecutive polls; user mid-drag when a poll lands (don't clobber an in-progress pan).\n\nVerification: no automated DOM test harness exists \u2014 verify manually (open board graph, zoom in, wait for/trigger a poll, confirm viewport unchanged; click Fit \u2192 refits; switch view away/back \u2192 refits). If a JS test setup exists under the assets/tests, add a unit test for the transform-preservation branch; otherwise document the manual steps in the PR test plan.",
+      "status": "in-progress",
       "category": "bug",
       "priority_weight": 7,
       "complexity": "low",
@@ -320,20 +320,44 @@
         "graph"
       ],
       "created_at": "2026-04-03T22:17:43.760329+00:00",
-      "updated_at": "2026-04-04T02:47:57.076Z",
+      "updated_at": "2026-07-15T03:41:53.953644+00:00",
       "lane_history": [
         {
           "lane": "backlog",
           "at": null,
           "by": "unknown"
+        },
+        {
+          "lane": "backlog",
+          "at": "2026-07-15T03:41:53.793237+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-15T03:41:53.953638+00:00",
+          "by": "user"
         }
       ],
       "gate_from": 0,
       "skip_count": 0,
       "reopen_count": 0,
-      "assigned_to": null,
+      "assigned_to": "implementer",
       "notes": "",
-      "execution_history": []
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-15T03:41:53.793246+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-15T03:41:53.953647+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        }
+      ],
+      "refinement_gate": "simple"
     },
     {
       "id": "a1b2c3d4",
