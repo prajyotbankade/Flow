@@ -1,5 +1,5 @@
 {
-  "version": 905,
+  "version": 909,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6152,6 +6152,64 @@
       "skip_count": 0,
       "created_at": "2026-07-14T02:31:36.219483+00:00",
       "updated_at": "2026-07-14T02:31:36.219483+00:00"
+    },
+    {
+      "id": "kzq97daz",
+      "title": "Graph view: nodes lack item number, and legend omits node-status colors",
+      "status": "backlog",
+      "priority_weight": 5,
+      "complexity": "low",
+      "category": "ux",
+      "tags": [
+        "board",
+        "graph",
+        "ux"
+      ],
+      "description": "Two graph-node clarity gaps in backlog-board.html (reported from the graph view). (1) NODE LABELS: the node text (~line 4033-4034) renders titleShort + status + assignee but NOT the item number \u2014 you can't tell which #N a box is. Add '#N' to the node label (e.g. prefix the title line or a small badge). (2) LEGEND: node fill/border color encodes status (statusColors ~line 3962: done=#8b5cf6 purple, in-progress=#3b82f6 blue, code-review=#ec4899 pink, backlog/default=#94a3b8 gray; critical-path=#ef4444 red border; conflict=#f59e0b amber border), but the graph legend (~line 4052) ONLY documents EDGE types (Critical path, Conflict, Blocks, Related). Add a node-status color legend so purple/blue/pink/gray are explained. Acceptance: each graph node shows its #N; legend includes a node-status color key matching statusColors. Tests: n/a (static HTML/JS) \u2014 verify by rendering the board graph.",
+      "links": [
+        {
+          "item_id": "spg3mz1x",
+          "type": "related",
+          "reason": "Same graph-view render code (backlog-board.html); node clarity vs zoom-reset"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-15T03:37:10.280134+00:00",
+      "updated_at": "2026-07-15T03:37:11.117081+00:00"
+    },
+    {
+      "id": "t0y80suy",
+      "title": "Graph view: search does not filter graph nodes (only board cards)",
+      "status": "backlog",
+      "priority_weight": 6,
+      "complexity": "medium",
+      "category": "bug",
+      "tags": [
+        "board",
+        "graph",
+        "search"
+      ],
+      "description": "Reported from the graph view. The search box drives matchesFilters() which toggles '.search-hidden' on BOARD CARD elements only (backlog-board.html ~line 3661-3664). Graph SVG nodes are rendered separately from graphData and are never affected, so typing in search does nothing while the graph view is active. Fix: when the graph view is active, apply the same search/filter predicate to graph nodes \u2014 hide/dim non-matching nodes (and ideally their edges), or filter graphData before render. Related to #54 (search '#' prefix) but distinct: this is search being entirely inert in the graph. Acceptance: with the graph open, a search query visibly narrows the graph to matching nodes. Verify by rendering the board graph and searching.",
+      "links": [
+        {
+          "item_id": "dadv9z5a",
+          "type": "related",
+          "reason": "Both are board search issues; #54 is prefix handling, this is graph nodes not filtered at all"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-15T03:37:10.450035+00:00",
+      "updated_at": "2026-07-15T03:37:10.957723+00:00"
     }
   ],
   "config": {
