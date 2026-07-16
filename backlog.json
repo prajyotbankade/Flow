@@ -1,5 +1,5 @@
 {
-  "version": 922,
+  "version": 924,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6287,7 +6287,7 @@
     {
       "id": "t0y80suy",
       "title": "Graph view: search does not filter graph nodes (only board cards)",
-      "status": "in-progress",
+      "status": "done",
       "priority_weight": 6,
       "complexity": "medium",
       "category": "bug",
@@ -6315,6 +6315,16 @@
           "lane": "ready",
           "at": "2026-07-16T02:31:20.600687+00:00",
           "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-16T02:35:18.152237+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-16T02:35:18.474473+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -6329,15 +6339,31 @@
           "actor": "user",
           "at": "2026-07-16T02:31:20.600697+00:00",
           "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-16T02:35:18.152248+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-16T02:35:18.474480+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-15T03:37:10.450035+00:00",
-      "updated_at": "2026-07-16T02:31:20.600695+00:00",
+      "updated_at": "2026-07-16T02:35:18.474478+00:00",
       "assigned_to": "implementer",
-      "refinement_gate": "simple"
+      "refinement_gate": "simple",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     }
   ],
   "config": {
