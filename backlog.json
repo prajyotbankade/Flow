@@ -1,5 +1,5 @@
 {
-  "version": 914,
+  "version": 917,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6206,7 +6206,7 @@
     {
       "id": "kzq97daz",
       "title": "Graph view: nodes lack item number, and legend omits node-status colors",
-      "status": "backlog",
+      "status": "in-progress",
       "priority_weight": 5,
       "complexity": "low",
       "category": "ux",
@@ -6215,7 +6215,7 @@
         "graph",
         "ux"
       ],
-      "description": "Two graph-node clarity gaps in backlog-board.html (reported from the graph view). (1) NODE LABELS: the node text (~line 4033-4034) renders titleShort + status + assignee but NOT the item number \u2014 you can't tell which #N a box is. Add '#N' to the node label (e.g. prefix the title line or a small badge). (2) LEGEND: node fill/border color encodes status (statusColors ~line 3962: done=#8b5cf6 purple, in-progress=#3b82f6 blue, code-review=#ec4899 pink, backlog/default=#94a3b8 gray; critical-path=#ef4444 red border; conflict=#f59e0b amber border), but the graph legend (~line 4052) ONLY documents EDGE types (Critical path, Conflict, Blocks, Related). Add a node-status color legend so purple/blue/pink/gray are explained. Acceptance: each graph node shows its #N; legend includes a node-status color key matching statusColors. Tests: n/a (static HTML/JS) \u2014 verify by rendering the board graph.",
+      "description": "Two graph-node clarity gaps in backlog-board.html, reported from the graph view.\n\n## Spec (scoped)\nScope: graph NODE display only (labels + legend). Do NOT touch zoom/pan (#6, done) or search (#112).\n\n(1) NODE LABELS \u2014 item number missing. The node text (~line 4033-4034) renders titleShort + status + assignee but NOT the item number, so you can't tell which #N a box is. Add the item number to each node (e.g. prefix the title line with '#N ' or a small badge in a corner). Use the item's display number (the '#N' shown elsewhere in the board), not the internal 8-char id.\n\n(2) LEGEND \u2014 node status colors undocumented. Node fill/border color encodes status (statusColors ~line 3962: done=#8b5cf6 purple, in-progress=#3b82f6 blue, code-review=#ec4899 pink, backlog/default=#94a3b8 gray; critical-path=#ef4444 red border; conflict=#f59e0b amber border). The graph legend (~line 4052) ONLY documents EDGE types (Critical path, Conflict, Blocks, Related). Add a node-status color key to the legend so purple/blue/pink/gray are explained. Keep it consistent with the actual statusColors map (single source of truth \u2014 ideally derive the legend from the same map rather than hardcoding a second copy).\n\nAcceptance criteria:\n- Every graph node visibly shows its item number (#N).\n- The legend includes a node-status color key matching statusColors (done/in-progress/code-review/backlog at minimum, plus the critical-path and conflict border meanings).\n- Node number and legend stay legible at default zoom; number must not overflow/clip the node box.\n- No change to edge rendering, zoom/pan, or search.\n\nFailure modes/edge cases: very long titles (number must remain visible even when title is truncated); a status not in statusColors falls back to gray and should still be covered by an 'other/backlog' legend entry; empty graph (legend still renders).\n\nVerification: no automated DOM test harness \u2014 verify manually by rendering the board graph (node numbers present; legend explains colors). If a JS test setup exists, add a small unit test for the label/legend builder; otherwise document manual steps in the PR test plan.",
       "links": [
         {
           "item_id": "spg3mz1x",
@@ -6224,13 +6224,39 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-16T02:15:21.381387+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-16T02:15:21.539006+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-16T02:15:21.381395+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-16T02:15:21.539013+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-15T03:37:10.280134+00:00",
-      "updated_at": "2026-07-15T03:37:11.117081+00:00"
+      "updated_at": "2026-07-16T02:15:21.539011+00:00",
+      "assigned_to": "implementer",
+      "refinement_gate": "simple"
     },
     {
       "id": "t0y80suy",
