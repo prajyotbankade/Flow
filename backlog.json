@@ -1,5 +1,5 @@
 {
-  "version": 917,
+  "version": 919,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6206,7 +6206,7 @@
     {
       "id": "kzq97daz",
       "title": "Graph view: nodes lack item number, and legend omits node-status colors",
-      "status": "in-progress",
+      "status": "done",
       "priority_weight": 5,
       "complexity": "low",
       "category": "ux",
@@ -6234,6 +6234,16 @@
           "lane": "ready",
           "at": "2026-07-16T02:15:21.539006+00:00",
           "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-16T02:19:32.876231+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-16T02:19:33.206926+00:00",
+          "by": "ingest"
         }
       ],
       "execution_history": [
@@ -6248,15 +6258,31 @@
           "actor": "user",
           "at": "2026-07-16T02:15:21.539013+00:00",
           "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-16T02:19:32.876244+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-16T02:19:33.206931+00:00",
+          "detail": "code-review \u2192 done (forward)"
         }
       ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-15T03:37:10.280134+00:00",
-      "updated_at": "2026-07-16T02:15:21.539011+00:00",
+      "updated_at": "2026-07-16T02:19:33.206929+00:00",
       "assigned_to": "implementer",
-      "refinement_gate": "simple"
+      "refinement_gate": "simple",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     },
     {
       "id": "t0y80suy",
