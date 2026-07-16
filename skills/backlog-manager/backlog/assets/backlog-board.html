@@ -1089,6 +1089,7 @@
     }
     .legend-item { display: flex; align-items: center; gap: 5px; }
     .legend-dot { width: 10px; height: 10px; border-radius: 50%; }
+    .legend-section-label { font-size: 10px; font-weight: 600; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.04em; display: flex; align-items: center; }
     .startable-item {
       padding: 6px 10px; background: #f0fdf4; border: 1px solid #bbf7d0;
       border-radius: 6px; font-size: 11px; color: #166534; margin-bottom: 5px;
@@ -4005,6 +4006,10 @@
         }
       });
 
+      // Build a lookup from item id → display number (#N) for graph node labels.
+      const itemPosMap = {};
+      (backlog.items || []).forEach((item, idx) => { itemPosMap[item.id] = idx + 1; });
+
       // Draw nodes
       relevant.forEach(n => {
         const pos = positions[n.id];
@@ -4018,18 +4023,30 @@
         const borderW = (isCP || isConflict) ? 2 : 1.5;
         const readinessBarColor = n.readiness >= 0.9 ? '#22c55e' : n.readiness >= 0.7 ? '#f59e0b' : '#d1d5db';
         const barW = Math.round((NW - 20) * n.readiness);
-        const titleShort = n.title.length > 20 ? n.title.slice(0, 20) + '…' : n.title;
+        // Reserve space on the right for the #N badge (≈32px) so the title never overlaps it.
+        const titleShort = n.title.length > 16 ? n.title.slice(0, 16) + '…' : n.title;
         const assignedShort = n.assigned_to ? n.assigned_to.slice(0, 14) : '';
         const cascadeLabel = n.cascade_count > 0 ? ` · ↓${n.cascade_count}` : '';
         const cpIndicator = isCP ? `<rect x="${px}" y="${py}" width="4" height="${NH}" rx="2" fill="#ef4444"/>` : '';
         const conflictIndicator = isConflict && !isCP ? `<rect x="${px}" y="${py}" width="4" height="${NH}" rx="2" fill="#f59e0b"/>` : '';
+        // Item number badge — top-right corner (replaces the plain color circle)
+        const itemNum = itemPosMap[n.id];
+        const numLabel = itemNum != null ? `#${itemNum}` : '';
+
+        // #N badge: pill in the node color at top-right, white text on colored background.
+        const badgeW = numLabel.length <= 3 ? 24 : numLabel.length <= 4 ? 30 : 36;
+        const badgeX = px + NW - badgeW - 6;
+        const badgeY = py + 4;
+        const numBadge = numLabel ? `
+            <rect x="${badgeX}" y="${badgeY}" width="${badgeW}" height="14" rx="7" fill="${nodeColor}" opacity="0.85"/>
+            <text x="${badgeX + badgeW / 2}" y="${badgeY + 10}" font-family="-apple-system,sans-serif" font-size="9" fill="#fff" font-weight="700" text-anchor="middle">${escSvg(numLabel)}</text>` : '';
 
         svgNodes += `
           <g onclick="openItemById('${escJs(n.id)}')" style="cursor:pointer;" title="${escSvg(n.title)}">
             <rect x="${px}" y="${py}" width="${NW}" height="${NH}" rx="8"
               fill="${bgColor}" stroke="${borderColor}" stroke-width="${borderW}"/>
             ${cpIndicator}${conflictIndicator}
-            <circle cx="${px + NW - 10}" cy="${py + 10}" r="5" fill="${nodeColor}" opacity="0.8"/>
+            ${numBadge}
             <text x="${px + 10}" y="${py + 19}" font-family="-apple-system,sans-serif" font-size="11.5" fill="#111827" font-weight="500">${escSvg(titleShort)}</text>
             <text x="${px + 10}" y="${py + 34}" font-family="-apple-system,sans-serif" font-size="10" fill="#9ca3af">${escSvg(n.status)}${assignedShort ? ' · ' + escSvg(assignedShort) : ''}${cascadeLabel}</text>
             <rect x="${px + 10}" y="${py + 46}" width="${NW - 20}" height="3" rx="1.5" fill="#f3f4f6"/>
@@ -4060,11 +4077,27 @@
         }
       }
 
+      // Build node-status legend items derived from statusColors (single source of truth).
+      // Display order: in-progress, code-review, ready, refined, backlog, done, discarded.
+      const statusLegendOrder = ['in-progress', 'code-review', 'ready', 'refined', 'backlog', 'done', 'discarded'];
+      const statusLegendLabels = {
+        'in-progress': 'In progress', 'code-review': 'Code review', 'ready': 'Ready',
+        'refined': 'Refined', 'backlog': 'Backlog / other', 'done': 'Done', 'discarded': 'Discarded'
+      };
+      const nodeLegendItems = statusLegendOrder
+        .filter(s => statusColors[s])
+        .map(s => `<div class="legend-item"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${statusColors[s]};vertical-align:middle;"></span> ${statusLegendLabels[s] || s}</div>`)
+        .join('');
+
       content.innerHTML = `
         <div class="graph-header">
           <div class="graph-legend">
+            <span class="legend-section-label">Node status:</span>
+            ${nodeLegendItems}
+            <span class="legend-section-label" style="margin-left:8px;">Node border:</span>
             <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fef2f2;border:2px solid #ef4444;"></span>Critical path</div>
             <div class="legend-item"><span style="display:inline-block;width:12px;height:12px;border-radius:2px;background:#fffbeb;border:2px solid #f59e0b;"></span>Conflict</div>
+            <span class="legend-section-label" style="margin-left:8px;">Edges:</span>
             <div class="legend-item"><div style="width:24px;height:2px;background:#ef4444;display:inline-block;vertical-align:middle;"></div> Blocks (critical)</div>
             <div class="legend-item"><div style="width:24px;height:2px;background:#d1d5db;display:inline-block;vertical-align:middle;"></div> Blocks</div>
             <div class="legend-item"><div style="width:24px;height:1px;border-top:1px dashed #cbd5e1;display:inline-block;vertical-align:middle;"></div> Related</div>
