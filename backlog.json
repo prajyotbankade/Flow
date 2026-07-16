@@ -1,5 +1,5 @@
 {
-  "version": 919,
+  "version": 922,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6287,7 +6287,7 @@
     {
       "id": "t0y80suy",
       "title": "Graph view: search does not filter graph nodes (only board cards)",
-      "status": "backlog",
+      "status": "in-progress",
       "priority_weight": 6,
       "complexity": "medium",
       "category": "bug",
@@ -6296,7 +6296,7 @@
         "graph",
         "search"
       ],
-      "description": "Reported from the graph view. The search box drives matchesFilters() which toggles '.search-hidden' on BOARD CARD elements only (backlog-board.html ~line 3661-3664). Graph SVG nodes are rendered separately from graphData and are never affected, so typing in search does nothing while the graph view is active. Fix: when the graph view is active, apply the same search/filter predicate to graph nodes \u2014 hide/dim non-matching nodes (and ideally their edges), or filter graphData before render. Related to #54 (search '#' prefix) but distinct: this is search being entirely inert in the graph. Acceptance: with the graph open, a search query visibly narrows the graph to matching nodes. Verify by rendering the board graph and searching.",
+      "description": "In the board's graph view, the search box does nothing \u2014 it only filters Kanban cards.\n\n## Spec (scoped)\nRoot cause: the search input drives matchesFilters(item) which toggles the '.search-hidden' class on BOARD CARD elements only (backlog-board.html ~line 3661-3664). Graph SVG nodes are rendered separately from graphData and are never consulted, so search is inert while the graph view is active.\n\nScope: make search/filters apply to the graph. Do NOT change node labels/legend (#111, done) or zoom-reset behavior (#6, done) \u2014 in fact respect #6.\n\nAcceptance criteria:\n- With the graph view active, typing a search query visibly narrows the graph to matching nodes: non-matching nodes are hidden (or clearly dimmed) and edges attached only to hidden nodes are not left dangling.\n- Reuse the existing matchesFilters(item) predicate (so search text AND the assignee filter both apply) \u2014 do not fork a second matching implementation.\n- Clearing the query restores all nodes/edges.\n- Typing in search while in graph view triggers the graph to re-filter/re-render (today it only re-toggles cards).\n- Respect #6: a search-driven re-render must NOT reset the viewport to scale:1. Either preserve the current zoom/pan, OR fit-to-the-matching-subset \u2014 but never the jarring snap-to-full-fit. Preserving viewport is the safe default.\n- Number search: consistent with card behavior and #54 (accept '#N' / bare N) \u2014 reuse matchesFilters so this comes for free.\n\nFailure modes/edge cases:\n- Query matches nothing -> empty (or near-empty) graph; acceptable, optionally show a subtle 'no matches' hint.\n- Query matches a node whose neighbors are hidden -> show the matching node; hide edges to hidden nodes (no arrows into empty space).\n- Switching kanban<->graph with an active query -> filter state stays consistent in both.\n- Critical-path/conflict highlighting still applies to the visible (matching) nodes.\n\nVerification: no automated DOM test harness \u2014 verify manually (open graph, type a query -> graph narrows; clear -> restores; assignee filter also narrows graph; zoom in then search -> viewport not reset). If a JS test setup exists, add a unit test for the graph-filter predicate wiring; otherwise document manual steps in the PR test plan.",
       "links": [
         {
           "item_id": "dadv9z5a",
@@ -6305,13 +6305,39 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-16T02:31:20.443759+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-16T02:31:20.600687+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-16T02:31:20.443768+00:00",
+          "detail": "backlog \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-16T02:31:20.600697+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-15T03:37:10.450035+00:00",
-      "updated_at": "2026-07-15T03:37:10.957723+00:00"
+      "updated_at": "2026-07-16T02:31:20.600695+00:00",
+      "assigned_to": "implementer",
+      "refinement_gate": "simple"
     }
   ],
   "config": {
