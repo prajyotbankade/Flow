@@ -1147,8 +1147,7 @@ def _check_trunk_ahead_of_origin(
         trunk = _detect_default_branch(git_cwd=git_cwd, integration_branch=configured_branch)
         if trunk == _MISSING_BRANCH:
             ok.append(
-                f"config.integration_branch '{configured_branch}' does not exist in this "
-                f"repository — skipping trunk-ahead check"
+                f"config.integration_branch '{configured_branch}' not found — falling back to auto-detected trunk"
             )
             trunk = _detect_default_branch(git_cwd=git_cwd)
 
@@ -1172,7 +1171,7 @@ def _check_trunk_ahead_of_origin(
             **run_kw,
         )
         if ahead_result.returncode != 0:
-            ok.append(f"trunk-ahead check skipped (rev-list failed)")
+            ok.append("trunk-ahead check skipped (rev-list failed)")
             return
 
         ahead_commits = [line for line in ahead_result.stdout.splitlines() if line.strip()]
@@ -1188,7 +1187,7 @@ def _check_trunk_ahead_of_origin(
             **run_kw,
         )
         if diff_result.returncode != 0:
-            ok.append(f"trunk-ahead check skipped (diff failed)")
+            ok.append("trunk-ahead check skipped (diff failed)")
             return
 
         changed_paths = [line for line in diff_result.stdout.splitlines() if line.strip()]

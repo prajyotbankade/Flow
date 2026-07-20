@@ -437,7 +437,7 @@ class TestExistingDivergenceUnchanged:
 
         output = result.output
         # The divergence check should still warn
-        assert "differs from" in output or "diverge" in output.lower() or "differ" in output.lower(), (
+        assert "differs from" in output, (
             f"Expected divergence warning still present:\n{output}"
         )
         # The trunk-ahead check should also run (in sync or skip note)
