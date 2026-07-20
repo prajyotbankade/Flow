@@ -1,5 +1,5 @@
 {
-  "version": 966,
+  "version": 971,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6759,8 +6759,8 @@
     {
       "id": "kmxb5ssf",
       "title": "Add a way to install/refresh the pre-commit hook on an existing project",
-      "status": "backlog",
-      "complexity": "low",
+      "status": "in-progress",
+      "complexity": "medium",
       "category": "feature",
       "tags": [
         "cli",
@@ -6768,7 +6768,7 @@
         "hook",
         "dx"
       ],
-      "description": "Discovered while installing the #116 branch-guard hook locally: the pre-commit hook is only installed by 'backlog init' (cli.py ~534), which exits early (Exit 1) when backlog.json already exists \u2014 so there is NO supported command to install or refresh the hook on a project that already has a backlog. 'backlog doctor --fix' handles CLAUDE.md setup but does NOT call _install_precommit_hook. Had to invoke _install_precommit_hook() directly via python as a workaround.\n\nFix options: (a) add a dedicated 'backlog install-hook' command that calls _install_precommit_hook for the current repo, or (b) have 'backlog doctor' report a missing/outdated hook and 'doctor --fix' install/refresh it. Prefer (b) or both \u2014 doctor is the natural home for 'check and repair setup', and it would also refresh the hook after the skill is upgraded (important: existing installs still have the OLD hook script without the #116 branch guard until reinstalled).\n\nAcceptance: on a project that already has backlog.json, a single documented command installs the current hook (and refreshes an outdated flow-managed hook in place, without clobbering a foreign hook). Add a test mirroring the existing hook-install coverage.",
+      "description": "Discovered while installing the #116 branch-guard hook locally: the pre-commit hook is only installed by 'backlog init' (cli.py ~534), which exits early when backlog.json already exists \u2014 so there is NO supported way to install or refresh the hook on an existing project. Also, _install_precommit_hook currently does NOT refresh an outdated flow-managed hook: if a hook with _HOOK_MARKER already exists it prints 'already installed' and returns, so anyone who installed before #116 keeps the OLD hook (no branch guard) forever.\n\nUser-chosen scope: dedicated command + doctor refresh (both).\n\n## Spec\n\n### 1. Refresh logic in _install_precommit_hook (cli.py ~626)\nCurrently (line ~630-643): if hook exists AND contains _HOOK_MARKER \u2192 prints 'already installed', returns (no update); if exists WITHOUT marker \u2192 foreign, prints guidance, does not clobber; else writes.\nChange the marker branch to REFRESH when stale: if the existing flow-managed hook's content != current _HOOK_SCRIPT, overwrite it (chmod 0o755) and print 'refreshed'; if identical, print 'already up to date'. Foreign-hook branch (no marker) is UNCHANGED \u2014 never clobber a hook we did not write. Return a small status ('installed' | 'refreshed' | 'up-to-date' | 'foreign' | 'skipped') so callers (command + doctor) can report accurately.\n\n### 2. New 'backlog install-hook' command (cli.py, @app.command)\n- Resolves the repo from BACKLOG_FILE / --file (same path resolution as init: Path(store.file_path).resolve().parent) and calls _install_precommit_hook.\n- Works whether or not backlog.json exists (does NOT gate on init). Prints the returned status clearly.\n- Add to the CLI help list.\n\n### 3. Doctor detection + --fix (cli.py doctor ~997)\n- doctor (read-only) reports hook state: missing, outdated (marker present but content != current _HOOK_SCRIPT), foreign, or ok.\n- doctor --fix installs a missing hook and refreshes an outdated flow-managed hook (calls _install_precommit_hook). Never clobbers a foreign hook \u2014 just warns. Mirror how doctor --fix already handles CLAUDE.md setup.\n\n### 4. Docs\n- REFERENCE.md CLI list + README.md command table: add 'backlog install-hook'. One line each. (These docs ARE this task's deliverable, so staging them is allowed.)\n\n## Acceptance criteria\n- On a project that already has backlog.json, 'backlog install-hook' installs the current hook; re-running when up-to-date prints 'already up to date'; when the on-disk flow hook is stale it is refreshed to the current _HOOK_SCRIPT (verify the #116 branch-guard line is present after refresh).\n- A foreign (non-flow) pre-commit hook is never overwritten by either install-hook or doctor --fix \u2014 user gets guidance instead.\n- 'backlog doctor' reports hook state; 'backlog doctor --fix' installs/refreshes a missing/outdated flow hook.\n- REFERENCE.md and README.md list the new command.\n\n## Failure modes / edge cases\n- Not a git repo / git or hooks dir unresolvable \u2192 same silent-skip behavior as today (status 'skipped').\n- Linked worktree (.git is a file) \u2192 hooks dir resolved via 'git rev-parse --git-path hooks' (existing logic already handles this \u2014 keep it).\n- Hook file exists but unreadable \u2192 treat as foreign/skip; do not crash.\n- Detached HEAD / no backlog.json present \u2192 install-hook still works (it only writes the hook file).\n\n## Tests\nMirror the existing hook-install coverage (tests/test_cli_commit_gate.py and/or the init hook tests): install on existing project; refresh of an outdated flow hook (write an old marked hook, run, assert content updated + branch-guard present); up-to-date no-op; foreign hook not clobbered; doctor reports each state; doctor --fix installs/refreshes but not foreign.",
       "links": [
         {
           "item_id": "3sfd9l40",
@@ -6777,13 +6777,50 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-20T16:08:05.627083+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-07-20T16:08:05.792481+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-20T16:08:06.131177+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T16:08:05.627090+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T16:08:05.792492+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T16:08:06.131188+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-20T16:03:11.971192+00:00",
-      "updated_at": "2026-07-20T16:03:12.135115+00:00"
+      "updated_at": "2026-07-20T16:08:06.131186+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "backend-dev"
     }
   ],
   "config": {
