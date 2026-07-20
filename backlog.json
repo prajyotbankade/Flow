@@ -1,5 +1,5 @@
 {
-  "version": 954,
+  "version": 956,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6664,6 +6664,35 @@
       "reviewer_history": [
         "reviewer"
       ]
+    },
+    {
+      "id": "3sfd9l40",
+      "title": "Prevent backlog.json (and skill docs) from contaminating code PR branches",
+      "status": "backlog",
+      "complexity": "medium",
+      "category": "tech-debt",
+      "tags": [
+        "workflow",
+        "git",
+        "skill",
+        "process"
+      ],
+      "description": "Recurring footgun (see this session: docs rode into PR #49's squash; backlog.json bookkeeping rode into PR #50, forcing a branch rebuild as PR #51). Root cause: subagents branch from a local main that carries uncommitted/committed backlog bookkeeping, and their 'git commit -am' / 'git add -A' sweeps backlog.json into the code branch. On squash-merge this lands backlog state onto origin and diverges the canonical copy.\n\nOptions to evaluate (pick one or combine):\n1. Delegation-protocol rule: instruct subagents to NEVER stage backlog.json on a code branch \u2014 commit only the files they changed by explicit path; add to SKILL.md 'Delegating to a Sub-Agent' + Git Workflow.\n2. Canonical-copy setup: adopt the pinned-worktree-on-trunk pattern from SKILL.md 'Multi-branch / Multi-agent Setup' so backlog.json lives outside feature branches entirely (BACKLOG_FILE points at ../<repo>-backlog/backlog.json).\n3. Guard/hook: a pre-commit or backlog doctor check that warns/blocks when backlog.json is staged on a non-trunk branch.\n\nAcceptance: a subagent implementing a code item produces a PR whose diff contains ONLY code files (no backlog.json, no unrelated skill docs), verified on a fresh run. Document the chosen mechanism in SKILL.md.",
+      "links": [
+        {
+          "item_id": "gjmb05cm",
+          "type": "related",
+          "reason": "The contamination this item fixes is what forced #115 to be rebuilt as PR #51"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-20T15:38:40.192414+00:00",
+      "updated_at": "2026-07-20T15:38:40.353156+00:00"
     }
   ],
   "config": {
