@@ -71,8 +71,9 @@ backlog orchestrate --poll 30         # tick interval in seconds (default 10)
 backlog orchestrate --once            # single tick and exit
 backlog orchestrate --dry-run         # print actions without invoking agents
 
-backlog doctor                        # check project setup (backlog.json + CLAUDE.md)
-backlog doctor --fix                  # repair missing CLAUDE.md setup
+backlog doctor                        # check project setup (backlog.json + CLAUDE.md + hook)
+backlog doctor --fix                  # repair missing CLAUDE.md setup and install/refresh hook
+backlog install-hook                  # install or refresh the pre-commit integrity-gate hook
 ```
 
 **Exit codes:** `0` success · `1` gate violation / not found / validation error · `2` version conflict (re-read and retry)
