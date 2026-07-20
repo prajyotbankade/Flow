@@ -77,6 +77,7 @@ The `backlog` command is the primary interface for agents and scripts. No server
 | `backlog ref N --system jira --id PROJ-123 [--url ...]` | Pair an item with an external ticket (JIRA/GitHub/etc.); `--list` / `unref` to view/remove |
 | `backlog orchestrate` | Persistent process that drives the dev cycle automatically |
 | `backlog doctor` | Check and repair project setup |
+| `backlog install-hook` | Install or refresh the pre-commit integrity-gate hook |
 
 For the full command reference including flags, exit codes, API endpoints, scoring weights, and configuration options, see [REFERENCE.md](REFERENCE.md).
 

@@ -19,7 +19,7 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from backlog.cli import app, _HOOK_MARKER
+from backlog.cli import app, _HOOK_MARKER, _HOOK_SCRIPT
 
 runner = CliRunner()
 
@@ -608,3 +608,290 @@ def test_branch_guard_existing_json_validity_check_still_runs(tmp_path):
 
     assert result.returncode != 0
     assert "not valid JSON" in result.stderr or "not valid json" in result.stderr.lower()
+
+
+# ── install-hook command (#117) ────────────────────────────────────────────────
+
+def _make_git_repo(tmp_path: Path) -> Path:
+    """Create a bare git repo suitable for hook tests."""
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test User")
+    return tmp_path
+
+
+def test_install_hook_on_existing_project(tmp_path):
+    """install-hook installs the hook even when backlog.json already exists."""
+    repo = _make_git_repo(tmp_path)
+    # Simulate a project that already has backlog.json (no hook yet).
+    (repo / "backlog.json").write_text("{}")
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    assert not hook.exists()
+
+    result = runner.invoke(app, ["install-hook", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    assert hook.exists()
+    assert _HOOK_MARKER in hook.read_text()
+    assert os.access(hook, os.X_OK)
+    assert "installed" in result.output.lower() or "hook" in result.output.lower()
+
+
+def test_install_hook_refreshes_outdated_flow_hook(tmp_path):
+    """install-hook overwrites a stale flow-managed hook with the current script."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    # Write an old flow-managed hook that is missing the branch-guard.
+    old_content = f"#!/bin/sh\n{_HOOK_MARKER}\n# old hook without branch guard\nexit 0\n"
+    hook.write_text(old_content)
+    hook.chmod(0o755)
+
+    result = runner.invoke(app, ["install-hook", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    new_content = hook.read_text()
+    # Must be the current script.
+    assert new_content == _HOOK_SCRIPT
+    # The branch-guard line from #116 must be present.
+    assert "restore --staged backlog.json" in new_content
+    assert "refreshed" in result.output.lower()
+
+
+def test_install_hook_up_to_date_noop(tmp_path):
+    """install-hook reports up-to-date and leaves the hook unchanged when current."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    hook.write_text(_HOOK_SCRIPT)
+    hook.chmod(0o755)
+
+    result = runner.invoke(app, ["install-hook", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    # Content must be unchanged.
+    assert hook.read_text() == _HOOK_SCRIPT
+    assert "up to date" in result.output.lower() or "up-to-date" in result.output.lower()
+
+
+def test_install_hook_does_not_clobber_foreign_hook(tmp_path):
+    """install-hook never overwrites a hook that was not installed by Flow."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    foreign_content = "#!/bin/sh\n# my custom hook\nexit 0\n"
+    hook.write_text(foreign_content)
+    hook.chmod(0o755)
+
+    result = runner.invoke(app, ["install-hook", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    # Content must be unchanged.
+    assert hook.read_text() == foreign_content, "Foreign hook was clobbered!"
+    assert "foreign" in result.output.lower() or "already exists" in result.output.lower()
+
+
+def test_install_hook_non_git_repo_skips_gracefully(tmp_path):
+    """install-hook exits 0 and prints skip message when not in a git repo."""
+    non_git = tmp_path / "not_a_repo"
+    non_git.mkdir()
+
+    result = runner.invoke(app, ["install-hook", "--file", str(non_git / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    assert "not a git repo" in result.output.lower() or "skipped" in result.output.lower() or "not available" in result.output.lower()
+
+
+def test_install_hook_emits_exactly_one_status_line_for_installed(tmp_path):
+    """install-hook must not double-print the status for a fresh install."""
+    repo = _make_git_repo(tmp_path)
+
+    result = runner.invoke(app, ["install-hook", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    # Exactly one line matching "installed" (case-insensitive).
+    matching = [ln for ln in result.output.splitlines() if "installed" in ln.lower()]
+    assert len(matching) == 1, (
+        f"Expected exactly 1 'installed' line, got {len(matching)}:\n{result.output}"
+    )
+
+
+def test_install_hook_emits_exactly_one_status_line_for_refreshed(tmp_path):
+    """install-hook must not double-print the status for a refresh."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    old_content = f"#!/bin/sh\n{_HOOK_MARKER}\n# old version\nexit 0\n"
+    hook.write_text(old_content)
+    hook.chmod(0o755)
+
+    result = runner.invoke(app, ["install-hook", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    matching = [ln for ln in result.output.splitlines() if "refreshed" in ln.lower()]
+    assert len(matching) == 1, (
+        f"Expected exactly 1 'refreshed' line, got {len(matching)}:\n{result.output}"
+    )
+
+
+def test_install_hook_foreign_does_not_repeat_summary_line(tmp_path):
+    """install-hook foreign case: guidance printed once, summary line printed once."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    hook.write_text("#!/bin/sh\n# a pre-existing hook\nexit 0\n")
+    hook.chmod(0o755)
+
+    result = runner.invoke(app, ["install-hook", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    # The summary line ("Foreign hook detected") must appear exactly once.
+    summary_matches = [
+        ln for ln in result.output.splitlines()
+        if "foreign hook detected" in ln.lower()
+    ]
+    assert len(summary_matches) == 1, (
+        f"Expected exactly 1 summary line, got {len(summary_matches)}:\n{result.output}"
+    )
+    # The guidance text (snippet introduction) must appear exactly once.
+    assert result.output.count("append the following snippet") == 1, (
+        f"Guidance text appeared more than once in output:\n{result.output}"
+    )
+
+
+def test_init_emits_exactly_one_hook_status_line(tmp_path):
+    """backlog init must not double-print the hook installation status."""
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test User")
+
+    result = runner.invoke(app, ["init", "--file", str(tmp_path / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    # Exactly one line mentioning hook installation.
+    matching = [
+        ln for ln in result.output.splitlines()
+        if "hook" in ln.lower() and ("installed" in ln.lower() or "refreshed" in ln.lower() or "up to date" in ln.lower())
+    ]
+    assert len(matching) == 1, (
+        f"Expected exactly 1 hook-status line, got {len(matching)}:\n{result.output}"
+    )
+
+
+# ── doctor hook state (#117) ───────────────────────────────────────────────────
+
+def test_doctor_reports_hook_missing(tmp_path):
+    """doctor reports hook as missing when no pre-commit hook is present."""
+    repo = _make_git_repo(tmp_path)
+    (repo / "backlog.json").write_text("{}")
+
+    result = runner.invoke(app, ["doctor", "--file", str(repo / "backlog.json")])
+
+    # Doctor exits 1 because of the missing hook issue.
+    assert result.exit_code != 0 or "missing" in result.output.lower() or "not installed" in result.output.lower()
+    assert "hook" in result.output.lower()
+
+
+def test_doctor_reports_hook_outdated(tmp_path):
+    """doctor reports hook as outdated when flow hook content is stale."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    old_content = f"#!/bin/sh\n{_HOOK_MARKER}\n# old version\nexit 0\n"
+    hook.write_text(old_content)
+    hook.chmod(0o755)
+    (repo / "backlog.json").write_text("{}")
+
+    result = runner.invoke(app, ["doctor", "--file", str(repo / "backlog.json")])
+
+    assert "hook" in result.output.lower()
+    assert "outdated" in result.output.lower() or "stale" in result.output.lower()
+
+
+def test_doctor_reports_hook_foreign(tmp_path):
+    """doctor reports foreign hook state without flagging it as an error."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    hook.write_text("#!/bin/sh\n# foreign\nexit 0\n")
+    hook.chmod(0o755)
+    (repo / "backlog.json").write_text("{}")
+
+    result = runner.invoke(app, ["doctor", "--file", str(repo / "backlog.json")])
+
+    # Foreign hook is reported as ok (not an error) — doctor only warns about missing/outdated.
+    assert "hook" in result.output.lower()
+    assert "foreign" in result.output.lower() or "not installed by flow" in result.output.lower()
+
+
+def test_doctor_reports_hook_ok(tmp_path):
+    """doctor reports hook as ok when the current flow hook is installed."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    hook.write_text(_HOOK_SCRIPT)
+    hook.chmod(0o755)
+    (repo / "backlog.json").write_text("{}")
+
+    result = runner.invoke(app, ["doctor", "--file", str(repo / "backlog.json")])
+
+    assert "hook" in result.output.lower()
+    assert "up to date" in result.output.lower() or "up-to-date" in result.output.lower()
+
+
+def test_doctor_fix_installs_missing_hook(tmp_path):
+    """doctor --fix installs a missing hook."""
+    repo = _make_git_repo(tmp_path)
+    (repo / "backlog.json").write_text("{}")
+    hook = repo / ".git" / "hooks" / "pre-commit"
+    assert not hook.exists()
+
+    result = runner.invoke(app, ["doctor", "--fix", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    assert hook.exists()
+    assert _HOOK_MARKER in hook.read_text()
+    assert os.access(hook, os.X_OK)
+
+
+def test_doctor_fix_refreshes_outdated_hook(tmp_path):
+    """doctor --fix refreshes a stale flow-managed hook to the current script."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    old_content = f"#!/bin/sh\n{_HOOK_MARKER}\n# old hook\nexit 0\n"
+    hook.write_text(old_content)
+    hook.chmod(0o755)
+    (repo / "backlog.json").write_text("{}")
+
+    result = runner.invoke(app, ["doctor", "--fix", "--file", str(repo / "backlog.json")])
+
+    assert result.exit_code == 0, result.output
+    assert hook.read_text() == _HOOK_SCRIPT
+    assert "restore --staged backlog.json" in hook.read_text()
+
+
+def test_doctor_fix_does_not_clobber_foreign_hook(tmp_path):
+    """doctor --fix never overwrites a foreign (non-flow) pre-commit hook."""
+    repo = _make_git_repo(tmp_path)
+    hooks_dir = repo / ".git" / "hooks"
+    hooks_dir.mkdir(parents=True, exist_ok=True)
+    hook = hooks_dir / "pre-commit"
+    foreign_content = "#!/bin/sh\n# my hook\nexit 0\n"
+    hook.write_text(foreign_content)
+    hook.chmod(0o755)
+    (repo / "backlog.json").write_text("{}")
+
+    result = runner.invoke(app, ["doctor", "--fix", "--file", str(repo / "backlog.json")])
+
+    # Foreign hook must remain untouched.
+    assert hook.read_text() == foreign_content, "doctor --fix clobbered a foreign hook!"
