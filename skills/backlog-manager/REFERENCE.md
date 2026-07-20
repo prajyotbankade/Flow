@@ -56,6 +56,11 @@ backlog link 3 --type related --target 7 --reason "Thematically connected"
 backlog link --list 3                        # show all links for item #3
 backlog unlink 3 --target 5                  # remove link from #3 to #5
 
+backlog ref 3 --system jira --id PROJ-123 --url https://co.atlassian.net/browse/PROJ-123
+backlog ref 3 --system github --id "#47"     # external ticket ref; --url optional
+backlog ref --list 3                          # show all external refs for item #3
+backlog unref 3 --target PROJ-123            # remove every ref on #3 whose id == PROJ-123
+
 backlog staged 3                             # list pending staged actions for item #3
 backlog approve 3 <action-id>               # approve a staged action
 backlog reject 3 <action-id> --reason "..."  # reject a staged action

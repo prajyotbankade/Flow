@@ -74,6 +74,7 @@ The `backlog` command is the primary interface for agents and scripts. No server
 | `backlog handoff reviewer --item N --review` | Trigger the code review gate — generates a structured handoff file |
 | `backlog ingest <result_file>` | Process a review result — advances to done (pass) or in-progress (reject) |
 | `backlog link N --type blocks --target M` | Connect related items with typed links |
+| `backlog ref N --system jira --id PROJ-123 [--url ...]` | Pair an item with an external ticket (JIRA/GitHub/etc.); `--list` / `unref` to view/remove |
 | `backlog orchestrate` | Persistent process that drives the dev cycle automatically |
 | `backlog doctor` | Check and repair project setup |
 
