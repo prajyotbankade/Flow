@@ -1,5 +1,5 @@
 {
-  "version": 964,
+  "version": 966,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6755,6 +6755,35 @@
       "reviewer_history": [
         "reviewer"
       ]
+    },
+    {
+      "id": "kmxb5ssf",
+      "title": "Add a way to install/refresh the pre-commit hook on an existing project",
+      "status": "backlog",
+      "complexity": "low",
+      "category": "feature",
+      "tags": [
+        "cli",
+        "git",
+        "hook",
+        "dx"
+      ],
+      "description": "Discovered while installing the #116 branch-guard hook locally: the pre-commit hook is only installed by 'backlog init' (cli.py ~534), which exits early (Exit 1) when backlog.json already exists \u2014 so there is NO supported command to install or refresh the hook on a project that already has a backlog. 'backlog doctor --fix' handles CLAUDE.md setup but does NOT call _install_precommit_hook. Had to invoke _install_precommit_hook() directly via python as a workaround.\n\nFix options: (a) add a dedicated 'backlog install-hook' command that calls _install_precommit_hook for the current repo, or (b) have 'backlog doctor' report a missing/outdated hook and 'doctor --fix' install/refresh it. Prefer (b) or both \u2014 doctor is the natural home for 'check and repair setup', and it would also refresh the hook after the skill is upgraded (important: existing installs still have the OLD hook script without the #116 branch guard until reinstalled).\n\nAcceptance: on a project that already has backlog.json, a single documented command installs the current hook (and refreshes an outdated flow-managed hook in place, without clobbering a foreign hook). Add a test mirroring the existing hook-install coverage.",
+      "links": [
+        {
+          "item_id": "3sfd9l40",
+          "type": "discovered-during",
+          "reason": "Found while installing the #116 hook locally \u2014 no CLI path to install it on an existing project"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-20T16:03:11.971192+00:00",
+      "updated_at": "2026-07-20T16:03:12.135115+00:00"
     }
   ],
   "config": {
