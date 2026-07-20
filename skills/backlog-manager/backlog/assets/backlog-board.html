@@ -2225,6 +2225,7 @@
       document.getElementById('new-ref-system').value = '';
       document.getElementById('new-ref-id').value = '';
       document.getElementById('new-ref-url').value = '';
+      pendingRefs = [];
 
       // Show tabs for existing items
       document.getElementById('modal-tabs').style.display = 'flex';
@@ -3056,6 +3057,11 @@
 
       if (!system || !id) {
         showToast('System and ID are required', true);
+        return;
+      }
+
+      if (url && !/^https?:\/\//i.test(url)) {
+        showToast('URL must start with http:// or https://', true);
         return;
       }
 
