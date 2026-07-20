@@ -531,7 +531,20 @@ def init_cmd(
         console.print(f"[dim]  git add {target.name} && git commit -m 'chore: add flow backlog setup'[/dim]")
 
     # Install pre-commit hook (opt-in integrity gate for staged backlog.json).
-    _install_precommit_hook(Path(store.file_path).resolve().parent)
+    hook_status, hook_path = _install_precommit_hook(Path(store.file_path).resolve().parent)
+    if hook_status == "installed":
+        console.print(f"[green]✓[/green] Installed pre-commit hook → {hook_path}")
+    elif hook_status == "refreshed":
+        console.print(f"[green]✓[/green] Refreshed pre-commit hook → {hook_path}")
+    elif hook_status == "up-to-date":
+        console.print("[green]✓[/green] pre-commit hook already up to date")
+    elif hook_status == "foreign":
+        console.print(
+            "[yellow]![/yellow] A pre-commit hook already exists at "
+            f"{hook_path}. To add the backlog integrity gate manually, "
+            "append the following snippet to that file:"
+        )
+        console.print(f"[dim]{_HOOK_SCRIPT}[/dim]")
 
     console.print()
     console.print("[bold green]You're ready.[/bold green]")
@@ -623,18 +636,21 @@ exit 0
 """
 
 
-def _install_precommit_hook(repo_search_dir: Path) -> str:
+def _install_precommit_hook(repo_search_dir: Path) -> tuple[str, Optional[Path]]:
     """Install or refresh the pre-commit hook that validates backlog.json.
 
     Resolves the hooks directory via ``git rev-parse --git-path hooks`` so
     that both plain repos (.git is a directory) and linked worktrees (.git is
     a gitdir-pointer file) work correctly.
 
-    Returns a status string:
+    Returns ``(status, hook_path)`` — callers are responsible for all console
+    output.  ``hook_path`` is ``None`` when status is ``'skipped'``.
+
+    Status values:
       'installed'   — hook was newly written
       'refreshed'   — hook was flow-managed but stale; overwritten with current script
       'up-to-date'  — hook was flow-managed and already current; no change
-      'foreign'     — a non-flow hook exists; printed guidance, did NOT clobber
+      'foreign'     — a non-flow hook exists; did NOT clobber (caller prints guidance)
       'skipped'     — not a git repo, git not found, or hooks dir unresolvable
     """
     import subprocess as _sp
@@ -650,15 +666,15 @@ def _install_precommit_hook(repo_search_dir: Path) -> str:
         )
     except FileNotFoundError:
         # git binary not found — silently skip.
-        return "skipped"
+        return "skipped", None
 
     if result.returncode != 0:
         # Not a git repo (or some other git error) — silently skip.
-        return "skipped"
+        return "skipped", None
 
     hooks_raw = result.stdout.strip()
     if not hooks_raw:
-        return "skipped"
+        return "skipped", None
 
     # git may return a relative path; resolve it against repo_search_dir.
     hooks_dir = (repo_search_dir / hooks_raw).resolve()
@@ -670,33 +686,24 @@ def _install_precommit_hook(repo_search_dir: Path) -> str:
             existing = hook_path.read_text(encoding="utf-8")
         except OSError:
             # Unreadable hook — treat as foreign/skip; do not crash.
-            return "skipped"
+            return "skipped", None
 
         if _HOOK_MARKER in existing:
             if existing == _HOOK_SCRIPT:
                 # Already installed by us and up to date — nothing to do.
-                console.print("[green]✓[/green] pre-commit hook already up to date")
-                return "up-to-date"
+                return "up-to-date", hook_path
             else:
                 # Flow-managed but stale — overwrite with current script.
                 hook_path.write_text(_HOOK_SCRIPT, encoding="utf-8")
                 hook_path.chmod(0o755)
-                console.print(f"[green]✓[/green] Refreshed pre-commit hook → {hook_path}")
-                return "refreshed"
+                return "refreshed", hook_path
         else:
-            # Foreign hook — never clobber it.
-            console.print(
-                "[yellow]![/yellow] A pre-commit hook already exists at "
-                f"{hook_path}. To add the backlog integrity gate manually, "
-                "append the following snippet to that file:"
-            )
-            console.print(f"[dim]{_HOOK_SCRIPT}[/dim]")
-            return "foreign"
+            # Foreign hook — never clobber it.  Caller prints guidance.
+            return "foreign", hook_path
 
     hook_path.write_text(_HOOK_SCRIPT, encoding="utf-8")
     hook_path.chmod(0o755)
-    console.print(f"[green]✓[/green] Installed pre-commit hook → {hook_path}")
-    return "installed"
+    return "installed", hook_path
 
 
 def _doctor_hook_state(repo_search_dir: Path) -> str:
@@ -755,12 +762,19 @@ def install_hook_cmd(
     """
     path = file or os.environ.get("BACKLOG_FILE", "backlog.json")
     repo_dir = Path(path).resolve().parent
-    status = _install_precommit_hook(repo_dir)
+    status, hook_path = _install_precommit_hook(repo_dir)
+    if status == "foreign" and hook_path is not None:
+        console.print(
+            "[yellow]![/yellow] A pre-commit hook already exists at "
+            f"{hook_path}. To add the backlog integrity gate manually, "
+            "append the following snippet to that file:"
+        )
+        console.print(f"[dim]{_HOOK_SCRIPT}[/dim]")
     _STATUS_MESSAGES = {
         "installed": "[green]✓[/green] Hook installed.",
         "refreshed": "[green]✓[/green] Hook refreshed to latest version.",
         "up-to-date": "[green]✓[/green] Hook is already up to date — nothing changed.",
-        "foreign": "[yellow]![/yellow] Foreign hook detected — not modified. See guidance above.",
+        "foreign": "[yellow]![/yellow] Foreign hook detected — not modified.",
         "skipped": "[yellow]![/yellow] Not a git repo or git not available — hook not installed.",
     }
     console.print(_STATUS_MESSAGES.get(status, f"status: {status}"))
@@ -1164,7 +1178,7 @@ def doctor(
         ok.append("pre-commit hook installed and up to date")
     elif hook_state == "outdated":
         if fix:
-            status = _install_precommit_hook(hook_repo_dir)
+            status, _ = _install_precommit_hook(hook_repo_dir)
             if status == "refreshed":
                 ok.append("pre-commit hook refreshed to latest version")
             else:
@@ -1176,7 +1190,7 @@ def doctor(
             )
     elif hook_state == "missing":
         if fix:
-            status = _install_precommit_hook(hook_repo_dir)
+            status, _ = _install_precommit_hook(hook_repo_dir)
             if status == "installed":
                 ok.append("pre-commit hook installed")
             else:
