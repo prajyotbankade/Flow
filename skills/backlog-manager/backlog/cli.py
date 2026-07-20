@@ -585,6 +585,39 @@ if [ $? -ne 0 ]; then
   exit 1
 fi
 
+# Branch guard — backlog.json must only be committed on the trunk branch.
+# Backlog state follows trunk; committing it on a feature branch contaminates
+# code PRs with lane-move noise.
+# Fail open: detached HEAD, missing git/python3, or unreadable config → allow.
+CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ -n "$CURRENT_BRANCH" ] && [ "$CURRENT_BRANCH" != "HEAD" ]; then
+  # Determine trunk: main/master are always trunk; also check config.integration_branch.
+  TRUNK_BRANCH=$(python3 - "$TMPFILE" <<'PYEOF2'
+import sys, json
+try:
+    data = json.loads(open(sys.argv[1]).read())
+    ib = data.get("config", {}).get("integration_branch", "")
+    if ib:
+        print(ib)
+    else:
+        print("main")
+except Exception:
+    print("main")
+PYEOF2
+)
+  if [ -z "$TRUNK_BRANCH" ]; then
+    TRUNK_BRANCH="main"
+  fi
+  # Allow main and master unconditionally; allow configured integration_branch.
+  if [ "$CURRENT_BRANCH" != "main" ] && [ "$CURRENT_BRANCH" != "master" ] && [ "$CURRENT_BRANCH" != "$TRUNK_BRANCH" ]; then
+    echo "error: backlog.json is staged on branch '${CURRENT_BRANCH}' (not trunk)." >&2
+    echo "  Backlog state must follow trunk, not code branches." >&2
+    echo "  To fix: git restore --staged backlog.json" >&2
+    rm -f "$TMPFILE"
+    exit 1
+  fi
+fi
+
 rm -f "$TMPFILE"
 exit 0
 """

@@ -1,5 +1,5 @@
 {
-  "version": 936,
+  "version": 956,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6454,7 +6454,7 @@
     {
       "id": "xrx9gltd",
       "title": "Board UI to add/edit/remove external_refs on an item",
-      "status": "backlog",
+      "status": "done",
       "complexity": "medium",
       "category": "feature",
       "tags": [
@@ -6462,12 +6462,227 @@
         "frontend",
         "integration"
       ],
-      "description": "Follow-up to #113. The board currently renders external_refs as read-only chips in the item modal (renderExternalRefs, backlog-board.html:2883) but offers no way to ADD, edit, or remove a ref from the UI \u2014 users must drop to the CLI (backlog ref/unref). Add an editing affordance in the item modal: inputs for system (text or dropdown), id (required), url (optional), an 'Add ref' button that PUTs the updated item to /api/items/<id>, and a remove control (x) on each existing chip. Surface the server's 422 (missing system/id) as an inline validation message. Mirror how the modal already handles links editing if such UI exists; otherwise follow the existing modal form patterns.",
+      "description": "Follow-up to #113. The board renders external_refs as read-only chips (renderExternalRefs, backlog-board.html:2883) but offers no add/edit/remove control \u2014 adding a ref is CLI-only. Add an editing affordance in the item modal by MIRRORING the existing link-editing UI, which is the established in-file pattern.\n\n## Spec\n\n**Pattern to mirror (all in backlog/assets/backlog-board.html):** the link editor \u2014 inputs new-link-type/new-link-target/new-link-reason (~1277-1286), addLink() (~2948), removeLink(index) (~2988), pendingLinks buffer for unsaved new items, and links: [...pendingLinks] in saveItem() (~2620). Build the external-refs editor as a direct analogue.\n\n**HTML (modal, in the External References section ~1289):**\n- Add an input row mirroring the new-link-* row: `new-ref-system` (text input; placeholder e.g. 'jira'), `new-ref-id` (text; placeholder 'PROJ-123'), `new-ref-url` (text, optional; placeholder 'https://...'), and an 'Add' button calling addRef().\n\n**JS \u2014 add functions mirroring the link ones:**\n- `addRef()` (mirror addLink ~2948): read the three inputs. Guard: if !system || !id \u2192 return (optionally showToast). If editingItemId is unset (new unsaved item) \u2192 buffer into a new `pendingRefs` array and renderPendingRefs(); else push {system, id, url: url||undefined} onto item.external_refs, set updated_at, renderExternalRefs(item), saveBacklog(), renderBoard(), applyFilters(). Clear inputs after add. Duplicates ARE allowed (do NOT add a duplicate guard \u2014 unlike addLink; #113 permits duplicates).\n- `removeRef(index)` (mirror removeLink ~2988): splice item.external_refs[index], set updated_at, renderExternalRefs(item), saveBacklog(), renderBoard(), applyFilters().\n- Extend `renderExternalRefs(item)` (~2883): when rendering each chip, add a remove control (\u00d7 button) calling removeRef(index), mirroring how renderLinks renders removeLink buttons. Keep the read-only chip appearance (system badge + id + optional link) and append the \u00d7 control.\n- New-item path: add `external_refs: [...pendingRefs]` to the item object built in saveItem() (~2620, next to links: [...pendingLinks]); initialize `pendingRefs = []` where pendingLinks is initialized and reset it in openAddModal/openModal the same way pendingLinks is reset. Add renderPendingRefs() mirroring renderPendingLinks().\n\n**Server 422 handling:** saveBacklog() already PUTs to /api/items/<id>; #113 wired validate_external_refs into that path. addRef's own !system||!id guard prevents sending malformed refs, but if the server still returns 422, surface it via the existing error path (showToast(msg, true)) rather than failing silently.\n\n**Acceptance criteria (done = all true):**\n- Item modal has inputs for system, id, url + an Add button; clicking Add appends a ref and it appears as a chip immediately\n- Each existing chip has a \u00d7 control that removes that ref\n- Adding a ref on an existing item persists via the existing saveBacklog() PUT and survives a board refresh\n- Adding refs on a NOT-yet-saved new item buffers in pendingRefs and is written on save (mirrors pendingLinks)\n- Duplicate refs (same system+id) are allowed \u2014 no client-side duplicate guard\n- A server 422 (missing system/id) surfaces as a toast, not a silent failure\n- Read-only display for items with no external_refs is unchanged (empty/absent \u2192 no section clutter)\n\n**Failure modes:**\n- Empty system or id \u2192 Add is a no-op (guarded client-side), optional toast\n- Server rejects the PUT (422/409) \u2192 surface via showToast(msg, true); do not corrupt local state (existing saveBacklog error handling applies)\n\n**Edge cases:**\n- Removing the last ref \u2192 section renders empty, no crash\n- url omitted \u2192 chip renders id as plain text (existing renderExternalRefs behavior)\n- Concurrent version conflict on PUT \u2192 existing 409 retry/error path applies unchanged\n\n**Testing note:** This is a client-side board (HTML/JS) change; the repo has no JS test harness (tests are pytest). The server-side PUT validation round-trip is already covered by #113's test_external_refs_server.py \u2014 confirm those still pass. Verify the add/remove/persist UI behavior manually on `backlog board` (or via the run/verify skill). Note the absence of a JS harness in the PR description rather than treating it as a coverage blocker.",
       "links": [
         {
           "item_id": "vplfk952",
           "type": "follow-up",
           "reason": "Board add/edit UI completes the external_refs feature; #113 shipped display-only, CLI-only add"
+        }
+      ],
+      "threads": [
+        {
+          "id": "h30pswwg",
+          "waiting_on": "lead",
+          "status": "blocked",
+          "body": "XSS via javascript: URL scheme in addRef/renderExternalRefs. Validate that url starts with http:// or https:// in addRef() and reject otherwise via showToast; this PR makes the latent read-only-render XSS reachable from the board.",
+          "created_at": "2026-07-20T15:13:40.853001+00:00",
+          "resolved": false
+        }
+      ],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-20T15:05:12.546073+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-07-20T15:05:12.706600+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-20T15:05:13.037715+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-20T15:09:09.645048+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-20T15:13:40.853032+00:00",
+          "by": "ingest"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-20T15:15:13.163740+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-20T15:19:16.054729+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:05:12.546085+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:05:12.706609+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:05:13.037724+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:09:09.645054+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-20T15:13:40.853037+00:00",
+          "detail": "code-review \u2192 in-progress (backward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:15:13.163749+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-20T15:19:16.054734+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 5,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-20T14:56:29.842381+00:00",
+      "updated_at": "2026-07-20T15:19:16.054732+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "reviewer",
+      "reviewer": "backend-dev",
+      "reviewer_history": [
+        "reviewer",
+        "backend-dev"
+      ]
+    },
+    {
+      "id": "gjmb05cm",
+      "title": "Defence-in-depth: sanitize external_ref urls at render time on the board",
+      "status": "done",
+      "complexity": "low",
+      "category": "tech-debt",
+      "tags": [
+        "board",
+        "frontend",
+        "security"
+      ],
+      "description": "Follow-up to #114. #114 guards url scheme at ENTRY (addRef rejects non-http(s)), but the board renders external_ref urls into href attributes with only esc() applied \u2014 esc() HTML-encodes entities but does NOT sanitize url schemes. If backlog.json is written directly (hand-edit, or a future unguarded API/CLI path) with a javascript:/data:/vbscript: url, it renders as a live <a href> XSS. Add render-time defence-in-depth.\n\n## Spec\n\n**File:** skills/backlog-manager/backlog/assets/backlog-board.html (single file).\n\n**Add a helper** (near esc(), ~line 3876):\n```js\nfunction sanitizeUrl(url) {\n  // Only http/https are safe as hrefs; everything else (javascript:, data:, vbscript:, mailto-less schemes) is neutralized.\n  return (typeof url === 'string' && /^https?:\\/\\//i.test(url.trim())) ? url : '';\n}\n```\n\n**Apply at every render site where an external_ref url becomes an href.** The reviewer identified renderExternalRefs (~2919 and ~3037; there are two chip-render paths \u2014 the live section and the pending-refs section if it also linkifies). For each, when building the <a href>, use sanitizeUrl(ref.url): if it returns '', render the id as PLAIN TEXT (no anchor) instead of a linkless/unsafe anchor. Keep esc() on the display text and on the sanitized href value (esc(sanitizeUrl(ref.url))).\n\n**Do NOT weaken the entry guard in addRef** \u2014 this is belt-and-suspenders, both layers stay.\n\n**Acceptance criteria:**\n- A javascript:, data:, or vbscript: url present in an item's external_refs (simulate by hand-editing backlog.json) renders as plain text, NOT a clickable/executable anchor\n- A valid https:// url still renders as a clickable chip exactly as today\n- An absent/empty url still renders id as plain text (unchanged)\n- The entry-time guard in addRef is untouched\n- No change to server/CLI/core \u2014 board file only\n\n**Failure modes / edge cases:**\n- url is non-string / null / undefined \u2192 sanitizeUrl returns '' \u2192 plain text, no crash\n- url with leading/trailing whitespace around a bad scheme (' javascript:...') \u2192 trim() inside sanitizeUrl still blocks it\n- protocol-relative url ('//evil.com') \u2192 not http(s)-prefixed \u2192 blocked (renders plain text); acceptable\n\n**Testing note:** client-side board change; no JS test harness in the repo. Verify by hand-editing a backlog.json item to include a javascript: url and confirming the board renders it as plain text (use backlog board --port 9010, do not kill the shared 8089 instance). Confirm existing server tests (test_external_refs_server.py / _cli.py) still pass (they are unaffected). Note the no-JS-harness situation in the PR description.",
+      "links": [
+        {
+          "item_id": "xrx9gltd",
+          "type": "follow-up",
+          "reason": "Render-time url sanitization complements #114's entry-time guard against hand-edited backlog.json"
+        }
+      ],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-20T15:29:40.669144+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-07-20T15:29:40.828806+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-20T15:29:41.150394+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-20T15:31:37.811174+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-20T15:37:25.703420+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:29:40.669153+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:29:40.828812+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:29:41.150406+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:31:37.811183+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-20T15:37:25.703424+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-20T15:20:18.321528+00:00",
+      "updated_at": "2026-07-20T15:37:25.703422+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "frontend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "3sfd9l40",
+      "title": "Prevent backlog.json (and skill docs) from contaminating code PR branches",
+      "status": "backlog",
+      "complexity": "medium",
+      "category": "tech-debt",
+      "tags": [
+        "workflow",
+        "git",
+        "skill",
+        "process"
+      ],
+      "description": "Recurring footgun (see this session: docs rode into PR #49's squash; backlog.json bookkeeping rode into PR #50, forcing a branch rebuild as PR #51). Root cause: subagents branch from a local main that carries uncommitted/committed backlog bookkeeping, and their 'git commit -am' / 'git add -A' sweeps backlog.json into the code branch. On squash-merge this lands backlog state onto origin and diverges the canonical copy.\n\nOptions to evaluate (pick one or combine):\n1. Delegation-protocol rule: instruct subagents to NEVER stage backlog.json on a code branch \u2014 commit only the files they changed by explicit path; add to SKILL.md 'Delegating to a Sub-Agent' + Git Workflow.\n2. Canonical-copy setup: adopt the pinned-worktree-on-trunk pattern from SKILL.md 'Multi-branch / Multi-agent Setup' so backlog.json lives outside feature branches entirely (BACKLOG_FILE points at ../<repo>-backlog/backlog.json).\n3. Guard/hook: a pre-commit or backlog doctor check that warns/blocks when backlog.json is staged on a non-trunk branch.\n\nAcceptance: a subagent implementing a code item produces a PR whose diff contains ONLY code files (no backlog.json, no unrelated skill docs), verified on a fresh run. Document the chosen mechanism in SKILL.md.",
+      "links": [
+        {
+          "item_id": "gjmb05cm",
+          "type": "related",
+          "reason": "The contamination this item fixes is what forced #115 to be rebuilt as PR #51"
         }
       ],
       "threads": [],
@@ -6476,8 +6691,8 @@
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
-      "created_at": "2026-07-20T14:56:29.842381+00:00",
-      "updated_at": "2026-07-20T14:56:30.001530+00:00"
+      "created_at": "2026-07-20T15:38:40.192414+00:00",
+      "updated_at": "2026-07-20T15:38:40.353156+00:00"
     }
   ],
   "config": {

@@ -447,3 +447,164 @@ def test_worktree_foreign_hook_not_clobbered(git_repo_with_worktree):
     assert hook.read_text() == original_content, "Foreign hook was clobbered!"
     # Init must have printed guidance.
     assert "already exists" in result.output or "manually" in result.output.lower()
+
+
+# ── Branch guard (#116) ────────────────────────────────────────────────────────
+
+def _setup_hook_repo(tmp_path: Path, branch: str = "main") -> Path:
+    """Create a git repo on the given branch with the backlog hook installed."""
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test User")
+    # Rename the default branch to match what was requested.
+    _git(tmp_path, "checkout", "-b", branch)
+    # Need an initial commit so the hook can find a HEAD.
+    readme = tmp_path / "README"
+    readme.write_text("init")
+    _git(tmp_path, "add", "README")
+    _git(tmp_path, "commit", "-m", "initial")
+    # Install the hook.
+    backlog = tmp_path / "backlog.json"
+    runner.invoke(app, ["init", "--file", str(backlog)])
+    return tmp_path
+
+
+def _write_and_stage_backlog(repo: Path, integration_branch: str = "") -> None:
+    """Write a valid backlog.json (optionally with integration_branch) and stage it."""
+    data = dict(_VALID_BACKLOG)
+    data = {
+        "version": 1,
+        "config": {
+            "scope": "project",
+            "project_name": "test",
+        },
+        "items": [],
+    }
+    if integration_branch:
+        data["config"]["integration_branch"] = integration_branch
+    backlog = repo / "backlog.json"
+    backlog.write_text(json.dumps(data, indent=2))
+    _git(repo, "add", "backlog.json")
+
+
+def test_branch_guard_blocks_feature_branch(tmp_path):
+    """backlog.json staged on a feature branch must be blocked by the hook."""
+    repo = _setup_hook_repo(tmp_path, branch="main")
+    # Create and switch to a feature branch.
+    _git(repo, "checkout", "-b", "feature/my-task")
+    _write_and_stage_backlog(repo)
+
+    result = _git(repo, "commit", "-m", "should be blocked")
+
+    assert result.returncode != 0, "Hook should have blocked this commit"
+    assert "backlog.json" in result.stderr or "trunk" in result.stderr or "staged" in result.stderr
+
+
+def test_branch_guard_allows_main(tmp_path):
+    """backlog.json staged on main must be allowed by the hook."""
+    repo = _setup_hook_repo(tmp_path, branch="main")
+    _write_and_stage_backlog(repo)
+
+    result = _git(repo, "commit", "-m", "valid on main")
+
+    assert result.returncode == 0, f"Hook blocked commit on main: {result.stderr}"
+
+
+def test_branch_guard_allows_master(tmp_path):
+    """backlog.json staged on master must be allowed by the hook."""
+    repo = _setup_hook_repo(tmp_path, branch="master")
+    _write_and_stage_backlog(repo)
+
+    result = _git(repo, "commit", "-m", "valid on master")
+
+    assert result.returncode == 0, f"Hook blocked commit on master: {result.stderr}"
+
+
+def test_branch_guard_allows_configured_integration_branch(tmp_path):
+    """backlog.json staged on config.integration_branch must be allowed."""
+    repo = _setup_hook_repo(tmp_path, branch="develop")
+    # Write backlog.json with integration_branch set to develop and stage it.
+    _write_and_stage_backlog(repo, integration_branch="develop")
+
+    result = _git(repo, "commit", "-m", "valid on configured integration branch")
+
+    assert result.returncode == 0, (
+        f"Hook blocked commit on configured integration_branch 'develop': {result.stderr}"
+    )
+
+
+def test_branch_guard_allows_detached_head(tmp_path):
+    """Detached HEAD must be allowed (fail-open — do not break rebases/CI)."""
+    repo = _setup_hook_repo(tmp_path, branch="main")
+    # Detach HEAD at current commit.
+    head_sha = _git(repo, "rev-parse", "HEAD").stdout.strip()
+    _git(repo, "checkout", "--detach", head_sha)
+    _write_and_stage_backlog(repo)
+
+    result = _git(repo, "commit", "-m", "detached HEAD commit")
+
+    assert result.returncode == 0, (
+        f"Hook should fail-open on detached HEAD but got: {result.stderr}"
+    )
+
+
+def test_branch_guard_non_backlog_file_on_feature_branch_allowed(tmp_path):
+    """A non-backlog file staged on a feature branch must not be blocked."""
+    repo = _setup_hook_repo(tmp_path, branch="main")
+    _git(repo, "checkout", "-b", "feature/code-change")
+    # Stage a non-backlog file only.
+    code_file = repo / "app.py"
+    code_file.write_text("print('hello')")
+    _git(repo, "add", "app.py")
+
+    result = _git(repo, "commit", "-m", "code change, no backlog.json")
+
+    assert result.returncode == 0, (
+        f"Hook blocked a commit with no backlog.json staged: {result.stderr}"
+    )
+
+
+def test_branch_guard_error_message_is_actionable(tmp_path):
+    """The branch-guard error must tell the user how to fix it (git restore --staged)."""
+    repo = _setup_hook_repo(tmp_path, branch="main")
+    _git(repo, "checkout", "-b", "feat/123-my-feature")
+    _write_and_stage_backlog(repo)
+
+    result = _git(repo, "commit", "-m", "should be blocked with guidance")
+
+    assert result.returncode != 0
+    # The error message must mention how to fix the problem.
+    assert "git restore --staged backlog.json" in result.stderr
+
+
+def test_branch_guard_existing_conflict_marker_check_still_runs(tmp_path):
+    """Regression: conflict-marker check must still fire even with the new branch guard."""
+    repo = _setup_hook_repo(tmp_path, branch="main")
+    conflict_content = (
+        "<<<<<<< HEAD\n"
+        '{"version": 1, "config": {}, "items": []}\n'
+        "=======\n"
+        '{"version": 1, "config": {}, "items": []}\n'
+        ">>>>>>> branch\n"
+    )
+    backlog = repo / "backlog.json"
+    backlog.write_text(conflict_content)
+    _git(repo, "add", "backlog.json")
+
+    result = _git(repo, "commit", "-m", "should fail on conflict markers")
+
+    assert result.returncode != 0
+    assert "conflict markers" in result.stderr
+
+
+def test_branch_guard_existing_json_validity_check_still_runs(tmp_path):
+    """Regression: JSON-validity check must still fire even with the new branch guard."""
+    repo = _setup_hook_repo(tmp_path, branch="main")
+    backlog = repo / "backlog.json"
+    backlog.write_text("{not valid json!!!")
+    _git(repo, "add", "backlog.json")
+
+    result = _git(repo, "commit", "-m", "should fail on invalid JSON")
+
+    assert result.returncode != 0
+    assert "not valid JSON" in result.stderr or "not valid json" in result.stderr.lower()

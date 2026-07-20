@@ -233,7 +233,7 @@ All code changes must go through a branch → PR → merge flow. **Never push di
 
 **Required steps for any code-producing task (subagent):**
 1. Create a feature branch: `git checkout -b <item-id>-<short-description>`
-2. Do the work and commit on that branch
+2. Do the work and commit on that branch — **stage only the files you changed, by explicit path** (`git add path/to/file ...`). **Never** use `git add -A`, `git add .`, or `git commit -am` on a code branch: the working tree often carries an already-dirty `backlog.json` (from lane moves) that those commands will sweep into your PR. A code PR's diff must contain **only** the code files for the task — never `backlog.json`, and never skill docs (`SKILL.md`, `README.md`, `REFERENCE.md`) unless editing them *is* the task deliverable. Run `git status` before committing and confirm nothing unrelated is staged.
 2a. Run the full test suite locally before pushing:
     - JS/TS: `npm test` or `npx jest --ci`
     - Python: `pytest tests/`
@@ -446,7 +446,7 @@ When spawning a sub-agent for an assigned task, include in the prompt:
 5. Blocker protocol: if blocked, open a thread via `PUT /api/items/<id>` and report back
 6. Their persona file path (`.claude/agents/<name>.md`) — agent reads it for identity and past learnings
 7. Self-correction instruction: if you make a mistake and get corrected, update your persona file before finishing
-8. Git workflow: work on a feature branch, push it, open a PR targeting `main` via `gh pr create`, report the PR URL — do not merge directly to `main`
+8. Git workflow: work on a feature branch, push it, open a PR targeting `main` via `gh pr create`, report the PR URL — do not merge directly to `main`. **Stage only the files you changed, by explicit path — never `git add -A` / `git add .` / `git commit -am` on a code branch, and never stage `backlog.json` or skill docs unless they are the task deliverable** (a dirty working-tree `backlog.json` from lane moves will otherwise contaminate your PR).
 9. Testing requirement: write test cases that cover the acceptance criteria as part of the implementation — not just running the existing suite. For non-trivial logic, follow TDD: write the failing test first, then implement until it passes. Missing test coverage is a blocker at code review (see Code Review Protocol checklist item 6) — a passing implementation with no test is not shippable.
 10. **Model — required, set it at spawn.** Pass the `recommended_model` from the work brief (derived from item `complexity`: `low` → haiku, `medium` → sonnet, `high` → opus) as the sub-agent's model in the Agent tool call. If you spawn without an explicit model, the sub-agent inherits the lead's thread model (often Opus), which silently discards the routing recommendation and is the single largest source of avoidable token cost. When `complexity` is unset, treat it as `medium` (sonnet). Only override upward to opus if the task proves harder than its complexity tag once underway.
 
