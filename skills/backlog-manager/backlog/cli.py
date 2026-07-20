@@ -623,14 +623,19 @@ exit 0
 """
 
 
-def _install_precommit_hook(repo_search_dir: Path) -> None:
-    """Install a pre-commit hook that validates backlog.json before commits.
+def _install_precommit_hook(repo_search_dir: Path) -> str:
+    """Install or refresh the pre-commit hook that validates backlog.json.
 
     Resolves the hooks directory via ``git rev-parse --git-path hooks`` so
     that both plain repos (.git is a directory) and linked worktrees (.git is
-    a gitdir-pointer file) work correctly.  If a pre-commit hook already
-    exists and was not installed by us, prints guidance for manual wiring and
-    returns without modifying anything.
+    a gitdir-pointer file) work correctly.
+
+    Returns a status string:
+      'installed'   — hook was newly written
+      'refreshed'   — hook was flow-managed but stale; overwritten with current script
+      'up-to-date'  — hook was flow-managed and already current; no change
+      'foreign'     — a non-flow hook exists; printed guidance, did NOT clobber
+      'skipped'     — not a git repo, git not found, or hooks dir unresolvable
     """
     import subprocess as _sp
 
@@ -645,15 +650,15 @@ def _install_precommit_hook(repo_search_dir: Path) -> None:
         )
     except FileNotFoundError:
         # git binary not found — silently skip.
-        return
+        return "skipped"
 
     if result.returncode != 0:
         # Not a git repo (or some other git error) — silently skip.
-        return
+        return "skipped"
 
     hooks_raw = result.stdout.strip()
     if not hooks_raw:
-        return
+        return "skipped"
 
     # git may return a relative path; resolve it against repo_search_dir.
     hooks_dir = (repo_search_dir / hooks_raw).resolve()
@@ -661,10 +666,23 @@ def _install_precommit_hook(repo_search_dir: Path) -> None:
     hook_path = hooks_dir / "pre-commit"
 
     if hook_path.exists():
-        existing = hook_path.read_text(encoding="utf-8")
+        try:
+            existing = hook_path.read_text(encoding="utf-8")
+        except OSError:
+            # Unreadable hook — treat as foreign/skip; do not crash.
+            return "skipped"
+
         if _HOOK_MARKER in existing:
-            # Already installed by us — nothing to do.
-            console.print("[green]✓[/green] pre-commit hook already installed")
+            if existing == _HOOK_SCRIPT:
+                # Already installed by us and up to date — nothing to do.
+                console.print("[green]✓[/green] pre-commit hook already up to date")
+                return "up-to-date"
+            else:
+                # Flow-managed but stale — overwrite with current script.
+                hook_path.write_text(_HOOK_SCRIPT, encoding="utf-8")
+                hook_path.chmod(0o755)
+                console.print(f"[green]✓[/green] Refreshed pre-commit hook → {hook_path}")
+                return "refreshed"
         else:
             # Foreign hook — never clobber it.
             console.print(
@@ -673,11 +691,79 @@ def _install_precommit_hook(repo_search_dir: Path) -> None:
                 "append the following snippet to that file:"
             )
             console.print(f"[dim]{_HOOK_SCRIPT}[/dim]")
-        return
+            return "foreign"
 
     hook_path.write_text(_HOOK_SCRIPT, encoding="utf-8")
     hook_path.chmod(0o755)
     console.print(f"[green]✓[/green] Installed pre-commit hook → {hook_path}")
+    return "installed"
+
+
+def _doctor_hook_state(repo_search_dir: Path) -> str:
+    """Return the hook state for doctor reporting without modifying anything.
+
+    Returns one of: 'ok' | 'outdated' | 'missing' | 'foreign' | 'skipped'.
+    """
+    import subprocess as _sp
+
+    try:
+        result = _sp.run(
+            ["git", "rev-parse", "--git-path", "hooks"],
+            cwd=str(repo_search_dir),
+            capture_output=True,
+            text=True,
+        )
+    except FileNotFoundError:
+        return "skipped"
+
+    if result.returncode != 0:
+        return "skipped"
+
+    hooks_raw = result.stdout.strip()
+    if not hooks_raw:
+        return "skipped"
+
+    hooks_dir = (repo_search_dir / hooks_raw).resolve()
+    hook_path = hooks_dir / "pre-commit"
+
+    if not hook_path.exists():
+        return "missing"
+
+    try:
+        existing = hook_path.read_text(encoding="utf-8")
+    except OSError:
+        return "skipped"
+
+    if _HOOK_MARKER not in existing:
+        return "foreign"
+
+    if existing == _HOOK_SCRIPT:
+        return "ok"
+
+    return "outdated"
+
+
+@app.command(name="install-hook")
+def install_hook_cmd(
+    file: Optional[str] = FILE_OPT,
+) -> None:
+    """Install or refresh the pre-commit integrity-gate hook for this repo.
+
+    Works whether or not backlog.json exists.  Resolves the repo from
+    BACKLOG_FILE / --file (same resolution as init).  Never overwrites a
+    foreign (non-flow) pre-commit hook.
+    """
+    path = file or os.environ.get("BACKLOG_FILE", "backlog.json")
+    repo_dir = Path(path).resolve().parent
+    status = _install_precommit_hook(repo_dir)
+    _STATUS_MESSAGES = {
+        "installed": "[green]✓[/green] Hook installed.",
+        "refreshed": "[green]✓[/green] Hook refreshed to latest version.",
+        "up-to-date": "[green]✓[/green] Hook is already up to date — nothing changed.",
+        "foreign": "[yellow]![/yellow] Foreign hook detected — not modified. See guidance above.",
+        "skipped": "[yellow]![/yellow] Not a git repo or git not available — hook not installed.",
+    }
+    console.print(_STATUS_MESSAGES.get(status, f"status: {status}"))
 
 
 # ── CLAUDE.md snippet ─────────────────────────────────────────────────────────
@@ -1071,13 +1157,51 @@ def doctor(
                 "Run `backlog doctor --fix` to add it."
             )
 
-    # ── 3. BACKLOG_FILE env var ───────────────────────────────────────────────
+    # ── 3. Pre-commit hook ────────────────────────────────────────────────────
+    hook_repo_dir = (backlog_path.resolve().parent if backlog_path else cwd)
+    hook_state = _doctor_hook_state(hook_repo_dir)
+    if hook_state == "ok":
+        ok.append("pre-commit hook installed and up to date")
+    elif hook_state == "outdated":
+        if fix:
+            status = _install_precommit_hook(hook_repo_dir)
+            if status == "refreshed":
+                ok.append("pre-commit hook refreshed to latest version")
+            else:
+                ok.append(f"pre-commit hook refresh attempted (status: {status})")
+        else:
+            issues.append(
+                "pre-commit hook is outdated (flow-managed but stale). "
+                "Run `backlog doctor --fix` or `backlog install-hook` to refresh."
+            )
+    elif hook_state == "missing":
+        if fix:
+            status = _install_precommit_hook(hook_repo_dir)
+            if status == "installed":
+                ok.append("pre-commit hook installed")
+            else:
+                ok.append(f"pre-commit hook install attempted (status: {status})")
+        else:
+            issues.append(
+                "pre-commit hook not installed — backlog.json commits are unguarded. "
+                "Run `backlog doctor --fix` or `backlog install-hook` to install."
+            )
+    elif hook_state == "foreign":
+        ok.append(
+            "pre-commit hook exists but was not installed by Flow — not modified "
+            "(add the backlog gate manually if needed)"
+        )
+    else:
+        # skipped / not a git repo
+        ok.append("pre-commit hook check skipped (not a git repo or git not available)")
+
+    # ── 4. BACKLOG_FILE env var ───────────────────────────────────────────────
     if os.environ.get("BACKLOG_FILE"):
         ok.append(f"BACKLOG_FILE env var set → {os.environ['BACKLOG_FILE']}")
     else:
         ok.append("BACKLOG_FILE env var not set — defaulting to ./backlog.json (no config needed)")
 
-    # ── 4. Multi-branch divergence check ─────────────────────────────────────
+    # ── 5. Multi-branch divergence check ─────────────────────────────────────
     if backlog_path:
         _check_backlog_divergence(backlog_path, ok, issues)
 
