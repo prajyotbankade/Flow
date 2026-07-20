@@ -135,6 +135,7 @@ Maps item complexity to recommended AI model. Advisory — appears in work brief
   "readiness_signals": [ReadinessSignal, ...],
   "threads": [Thread, ...],
   "links": [Link, ...],
+  "external_refs": [ExternalRef, ...],
   "lane_history": [LaneMove, ...],
   "gate_from": "integer — index into lane_history where the current journey starts (default 0)",
   "notes": "string — additional context, completion notes, etc.",
@@ -210,6 +211,31 @@ A connection between two backlog items — tracks why they're related and how th
   - `blocks` — This item blocks progress on the linked item
   - `related` — General connection (same code area, shared context)
 - `reason`: Required. A brief explanation that makes sense from either item's perspective. This is what gives the link value weeks later when the context is forgotten.
+
+## ExternalRef
+
+A reference from a backlog item to a ticket in an external system (JIRA, GitHub, Linear, etc.). Optional and backward-compatible — existing items without this field are unaffected.
+
+```json
+{
+  "system": "jira",
+  "id": "PROJ-123",
+  "url": "https://co.atlassian.net/browse/PROJ-123"
+}
+```
+
+- `system`: Required — external tool identifier (e.g., `jira`, `github`, `linear`). Free-form string; no validation on the server.
+- `id`: Required — ticket key as the external tool displays it (e.g., `PROJ-123`, `GH-42`).
+- `url`: Optional — if present, the board renders the ref as a clickable chip; if absent, the id is shown as plain text.
+
+**Field on item**: `external_refs` — an array of ExternalRef objects. Absent field and empty array both mean "no refs". Duplicates are allowed (an item may reference the same ticket more than once). The server validates that every entry has both `system` and `id` before writing; malformed refs are rejected with HTTP 422.
+
+**Bidirectional pairing**: To make the reference navigable from the external tool, store the 8-character Flow item id in a JIRA custom field, a GitHub issue label (`flow-<id>`), or a Linear issue property. This lets the teams navigate back to the backlog item without a manual search.
+
+**CLI**:
+- `backlog ref <item> --system jira --id PROJ-123 [--url ...]` — append a ref
+- `backlog ref --list <item>` — list refs for an item
+- `backlog unref <item> --target PROJ-123` — remove all refs with that id (exits 1 if none match)
 
 ## LaneMove
 

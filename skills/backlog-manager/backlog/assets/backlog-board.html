@@ -454,6 +454,32 @@
     }
     .add-link-row select { min-width: 130px; }
     .add-link-row input { flex: 1; min-width: 120px; }
+    /* External refs */
+    .ext-refs-section { margin-top: 12px; }
+    .ext-ref-item {
+      background: #f9fafb;
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      border: 1px solid #e5e7eb;
+    }
+    .ext-ref-system-badge {
+      font-size: 10px;
+      padding: 2px 7px;
+      border-radius: 4px;
+      font-weight: 600;
+      white-space: nowrap;
+      flex-shrink: 0;
+      background: #f0fdf4;
+      color: #166534;
+      text-transform: uppercase;
+    }
+    .ext-ref-id { font-weight: 600; font-size: 12px; color: #374151; }
+    .ext-ref-id a { color: #2563eb; text-decoration: none; }
+    .ext-ref-id a:hover { text-decoration: underline; }
     .badge-link { background: #e0e7ff; color: #4338ca; }
     .badge-score { font-weight: 600; }
     .badge-score-high { background: #dcfce7; color: #166534; }
@@ -1259,6 +1285,10 @@
               <input type="text" id="new-link-reason" placeholder="Reason...">
               <button class="btn btn-ghost btn-sm" onclick="addLink()">Add</button>
             </div>
+          </div>
+          <div class="ext-refs-section" id="ext-refs-section">
+            <label style="font-size:12px;font-weight:600;color:#374151;text-transform:uppercase;letter-spacing:0.3px;">External Refs</label>
+            <div id="ext-refs-list"></div>
           </div>
         </div>
       </div>
@@ -2181,6 +2211,7 @@
       renderStagedActions(item.staged_actions || []);
       renderThreads(item.threads || []);
       renderLinks(item);
+      renderExternalRefs(item);
       renderHistory(item);
       renderIntelligence(item);
       document.getElementById('modal-overlay').classList.add('active');
@@ -2847,6 +2878,30 @@
 
       // Populate the target dropdown
       populateLinkTargetDropdown(item.id);
+    }
+
+    function renderExternalRefs(item) {
+      const list = document.getElementById('ext-refs-list');
+      const refs = item.external_refs || [];
+      if (refs.length === 0) {
+        list.innerHTML = '<div style="font-size:12px;color:#9ca3af;padding:4px 0;">No external refs</div>';
+        return;
+      }
+      let html = '';
+      refs.forEach(ref => {
+        const sysLabel = esc(ref.system || '');
+        const refId = esc(ref.id || '');
+        const idHtml = ref.url
+          ? `<a href="${esc(ref.url)}" target="_blank" rel="noopener noreferrer">${refId}</a>`
+          : refId;
+        html += `
+          <div class="ext-ref-item">
+            <span class="ext-ref-system-badge">${sysLabel}</span>
+            <span class="ext-ref-id">${idHtml}</span>
+          </div>
+        `;
+      });
+      list.innerHTML = html;
     }
 
     function populateLinkTargetDropdown(excludeId) {

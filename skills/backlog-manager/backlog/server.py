@@ -52,6 +52,7 @@ from .core import (
     BacklogStore,
     DEFAULT_STATUSES,
     get_status_config,
+    validate_external_refs,
     validate_lane_transition,
     apply_lane_transition,
     _append_execution_history,
@@ -2082,6 +2083,12 @@ class BacklogHandler(BaseHTTPRequestHandler):
             first_status = statuses[0].get("id", "backlog") if statuses else "backlog"
             changed_ids = set()
             for item in incoming.get("items", []):
+                # external_refs validation — must run on every item before write
+                ref_ok, ref_err = validate_external_refs(item)
+                if not ref_ok:
+                    self._json_error(422, ref_err)
+                    return
+
                 old_item = current_items.get(item.get("id"))
                 if old_item and item.get("status") != old_item.get("status"):
                     ok, err = validate_lane_transition(old_item, item.get("status"), statuses)
@@ -2193,6 +2200,12 @@ class BacklogHandler(BaseHTTPRequestHandler):
 
             if not found:
                 self._json_error(404, f"Item {item_id} not found")
+                return
+
+            # external_refs validation — reject malformed refs before write
+            ref_ok, ref_err = validate_external_refs(data["items"][found_idx])
+            if not ref_ok:
+                self._json_error(422, ref_err)
                 return
 
             events = detect_events({"items": [old_snapshot]}, {"items": [data["items"][found_idx]]})
