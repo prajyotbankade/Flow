@@ -591,6 +591,24 @@ blocks:  "Auth service must be deployed before login feature can start"
 related: "Frontend form is thematically linked to the auth spec but can begin independently"
 ```
 
+## External References (JIRA / GitHub / etc.)
+
+> `external_refs` pair a backlog item with tickets in outside systems. Unlike `links` (item-to-item, internal), these point *outward*.
+
+Each item carries an optional `external_refs` array of `{system, id, url?}` objects. Use it to connect a Flow item to a JIRA ticket, GitHub issue, Linear task, etc. Duplicates are allowed — one item may reference multiple tickets, even from the same system.
+
+```bash
+backlog ref <item> --system jira --id PROJ-123 --url https://co.atlassian.net/browse/PROJ-123
+backlog ref <item> --system github --id "#47"        # url is optional
+backlog ref --list <item>                             # list all external refs on an item
+backlog unref <item> --target PROJ-123                # remove every ref whose id == target
+```
+
+- `--system` and `--id` are **required**; `--url` is optional (the board renders a clickable chip when present, plain text otherwise).
+- `unref` removes **all** refs matching the target id and exits non-zero if none match (mirrors `unlink`).
+- **Bidirectional pairing:** to link back from the external tool, store this item's 8-char id (from `backlog show <item>`) in a JIRA custom field or GitHub label. Then either side resolves the other.
+- When a user mentions a JIRA/ticket number alongside a backlog item ("this is PROJ-123", "track the GitHub issue"), add it as an external ref — don't bury it in the description or a tag.
+
 ## Concurrency Safety
 
 > Writes are optimistically locked by `version`; recover from conflicts, never force them.

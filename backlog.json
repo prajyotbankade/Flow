@@ -1,5 +1,5 @@
 {
-  "version": 924,
+  "version": 936,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6364,6 +6364,120 @@
       "reviewer_history": [
         "reviewer"
       ]
+    },
+    {
+      "id": "vplfk952",
+      "title": "external_refs field \u2014 link backlog items to JIRA/GitHub/etc. tickets",
+      "status": "done",
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "backlog",
+        "cli",
+        "schema",
+        "integration"
+      ],
+      "description": "Add an optional `external_refs` array to the item schema so a backlog item can be paired with tickets in external systems (JIRA, GitHub, Linear, ...). Mirrors the existing `links`/`unlink` pattern (which is item-to-item only) but points outward.\n\n## Spec (v3 \u2014 resolved sub-lead-reviewer blockers)\n\n**Field shape** (array of objects, duplicates allowed \u2014 an item may reference multiple tickets from the same system):\n```json\n\"external_refs\": [\n  { \"system\": \"jira\", \"id\": \"PROJ-123\", \"url\": \"https://co.atlassian.net/browse/PROJ-123\" }\n]\n```\n- system: required \u2014 external tool identifier (jira, github, linear, ...)\n- id: required \u2014 ticket key as the tool displays it\n- url: optional \u2014 for the board to render a clickable link\n\n**CLI (mirror link_cmd/unlink_cmd in backlog/cli.py ~1668-1787):**\n- `backlog ref <item> --system jira --id PROJ-123 [--url ...]` \u2192 append a ref. The item argument is OPTIONAL (typer.Argument(None)), exactly like link_cmd's `source` (cli.py:1671), so --list works without it.\n- `backlog ref --list <item>` \u2192 list refs for an item (flag on the ref command, NOT a subcommand \u2014 mirrors link --list).\n- `backlog unref <item> --target <id>` \u2192 remove refs by their `id` field. Matches unlink semantics: filters the list, removes ALL entries whose id == target (consistent with unlink removing all matches, cli.py:1776). If NO ref matches: print an error ('No ref found ...') and `raise typer.Exit(1)` \u2014 mirrors unlink_cmd (cli.py:1778-1782), which exits 1; NOT a silent no-op.\n\n**Server validation (NEW seam \u2014 none exists today):**\n- Today the only write-time validation is validate_lane_transition (core.py:193). There is NO generic per-item validation. Add a new helper `validate_external_refs(item) -> (ok: bool, err: str|None)` in core.py alongside validate_lane_transition. It returns not-ok when any ref entry is missing `system` or `id`; `url` is optional; no url-format validation.\n- Wire it into BOTH write paths in server.py before atomic_write, returning HTTP 422 on failure:\n  - `_save_backlog` (POST / full-board write; validate calls ~2087/2101, atomic_write ~2110)\n  - `_update_item` (PUT /item/<id> single-item write; validate ~2166, atomic_write ~2200)\n  Patching only one path is a bug \u2014 the board uses PUT /item/<id> while CLI-triggered full writes use POST /. Both must reject malformed refs identically.\n\n**Board rendering (in scope \u2014 mirror renderLinks / .links-section):**\n- Render refs as a section like the existing links section. When `url` is present, render a clickable chip; when absent, render the id as plain text. Read defensively: `item.external_refs || []`.\n\n**Backward compatibility:**\n- Existing backlogs with NO external_refs load unchanged. All read paths use `item.get('external_refs', [])` (Python) / `item.external_refs || []` (board), matching how links is read (cli.py:1690). No migration step. Empty array and absent field both = 'no refs'.\n\n**Tests:**\n- CLI integration test mirroring tests/test_link_commands.py (CliRunner): covers ref add / ref --list / unref remove / duplicate-append / unref-nonexistent-exits-1 / backward-compat (item with no external_refs).\n- Handler-level server test mirroring tests/test_recovery_journal.py TestBoardJournals (lines 147-151): construct a handler via `server.BacklogHandler.__new__(server.BacklogHandler)` and set `.backlog_file`, then invoke `_save_backlog` / `_update_item` with stubbed `self.rfile` / `self.headers` (request body) and captured `self._json_error` / `self._json_response`. Assert a 422 is emitted for a ref missing system or id on BOTH paths, and an ok/200 path when url is absent but system+id present. This is required because test_link_commands.py is CLI-only and cannot exercise the 422 path, and test_server_policy_engine.py is a pure unit test that never drives the handler.\n\n**Acceptance criteria (done = all true):**\n- `backlog ref <item> --system jira --id PROJ-123 [--url ...]` appends a ref\n- `backlog ref --list <item>` lists refs; `backlog unref <item> --target PROJ-123` removes all refs with that id\n- `unref` on a non-existent id exits 1 with an error (mirrors unlink), not a silent no-op\n- Duplicate refs from the same system are allowed (append, not replace)\n- Existing backlogs with NO external_refs load unchanged \u2014 no migration\n- Both server write paths (POST /, PUT /item/<id>) reject a ref missing system or id with 422; accept missing url\n- Board shows a clickable chip when url is set, plain text otherwise\n- CLI integration test + handler-level server test cover all behaviors above (no separate eval artifact required)\n\n**Doc deliverable (inspection-only, NOT counted toward code test coverage):**\n- schema.md: document the ExternalRef object + field; note it is optional/backward-compatible (mirror the Link object doc at schema.md:194)\n- Document the reverse direction: store the 8-char Flow item id in a JIRA custom field/label so the pairing is bidirectional\n\n**Failure modes:**\n- Ref missing system or id \u2192 server 422; CLI prints a clear error and does not write\n- unref with a --target id that does not exist \u2192 error + exit 1 (mirror unlink_cmd)\n- Malformed external_refs on a hand-edited file \u2192 surfaced by validate_external_refs on next write; read paths never crash (default to [])\n\n**Edge cases:**\n- Empty external_refs array vs absent field \u2192 both 'no refs'\n- Same id added twice \u2192 allowed (duplicates permitted); unref --target removes all copies\n- url present but not a valid URL \u2192 stored as-is; board renders as text if it cannot linkify (no hard url-format validation)",
+      "links": [],
+      "threads": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-20T13:58:52.950699+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-07-20T13:58:53.110486+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-20T13:59:13.349920+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-20T14:08:05.520121+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-20T14:11:08.388032+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T13:58:52.950713+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T13:58:53.110494+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T13:59:13.349933+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T14:08:05.520128+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-20T14:11:08.388039+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-20T13:50:16.097359+00:00",
+      "updated_at": "2026-07-20T14:11:08.388037+00:00",
+      "refinement_gate": "complex",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
+    },
+    {
+      "id": "xrx9gltd",
+      "title": "Board UI to add/edit/remove external_refs on an item",
+      "status": "backlog",
+      "complexity": "medium",
+      "category": "feature",
+      "tags": [
+        "board",
+        "frontend",
+        "integration"
+      ],
+      "description": "Follow-up to #113. The board currently renders external_refs as read-only chips in the item modal (renderExternalRefs, backlog-board.html:2883) but offers no way to ADD, edit, or remove a ref from the UI \u2014 users must drop to the CLI (backlog ref/unref). Add an editing affordance in the item modal: inputs for system (text or dropdown), id (required), url (optional), an 'Add ref' button that PUTs the updated item to /api/items/<id>, and a remove control (x) on each existing chip. Surface the server's 422 (missing system/id) as an inline validation message. Mirror how the modal already handles links editing if such UI exists; otherwise follow the existing modal form patterns.",
+      "links": [
+        {
+          "item_id": "vplfk952",
+          "type": "follow-up",
+          "reason": "Board add/edit UI completes the external_refs feature; #113 shipped display-only, CLI-only add"
+        }
+      ],
+      "threads": [],
+      "lane_history": [],
+      "execution_history": [],
+      "gate_from": 0,
+      "reopen_count": 0,
+      "skip_count": 0,
+      "created_at": "2026-07-20T14:56:29.842381+00:00",
+      "updated_at": "2026-07-20T14:56:30.001530+00:00"
     }
   ],
   "config": {
