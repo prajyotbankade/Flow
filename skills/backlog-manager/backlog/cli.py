@@ -1787,6 +1787,101 @@ def unlink_cmd(
     console.print(f"[green]Unlinked[/green] #{src_pos} → #{tgt_pos}")
 
 
+@app.command(name="ref")
+@_handle
+def ref_cmd(
+    item: Optional[str] = typer.Argument(None, help="Item — position number or item ID"),
+    file: Optional[str] = FILE_OPT,
+    system: Optional[str] = typer.Option(None, "--system", help="External system identifier (jira, github, linear, ...)"),
+    ext_id: Optional[str] = typer.Option(None, "--id", help="Ticket key as the external tool displays it"),
+    url: Optional[str] = typer.Option(None, "--url", help="URL for the external ticket (optional — enables clickable link on board)"),
+    list_refs: Optional[str] = typer.Option(None, "--list", help="List all external refs for an item (position or ID)", metavar="ITEM"),
+) -> None:
+    """Add an external ticket reference to an item, or list refs for an item.
+
+    Usage:
+      backlog ref <item> --system jira --id PROJ-123 [--url https://...]
+      backlog ref --list <item>
+    """
+    store = _require_store(file)
+    data = store.read()
+
+    # ── --list mode ───────────────────────────────────────────────────────────
+    if list_refs is not None:
+        pos, target_item = _resolve_item_ref(data, list_refs)
+        refs = target_item.get("external_refs", [])
+        if not refs:
+            console.print(f"[dim]No external refs for item #{pos} \"{target_item.get('title', '')}\".[/dim]")
+            return
+        console.print(f"\n[bold]External refs for #{pos} \"{target_item.get('title', '')}\"[/bold]")
+        for r in refs:
+            sys_name = r.get("system", "")
+            ref_id = r.get("id", "")
+            ref_url = r.get("url", "")
+            if ref_url:
+                console.print(f"  [cyan]{sys_name}[/cyan] [bold]{ref_id}[/bold] {ref_url}")
+            else:
+                console.print(f"  [cyan]{sys_name}[/cyan] [bold]{ref_id}[/bold]")
+        console.print()
+        return
+
+    # ── Add-ref mode ──────────────────────────────────────────────────────────
+    if item is None:
+        err_console.print("[red]Error:[/red] ITEM argument is required when not using --list")
+        raise typer.Exit(1)
+
+    if system is None:
+        err_console.print("[red]Error:[/red] --system is required for ref")
+        raise typer.Exit(1)
+
+    if ext_id is None:
+        err_console.print("[red]Error:[/red] --id is required for ref")
+        raise typer.Exit(1)
+
+    pos, target_item = _resolve_item_ref(data, item)
+
+    new_ref: dict = {"system": system, "id": ext_id}
+    if url is not None:
+        new_ref["url"] = url
+
+    target_item.setdefault("external_refs", []).append(new_ref)
+    target_item["updated_at"] = _now_iso()
+    store.write(data, expected_version=data.get("version", 0))
+    console.print(
+        f"[green]Added ref[/green] #{pos} → {system}:{ext_id}"
+        + (f" ({url})" if url else "")
+    )
+
+
+@app.command(name="unref")
+@_handle
+def unref_cmd(
+    item: str = typer.Argument(..., help="Item — position number or item ID"),
+    file: Optional[str] = FILE_OPT,
+    target: str = typer.Option(..., "--target", help="External ref id to remove (all entries with this id are removed)"),
+) -> None:
+    """Remove an external ticket reference from an item by its id."""
+    store = _require_store(file)
+    data = store.read()
+
+    pos, target_item = _resolve_item_ref(data, item)
+
+    refs = target_item.get("external_refs", [])
+    new_refs = [r for r in refs if r.get("id") != target]
+
+    if len(new_refs) == len(refs):
+        err_console.print(
+            f"[red]Error:[/red] No ref found on item #{pos} with id '{target}'"
+        )
+        raise typer.Exit(1)
+
+    target_item["external_refs"] = new_refs
+    target_item["updated_at"] = _now_iso()
+    store.write(data, expected_version=data.get("version", 0))
+    removed = len(refs) - len(new_refs)
+    console.print(f"[green]Removed {removed} ref(s)[/green] from #{pos} with id '{target}'")
+
+
 # ── Orchestrator helpers ──────────────────────────────────────────────────────
 
 

@@ -190,6 +190,26 @@ def migrate_to_flow_schema(data) -> dict:
     }
 
 
+def validate_external_refs(item: dict) -> tuple[bool, str | None]:
+    """Check that every entry in external_refs has required fields.
+
+    Returns (ok, error_message).
+    - ok=True when external_refs is absent, empty, or all entries have system+id.
+    - ok=False when any entry is missing system or id; url is always optional.
+    """
+    refs = item.get("external_refs", [])
+    for i, ref in enumerate(refs):
+        if not ref.get("system"):
+            return False, (
+                f"external_refs[{i}] is missing required field 'system'"
+            )
+        if not ref.get("id"):
+            return False, (
+                f"external_refs[{i}] is missing required field 'id'"
+            )
+    return True, None
+
+
 def validate_lane_transition(item: dict, new_status: str, statuses: list) -> tuple[bool, str | None]:
     """Check if moving item to new_status satisfies gate rules.
 
