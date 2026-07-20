@@ -1,5 +1,5 @@
 {
-  "version": 947,
+  "version": 952,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6577,7 +6577,7 @@
     {
       "id": "gjmb05cm",
       "title": "Defence-in-depth: sanitize external_ref urls at render time on the board",
-      "status": "backlog",
+      "status": "in-progress",
       "complexity": "low",
       "category": "tech-debt",
       "tags": [
@@ -6585,7 +6585,7 @@
         "frontend",
         "security"
       ],
-      "description": "Follow-up to #114. The board guards url scheme at ENTRY (addRef rejects non-http(s)), but renderExternalRefs (backlog-board.html ~2919/3037) only esc()-encodes the url before putting it in an href \u2014 it does not sanitize the scheme. If backlog.json is written directly (hand-edit, or a future unguarded API path) with a javascript:/data: url, it would render as a live <a href> XSS. Add a small sanitizeUrl(url) helper used at RENDER time (return the url only if /^https?:\\/\\//i, else '' or '#'), applied wherever an external_ref url becomes an href. Belt-and-suspenders with the existing entry-time guard. Low complexity, single file.",
+      "description": "Follow-up to #114. #114 guards url scheme at ENTRY (addRef rejects non-http(s)), but the board renders external_ref urls into href attributes with only esc() applied \u2014 esc() HTML-encodes entities but does NOT sanitize url schemes. If backlog.json is written directly (hand-edit, or a future unguarded API/CLI path) with a javascript:/data:/vbscript: url, it renders as a live <a href> XSS. Add render-time defence-in-depth.\n\n## Spec\n\n**File:** skills/backlog-manager/backlog/assets/backlog-board.html (single file).\n\n**Add a helper** (near esc(), ~line 3876):\n```js\nfunction sanitizeUrl(url) {\n  // Only http/https are safe as hrefs; everything else (javascript:, data:, vbscript:, mailto-less schemes) is neutralized.\n  return (typeof url === 'string' && /^https?:\\/\\//i.test(url.trim())) ? url : '';\n}\n```\n\n**Apply at every render site where an external_ref url becomes an href.** The reviewer identified renderExternalRefs (~2919 and ~3037; there are two chip-render paths \u2014 the live section and the pending-refs section if it also linkifies). For each, when building the <a href>, use sanitizeUrl(ref.url): if it returns '', render the id as PLAIN TEXT (no anchor) instead of a linkless/unsafe anchor. Keep esc() on the display text and on the sanitized href value (esc(sanitizeUrl(ref.url))).\n\n**Do NOT weaken the entry guard in addRef** \u2014 this is belt-and-suspenders, both layers stay.\n\n**Acceptance criteria:**\n- A javascript:, data:, or vbscript: url present in an item's external_refs (simulate by hand-editing backlog.json) renders as plain text, NOT a clickable/executable anchor\n- A valid https:// url still renders as a clickable chip exactly as today\n- An absent/empty url still renders id as plain text (unchanged)\n- The entry-time guard in addRef is untouched\n- No change to server/CLI/core \u2014 board file only\n\n**Failure modes / edge cases:**\n- url is non-string / null / undefined \u2192 sanitizeUrl returns '' \u2192 plain text, no crash\n- url with leading/trailing whitespace around a bad scheme (' javascript:...') \u2192 trim() inside sanitizeUrl still blocks it\n- protocol-relative url ('//evil.com') \u2192 not http(s)-prefixed \u2192 blocked (renders plain text); acceptable\n\n**Testing note:** client-side board change; no JS test harness in the repo. Verify by hand-editing a backlog.json item to include a javascript: url and confirming the board renders it as plain text (use backlog board --port 9010, do not kill the shared 8089 instance). Confirm existing server tests (test_external_refs_server.py / _cli.py) still pass (they are unaffected). Note the no-JS-harness situation in the PR description.",
       "links": [
         {
           "item_id": "xrx9gltd",
@@ -6594,13 +6594,50 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-20T15:29:40.669144+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-07-20T15:29:40.828806+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-20T15:29:41.150394+00:00",
+          "by": "user"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:29:40.669153+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:29:40.828812+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:29:41.150406+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-20T15:20:18.321528+00:00",
-      "updated_at": "2026-07-20T15:20:18.484299+00:00"
+      "updated_at": "2026-07-20T15:29:41.150404+00:00",
+      "refinement_gate": "simple",
+      "assigned_to": "frontend-dev"
     }
   ],
   "config": {

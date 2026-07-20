@@ -2915,8 +2915,9 @@
       refs.forEach((ref, i) => {
         const sysLabel = esc(ref.system || '');
         const refId = esc(ref.id || '');
-        const idHtml = ref.url
-          ? `<a href="${esc(ref.url)}" target="_blank" rel="noopener noreferrer">${refId}</a>`
+        const sanitized = sanitizeUrl(ref.url);
+        const idHtml = sanitized
+          ? `<a href="${esc(sanitized)}" target="_blank" rel="noopener noreferrer">${refId}</a>`
           : refId;
         html += `
           <div class="ext-ref-item">
@@ -3033,8 +3034,9 @@
       list.innerHTML = pendingRefs.map((ref, i) => {
         const sysLabel = esc(ref.system || '');
         const refId = esc(ref.id || '');
-        const idHtml = ref.url
-          ? `<a href="${esc(ref.url)}" target="_blank" rel="noopener noreferrer">${refId}</a>`
+        const sanitized = sanitizeUrl(ref.url);
+        const idHtml = sanitized
+          ? `<a href="${esc(sanitized)}" target="_blank" rel="noopener noreferrer">${refId}</a>`
           : refId;
         return `
           <div class="ext-ref-item">
@@ -3881,6 +3883,9 @@
     function genId() { return Math.random().toString(36).substring(2, 10); }
     function esc(str) { const d = document.createElement('div'); d.textContent = str || ''; return d.innerHTML; }
     function escJs(str) { return (str || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '&quot;'); }
+    function sanitizeUrl(url) {
+      return (typeof url === 'string' && /^https?:\/\//i.test(url.trim())) ? url : '';
+    }
     function refreshBoard() { loadBacklog(); }
 
     // ── Phase 3: View mode toggle ──────────────────────────────────────────────
