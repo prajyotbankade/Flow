@@ -1,5 +1,5 @@
 {
-  "version": 956,
+  "version": 964,
   "items": [
     {
       "id": "f7g8h9i0",
@@ -6668,7 +6668,7 @@
     {
       "id": "3sfd9l40",
       "title": "Prevent backlog.json (and skill docs) from contaminating code PR branches",
-      "status": "backlog",
+      "status": "done",
       "complexity": "medium",
       "category": "tech-debt",
       "tags": [
@@ -6677,7 +6677,7 @@
         "skill",
         "process"
       ],
-      "description": "Recurring footgun (see this session: docs rode into PR #49's squash; backlog.json bookkeeping rode into PR #50, forcing a branch rebuild as PR #51). Root cause: subagents branch from a local main that carries uncommitted/committed backlog bookkeeping, and their 'git commit -am' / 'git add -A' sweeps backlog.json into the code branch. On squash-merge this lands backlog state onto origin and diverges the canonical copy.\n\nOptions to evaluate (pick one or combine):\n1. Delegation-protocol rule: instruct subagents to NEVER stage backlog.json on a code branch \u2014 commit only the files they changed by explicit path; add to SKILL.md 'Delegating to a Sub-Agent' + Git Workflow.\n2. Canonical-copy setup: adopt the pinned-worktree-on-trunk pattern from SKILL.md 'Multi-branch / Multi-agent Setup' so backlog.json lives outside feature branches entirely (BACKLOG_FILE points at ../<repo>-backlog/backlog.json).\n3. Guard/hook: a pre-commit or backlog doctor check that warns/blocks when backlog.json is staged on a non-trunk branch.\n\nAcceptance: a subagent implementing a code item produces a PR whose diff contains ONLY code files (no backlog.json, no unrelated skill docs), verified on a fresh run. Document the chosen mechanism in SKILL.md.",
+      "description": "User chose TWO mechanisms (combined): (1) delegation rule in SKILL.md, AND (2) a pre-commit/doctor guard. Both are this item's deliverable and land in ONE PR.\n\n## Spec\n\n### Deliverable 1 \u2014 SKILL.md delegation rule (doc)\nAdd the 'commit only your changed files by explicit path' rule in TWO places (exact wording to apply):\n- 'Git Workflow' > subagent 'Required steps', step 2 (~line 235): append to the commit step \u2014 'stage only the files you changed, by explicit path (git add path/to/file ...). Never use git add -A, git add ., or git commit -am on a code branch: the working tree often carries an already-dirty backlog.json (from lane moves) that those commands will sweep into your PR. A code PR's diff must contain only the code files for the task \u2014 never backlog.json, and never skill docs (SKILL.md, README.md, REFERENCE.md) unless editing them is the task deliverable. Run git status before committing and confirm nothing unrelated is staged.'\n- 'Delegating to a Sub-Agent' numbered list, item 8 (~line 449): append the same rule in one sentence.\n\n### Deliverable 2 \u2014 pre-commit hook guard (code)\nExtend the EXISTING hook, do not build a new one. The hook lives in backlog/cli.py as _HOOK_SCRIPT (~line 548), installed by _install_precommit_hook (~594); marker _HOOK_MARKER (line 546). Today it only checks staged backlog.json for conflict markers + JSON validity.\n\nAdd a branch guard to _HOOK_SCRIPT: when backlog.json is staged AND the current branch is NOT the trunk, BLOCK the commit (exit 1) with an actionable message telling the user to unstage backlog.json (git restore --staged backlog.json) because backlog state must follow trunk, not code branches.\n- Trunk detection in the shell hook: current branch via git rev-parse --abbrev-ref HEAD. Treat as trunk: main, master. ALSO respect config.integration_branch from backlog.json if present (read it with python3 -c json, best-effort; if unreadable, fall back to main/master).\n- Keep the existing conflict-marker + JSON-validity checks intact and ordered before/after sensibly.\n- Detached HEAD or unknown branch \u2192 do not block (fail open) to avoid breaking rebases/CI.\n\n### Tests\n- Extend the hook/doctor tests (see tests/ for existing hook coverage, e.g. test_cli_commit_gate.py) with cases: backlog.json staged on a feature branch \u2192 hook exits non-zero; staged on main/master \u2192 allowed; staged on configured integration_branch \u2192 allowed; detached HEAD \u2192 allowed; non-backlog files staged on a feature branch \u2192 allowed. Mirror the existing hook test harness.\n\n## Acceptance criteria\n- SKILL.md contains the explicit-path/no-'git add -A' rule in BOTH the Git Workflow and Delegating sections\n- Committing a staged backlog.json on a feature branch is blocked by the hook with a clear message; on trunk (main/master or config.integration_branch) it is allowed\n- Existing conflict-marker and JSON-validity gates still function\n- Fail-open on detached HEAD / non-git / unreadable config \u2014 never breaks legitimate flows\n- Hook tests cover feature-branch-block, trunk-allow, integration_branch-allow, detached-HEAD-allow, non-backlog-file-allow\n\n## Failure modes / edge cases\n- python3 or git absent \u2192 hook already fails open (preserve that)\n- integration_branch set to a non-existent branch \u2192 fall back to main/master\n- backlog.json not staged \u2192 hook is a no-op (unchanged)\n\n## Notes\n- Since SKILL.md IS part of this item's deliverable, staging it in this PR is legitimate under the very rule being added.\n- The hook only activates for users who ran backlog init / install-hook; that is acceptable (it is the documented opt-in integrity gate). The SKILL.md rule covers the agent-discipline layer regardless.",
       "links": [
         {
           "item_id": "gjmb05cm",
@@ -6686,13 +6686,75 @@
         }
       ],
       "threads": [],
-      "lane_history": [],
-      "execution_history": [],
+      "lane_history": [
+        {
+          "lane": "backlog",
+          "at": "2026-07-20T15:46:10.271989+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "refined",
+          "at": "2026-07-20T15:46:10.432246+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "ready",
+          "at": "2026-07-20T15:46:10.598070+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "in-progress",
+          "at": "2026-07-20T15:55:09.516012+00:00",
+          "by": "user"
+        },
+        {
+          "lane": "code-review",
+          "at": "2026-07-20T15:58:37.004017+00:00",
+          "by": "ingest"
+        }
+      ],
+      "execution_history": [
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:46:10.272000+00:00",
+          "detail": "backlog \u2192 refined (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:46:10.432262+00:00",
+          "detail": "refined \u2192 ready (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:46:10.598078+00:00",
+          "detail": "ready \u2192 in-progress (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "user",
+          "at": "2026-07-20T15:55:09.516022+00:00",
+          "detail": "in-progress \u2192 code-review (forward)"
+        },
+        {
+          "action": "lane_transition",
+          "actor": "ingest",
+          "at": "2026-07-20T15:58:37.004021+00:00",
+          "detail": "code-review \u2192 done (forward)"
+        }
+      ],
       "gate_from": 0,
       "reopen_count": 0,
       "skip_count": 0,
       "created_at": "2026-07-20T15:38:40.192414+00:00",
-      "updated_at": "2026-07-20T15:38:40.353156+00:00"
+      "updated_at": "2026-07-20T15:58:37.004019+00:00",
+      "assigned_to": "backend-dev",
+      "reviewer": "reviewer",
+      "reviewer_history": [
+        "reviewer"
+      ]
     }
   ],
   "config": {
