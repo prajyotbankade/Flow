@@ -1093,6 +1093,124 @@ def _check_backlog_divergence(
         ok.append(f"divergence check skipped ({exc})")
 
 
+def _check_trunk_ahead_of_origin(
+    backlog_path: Path,
+    ok: list,
+    issues: list,
+) -> None:
+    """Warn when local trunk has backlog-only commits not yet on origin trunk.
+
+    Read-only: never fetches, never mutates git state.
+    Degrades gracefully (appends a note to ok) when:
+      - outside a git repo
+      - trunk detection returns empty
+      - no origin remote or origin/<trunk> ref absent
+      - backlog.json is outside the repo root
+      - any subprocess error
+
+    All git commands run with cwd set to the directory containing backlog.json
+    so that git resolves to the correct repo regardless of the process's cwd.
+    """
+    git_cwd = backlog_path.resolve().parent
+    run_kw: dict = dict(capture_output=True, text=True, timeout=5, cwd=git_cwd)
+
+    try:
+        # Is this a git repo?
+        repo_check = subprocess.run(["git", "rev-parse", "--git-dir"], **run_kw)
+        if repo_check.returncode != 0:
+            ok.append("not in a git repo — skipping trunk-ahead check")
+            return
+
+        # Find the repo root so we can compute the repo-relative backlog.json path
+        root_result = subprocess.run(["git", "rev-parse", "--show-toplevel"], **run_kw)
+        if root_result.returncode != 0:
+            ok.append("could not determine git root — skipping trunk-ahead check")
+            return
+        git_root = Path(root_result.stdout.strip())
+
+        try:
+            rel_path = backlog_path.resolve().relative_to(git_root)
+        except ValueError:
+            ok.append("backlog.json is outside the git repo root — skipping trunk-ahead check")
+            return
+
+        # Read config.integration_branch from backlog.json (optional field).
+        configured_branch: Optional[str] = None
+        try:
+            with open(backlog_path, "r", encoding="utf-8") as _bf:
+                _bd = json.load(_bf)
+            configured_branch = _bd.get("config", {}).get("integration_branch") or None
+        except Exception:
+            pass  # malformed JSON or missing file — proceed without it
+
+        # Detect trunk: config.integration_branch → origin/HEAD → main → master
+        trunk = _detect_default_branch(git_cwd=git_cwd, integration_branch=configured_branch)
+        if trunk == _MISSING_BRANCH:
+            ok.append(
+                f"config.integration_branch '{configured_branch}' not found — falling back to auto-detected trunk"
+            )
+            trunk = _detect_default_branch(git_cwd=git_cwd)
+
+        if not trunk:
+            ok.append("no trunk branch found (tried origin/HEAD, main, master) — skipping trunk-ahead check")
+            return
+
+        # Verify that origin/<trunk> exists as a ref (do NOT fetch)
+        origin_ref = f"origin/{trunk}"
+        verify_result = subprocess.run(
+            ["git", "rev-parse", "--verify", origin_ref],
+            **run_kw,
+        )
+        if verify_result.returncode != 0:
+            ok.append(f"no origin remote or '{origin_ref}' ref absent — skipping trunk-ahead check")
+            return
+
+        # Count commits local trunk is ahead of origin trunk
+        ahead_result = subprocess.run(
+            ["git", "rev-list", f"{origin_ref}..{trunk}"],
+            **run_kw,
+        )
+        if ahead_result.returncode != 0:
+            ok.append("trunk-ahead check skipped (rev-list failed)")
+            return
+
+        ahead_commits = [line for line in ahead_result.stdout.splitlines() if line.strip()]
+        if not ahead_commits:
+            ok.append(f"local {trunk} is in sync with {origin_ref}")
+            return
+
+        n = len(ahead_commits)
+
+        # Determine whether the drift is backlog-only
+        diff_result = subprocess.run(
+            ["git", "diff", "--name-only", f"{origin_ref}..{trunk}"],
+            **run_kw,
+        )
+        if diff_result.returncode != 0:
+            ok.append("trunk-ahead check skipped (diff failed)")
+            return
+
+        changed_paths = [line for line in diff_result.stdout.splitlines() if line.strip()]
+        backlog_rel = str(rel_path)
+
+        if changed_paths == [backlog_rel]:
+            # Backlog-only drift — this is the problem case
+            issues.append(
+                f"local {trunk} is ahead of {origin_ref} by {n} backlog-only commit(s) — "
+                f"branches cut from {trunk} will carry backlog.json into their PR diff "
+                f"against origin. Diff PRs against {origin_ref}, or land backlog state "
+                f"to origin before branching."
+            )
+        else:
+            # Normal unpushed code (may include backlog.json but also other files) — neutral
+            ok.append(
+                f"local {trunk} is ahead of {origin_ref} by {n} commit(s) incl. non-backlog changes"
+            )
+
+    except Exception as exc:
+        ok.append(f"trunk-ahead check skipped ({exc})")
+
+
 @app.command()
 def doctor(
     fix: bool = typer.Option(False, "--fix", help="Write missing setup to CLAUDE.md"),
@@ -1218,6 +1336,10 @@ def doctor(
     # ── 5. Multi-branch divergence check ─────────────────────────────────────
     if backlog_path:
         _check_backlog_divergence(backlog_path, ok, issues)
+
+    # ── 6. Trunk-ahead-of-origin check ───────────────────────────────────────
+    if backlog_path:
+        _check_trunk_ahead_of_origin(backlog_path, ok, issues)
 
     # ── Report ────────────────────────────────────────────────────────────────
     console.print()
