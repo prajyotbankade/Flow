@@ -1484,6 +1484,17 @@ def commit_cmd(
         short = _git("rev-parse", "--short", "HEAD")
         short_hash = short.stdout.strip() if short.returncode == 0 else "?"
         console.print(f"[green]Committed[/green] {short_hash} {message}")
+
+        # After a successful commit, check if local trunk is now ahead of origin
+        # by backlog-only commits and print a hint if so. Read-only, non-fatal.
+        try:
+            _drift_ok: list[str] = []
+            _drift_issues: list[str] = []
+            _check_trunk_ahead_of_origin(Path(abs_path), _drift_ok, _drift_issues)
+            for _msg in _drift_issues:
+                console.print(f"[yellow]hint:[/yellow] {_msg}")
+        except Exception:
+            pass  # Never let the hint check affect the commit's exit code
     except FileNotFoundError:
         err_console.print(
             "[red]Error:[/red] git not found — install git to use backlog commit."
